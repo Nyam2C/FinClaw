@@ -16,6 +16,12 @@
     "format:fix": "oxfmt --write .",
     "lint": "oxlint --config oxlintrc.json .",
     "test": "vitest run",
+    "test:storage": "vitest run --config vitest.storage.config.ts",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test:live": "vitest run --config vitest.live.config.ts",
+    "test:all": "node scripts/test-parallel.mjs --all",
+    "test:ci": "node scripts/test-parallel.mjs",
+    "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "typecheck": "tsgo --noEmit"
   },
