@@ -3,8 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22.0.0" },
-  "packageManager": "pnpm@10.4.1",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -12,25 +10,31 @@
     }
   },
   "scripts": {
-    "typecheck": "tsgo --noEmit",
     "build": "tsc",
     "dev": "tsx src/entry.ts",
-    "lint": "oxlint --config oxlintrc.json .",
     "format": "oxfmt --check .",
     "format:fix": "oxfmt --write .",
+    "lint": "oxlint --config oxlintrc.json .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "typecheck": "tsgo --noEmit"
   },
-  "dependencies": {},
   "devDependencies": {
     "@types/node": "^25.2.2",
     "@typescript/native-preview": "7.0.0-dev.20260209.1",
+    "oxfmt": "^0.28.0",
     "oxlint": "^1.43.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"
   },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "packageManager": "pnpm@10.4.1",
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }
