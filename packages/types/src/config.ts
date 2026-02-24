@@ -160,3 +160,17 @@ export type ConfigChangeEvent = {
   current: FinClawConfig;
   changedPaths: string[];
 };
+
+/** 설정 I/O 의존성 -- OpenClaw ConfigIoDeps 축소판 (DI용) */
+export interface ConfigIoDeps {
+  /** 설정 파일 읽기 */
+  readFile(path: string): Promise<string>;
+  /** 설정 파일 쓰기 */
+  writeFile(path: string, content: string): Promise<void>;
+  /** 파일 존재 여부 확인 */
+  exists(path: string): Promise<boolean>;
+  /** 환경 변수 조회 */
+  env(key: string): string | undefined;
+  /** 로그 출력 */
+  log(level: LogLevel, message: string): void;
+}

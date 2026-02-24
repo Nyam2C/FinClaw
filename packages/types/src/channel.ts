@@ -1,4 +1,4 @@
-import type { ChannelId, AsyncDisposable } from './common.js';
+import type { ChannelId, CleanupFn } from './common.js';
 import type { InboundMessage, OutboundMessage } from './message.js';
 
 /** 채널 플러그인 -- OpenClaw ChannelPlugin<ResolvedAccount> 대응 */
@@ -7,8 +7,8 @@ export interface ChannelPlugin<TAccount = unknown> {
   meta: ChannelMeta;
   capabilities: ChannelCapabilities;
 
-  setup?(config: TAccount): Promise<AsyncDisposable>;
-  onMessage?(handler: (msg: InboundMessage) => Promise<void>): AsyncDisposable;
+  setup?(config: TAccount): Promise<CleanupFn>;
+  onMessage?(handler: (msg: InboundMessage) => Promise<void>): CleanupFn;
   send?(msg: OutboundMessage): Promise<void>;
   sendTyping?(channelId: string, chatId: string): Promise<void>;
   addReaction?(messageId: string, emoji: string): Promise<void>;
