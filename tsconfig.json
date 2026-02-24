@@ -1,0 +1,12 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/types" },
+    { "path": "packages/config" },
+    { "path": "packages/storage" },
+    { "path": "packages/agent" },
+    { "path": "packages/channel-discord" },
+    { "path": "packages/skills-finance" },
+    { "path": "packages/server" }
+  ]
+}

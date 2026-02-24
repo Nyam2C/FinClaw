@@ -1,0 +1,19 @@
+{
+  "name": "@finclaw/skills-finance",
+  "version": "0.1.0",
+  "private": true,
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@finclaw/storage": "workspace:*",
+    "@finclaw/types": "workspace:*"
+  }
+}

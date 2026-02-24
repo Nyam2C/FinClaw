@@ -1,0 +1,44 @@
+{
+  "name": "finclaw",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "tsc --build --clean",
+    "dev": "tsx packages/server/src/main.ts",
+    "format": "oxfmt --check .",
+    "format:fix": "oxfmt --write .",
+    "lint": "oxlint --config oxlintrc.json .",
+    "prepare": "lefthook install",
+    "test": "vitest run",
+    "test:all": "node scripts/test-parallel.mjs --all",
+    "test:ci": "node scripts/test-parallel.mjs",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test:live": "vitest run --config vitest.live.config.ts",
+    "test:storage": "vitest run --config vitest.storage.config.ts",
+    "test:watch": "vitest",
+    "typecheck": "tsgo --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.2",
+    "@typescript/native-preview": "7.0.0-dev.20260209.1",
+    "lefthook": "^2.1.0",
+    "oxfmt": "^0.28.0",
+    "oxlint": "^1.43.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "packageManager": "pnpm@10.4.1",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "lefthook"
+    ]
+  }
+}
