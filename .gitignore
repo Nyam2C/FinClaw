@@ -22,3 +22,10 @@ data/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Coverage
+coverage/
+*.lcov
+
+# Lefthook
+.lefthook-local/

@@ -2,10 +2,10 @@
 
 ## 현황
 
-| 상태 | 항목 수 |
-|------|--------|
-| 완료 | 20+ 파일 (tsconfig, vitest, oxlint, 패키지 scaffolding 등) |
-| **미완료** | **11개 작업** (이 문서의 범위) |
+| 상태       | 항목 수                                                    |
+| ---------- | ---------------------------------------------------------- |
+| 완료       | 20+ 파일 (tsconfig, vitest, oxlint, 패키지 scaffolding 등) |
+| **미완료** | **11개 작업** (이 문서의 범위)                             |
 
 ---
 
@@ -128,7 +128,7 @@ grep -E 'coverage/|\.lcov|\.lefthook-local/' .gitignore
     "test:live": "vitest run --config vitest.live.config.ts",
     "test:storage": "vitest run --config vitest.storage.config.ts",
     "test:watch": "vitest",
-    "typecheck": "tsgo --noEmit"
+    "typecheck": "tsgo --noEmit",
   },
   "devDependencies": {
     "@types/node": "^25.2.2",
@@ -138,8 +138,8 @@ grep -E 'coverage/|\.lcov|\.lefthook-local/' .gitignore
     "oxlint": "^1.43.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.18"
-  }
+    "vitest": "^4.0.18",
+  },
 }
 ```
 
@@ -173,10 +173,10 @@ pre-commit:
   parallel: true
   commands:
     lint:
-      glob: "*.{ts,mts,js,mjs}"
+      glob: '*.{ts,mts,js,mjs}'
       run: npx oxlint --config oxlintrc.json {staged_files}
     format-check:
-      glob: "*.{ts,mts,js,mjs,json,yaml,yml,md}"
+      glob: '*.{ts,mts,js,mjs,json,yaml,yml,md}'
       run: npx oxfmt --check {staged_files}
     typecheck:
       run: npx tsgo --noEmit
@@ -185,7 +185,7 @@ commit-msg:
   commands:
     conventional:
       run: |
-        MSG=$(head -1 "$1")
+        MSG=$(head -1 .git/COMMIT_EDITMSG)
         if ! echo "$MSG" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?: .{1,}'; then
           echo "ERROR: Commit message must follow Conventional Commits format"
           echo "  e.g., feat(agent): add tool registration"
@@ -605,27 +605,27 @@ test -x scripts/build-docker.sh && echo "OK" || echo "NOT EXECUTABLE"
 
 ## 최종 체크리스트
 
-| # | 항목 | 검증 명령어 | 기대 결과 | 완료 |
-|---|------|------------|----------|------|
-| 1 | `.node-version` 존재 | `cat .node-version` | `22.21.1` | [ ] |
-| 2 | `pnpm-workspace.yaml`에 `minimumReleaseAge` | `grep minimumReleaseAge pnpm-workspace.yaml` | `minimumReleaseAge: 10080` | [ ] |
-| 3 | `.gitignore`에 coverage/lcov/lefthook | `grep -c 'coverage/\|\.lcov\|\.lefthook' .gitignore` | `3` | [ ] |
-| 4 | `package.json` prepare 스크립트 | `node -p "require('./package.json').scripts.prepare"` | `lefthook install` | [ ] |
-| 5 | `package.json` lefthook devDep | `node -p "require('./package.json').devDependencies.lefthook"` | `^2.1.0` | [ ] |
-| 6 | `lefthook.yml` 존재 | `test -f lefthook.yml` | exit 0 | [ ] |
-| 7 | `.github/workflows/ci.yml` 존재 | `test -f .github/workflows/ci.yml` | exit 0 | [ ] |
-| 8 | `Dockerfile` 존재 | `test -f Dockerfile` | exit 0 | [ ] |
-| 9 | `docker-compose.yml` 존재 | `test -f docker-compose.yml` | exit 0 | [ ] |
-| 10 | `.dockerignore` 존재 | `test -f .dockerignore` | exit 0 | [ ] |
-| 11 | `.github/workflows/deploy.yml` 존재 | `test -f .github/workflows/deploy.yml` | exit 0 | [ ] |
-| 12 | `scripts/build-docker.sh` 실행 가능 | `test -x scripts/build-docker.sh` | exit 0 | [ ] |
-| 13 | `pnpm install` 성공 | `pnpm install` | 에러 없음 | [ ] |
-| 14 | `pnpm build` 성공 | `pnpm build` | 에러 없음 | [ ] |
-| 15 | `pnpm typecheck` 성공 | `pnpm typecheck` | 에러 없음 | [ ] |
-| 16 | `pnpm lint` 성공 | `pnpm lint` | 에러 없음 | [ ] |
-| 17 | `pnpm format` 성공 | `pnpm format` | 위반 없음 | [ ] |
-| 18 | `pnpm test` 성공 | `pnpm test` | 통과 | [ ] |
-| 19 | `pnpm test:ci` 성공 | `pnpm test:ci` | PASS | [ ] |
-| 20 | lefthook pre-commit 동작 | 린트 에러 커밋 시도 | 거부 | [ ] |
-| 21 | lefthook commit-msg 동작 | `git commit -m "bad"` | 거부 | [ ] |
-| 22 | (선택) Docker 빌드 | `docker build -t finclaw:dev .` | 성공 | [ ] |
+| #   | 항목                                        | 검증 명령어                                                    | 기대 결과                  | 완료 |
+| --- | ------------------------------------------- | -------------------------------------------------------------- | -------------------------- | ---- |
+| 1   | `.node-version` 존재                        | `cat .node-version`                                            | `22.21.1`                  | [ ]  |
+| 2   | `pnpm-workspace.yaml`에 `minimumReleaseAge` | `grep minimumReleaseAge pnpm-workspace.yaml`                   | `minimumReleaseAge: 10080` | [ ]  |
+| 3   | `.gitignore`에 coverage/lcov/lefthook       | `grep -c 'coverage/\|\.lcov\|\.lefthook' .gitignore`           | `3`                        | [ ]  |
+| 4   | `package.json` prepare 스크립트             | `node -p "require('./package.json').scripts.prepare"`          | `lefthook install`         | [ ]  |
+| 5   | `package.json` lefthook devDep              | `node -p "require('./package.json').devDependencies.lefthook"` | `^2.1.0`                   | [ ]  |
+| 6   | `lefthook.yml` 존재                         | `test -f lefthook.yml`                                         | exit 0                     | [ ]  |
+| 7   | `.github/workflows/ci.yml` 존재             | `test -f .github/workflows/ci.yml`                             | exit 0                     | [ ]  |
+| 8   | `Dockerfile` 존재                           | `test -f Dockerfile`                                           | exit 0                     | [ ]  |
+| 9   | `docker-compose.yml` 존재                   | `test -f docker-compose.yml`                                   | exit 0                     | [ ]  |
+| 10  | `.dockerignore` 존재                        | `test -f .dockerignore`                                        | exit 0                     | [ ]  |
+| 11  | `.github/workflows/deploy.yml` 존재         | `test -f .github/workflows/deploy.yml`                         | exit 0                     | [ ]  |
+| 12  | `scripts/build-docker.sh` 실행 가능         | `test -x scripts/build-docker.sh`                              | exit 0                     | [ ]  |
+| 13  | `pnpm install` 성공                         | `pnpm install`                                                 | 에러 없음                  | [ ]  |
+| 14  | `pnpm build` 성공                           | `pnpm build`                                                   | 에러 없음                  | [ ]  |
+| 15  | `pnpm typecheck` 성공                       | `pnpm typecheck`                                               | 에러 없음                  | [ ]  |
+| 16  | `pnpm lint` 성공                            | `pnpm lint`                                                    | 에러 없음                  | [ ]  |
+| 17  | `pnpm format` 성공                          | `pnpm format`                                                  | 위반 없음                  | [ ]  |
+| 18  | `pnpm test` 성공                            | `pnpm test`                                                    | 통과                       | [ ]  |
+| 19  | `pnpm test:ci` 성공                         | `pnpm test:ci`                                                 | PASS                       | [ ]  |
+| 20  | lefthook pre-commit 동작                    | 린트 에러 커밋 시도                                            | 거부                       | [ ]  |
+| 21  | lefthook commit-msg 동작                    | `git commit -m "bad"`                                          | 거부                       | [ ]  |
+| 22  | (선택) Docker 빌드                          | `docker build -t finclaw:dev .`                                | 성공                       | [ ]  |

@@ -9,14 +9,7 @@ export type TickerSymbol = Brand<string, 'TickerSymbol'>;
 export type CurrencyCode = Brand<string, 'CurrencyCode'>;
 
 /** 금융 상품 유형 */
-export type InstrumentType =
-  | 'stock'
-  | 'etf'
-  | 'crypto'
-  | 'forex'
-  | 'index'
-  | 'bond'
-  | 'commodity';
+export type InstrumentType = 'stock' | 'etf' | 'crypto' | 'forex' | 'index' | 'bond' | 'commodity';
 
 /** 금융 상품 */
 export interface FinancialInstrument {

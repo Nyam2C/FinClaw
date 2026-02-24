@@ -1,0 +1,29 @@
+# docker-compose.yml (Phase 0 scaffold)
+
+services:
+  finclaw:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: finclaw
+    restart: unless-stopped
+    init: true
+    ports:
+      - '${FINCLAW_PORT:-3000}:3000'
+    environment:
+      - NODE_ENV=production
+      - FINCLAW_HOST=0.0.0.0
+      - FINCLAW_PORT=3000
+      # TODO (Phase 6): AI 프로바이더
+      # - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # TODO (Phase 12): Discord
+      # - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
+      # TODO (Phase 16): 금융 데이터
+      # - ALPHA_VANTAGE_KEY=${ALPHA_VANTAGE_KEY:-}
+      - FINCLAW_DATA_DIR=/data
+    volumes:
+      - finclaw-data:/data
+
+volumes:
+  finclaw-data:
+    driver: local

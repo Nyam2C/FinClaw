@@ -1,2 +1,6 @@
 packages:
   - 'packages/*'
+
+# pnpm 10.16+: 최소 릴리스 경과 시간 미달 패키지 설치 차단
+# Zero-day 공급망 공격 방어 (10080분 = 7일)
+minimumReleaseAge: 10080

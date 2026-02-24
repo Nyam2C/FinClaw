@@ -1,0 +1,2 @@
+NODE_VER=$(cat .node-version 2>/dev/null)
+[ -n "$NODE_VER" ] && export PATH="$HOME/.nvm/versions/node/v$NODE_VER/bin:$PATH"

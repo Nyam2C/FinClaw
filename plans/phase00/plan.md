@@ -89,13 +89,13 @@ Phase 0의 핵심 원칙:
 
 ### Docker & CI/CD 배포 파일 (5개)
 
-| #  | 파일 경로                       | 설명                                               | 예상 LOC |
-|----|--------------------------------|----------------------------------------------------|---------|
-| 1  | Dockerfile                     | 멀티 스테이지 빌드 스캐폴드 (이후 Phase에서 점진 보강) | ~45     |
-| 2  | docker-compose.yml             | FinClaw 서비스 구성 (최소 scaffold)                  | ~25     |
-| 3  | .dockerignore                  | Docker 빌드 제외 파일 목록                           | ~20     |
-| 4  | .github/workflows/deploy.yml  | Docker 이미지 빌드 + ghcr.io push (amd64/arm64)      | ~80     |
-| 5  | scripts/build-docker.sh        | 로컬 Docker 빌드 헬퍼 스크립트                       | ~15     |
+| #   | 파일 경로                    | 설명                                                   | 예상 LOC |
+| --- | ---------------------------- | ------------------------------------------------------ | -------- |
+| 1   | Dockerfile                   | 멀티 스테이지 빌드 스캐폴드 (이후 Phase에서 점진 보강) | ~45      |
+| 2   | docker-compose.yml           | FinClaw 서비스 구성 (최소 scaffold)                    | ~25      |
+| 3   | .dockerignore                | Docker 빌드 제외 파일 목록                             | ~20      |
+| 4   | .github/workflows/deploy.yml | Docker 이미지 빌드 + ghcr.io push (amd64/arm64)        | ~80      |
+| 5   | scripts/build-docker.sh      | 로컬 Docker 빌드 헬퍼 스크립트                         | ~15      |
 
 ## 4. 핵심 인터페이스/타입
 
@@ -152,11 +152,11 @@ interface PollOptions {
 
 **버전 고정 전략:**
 
-| 메커니즘 | 대상 | 효과 |
-|---------|------|------|
-| `.node-version` | Node.js 런타임 | fnm, nvm, GitHub Actions `setup-node` 자동 감지 |
-| `packageManager` 필드 | pnpm | corepack이 정확한 pnpm 버전 보장 |
-| `pnpm-lock.yaml` | 전체 의존성 | 재현 가능한 빌드 |
+| 메커니즘              | 대상           | 효과                                            |
+| --------------------- | -------------- | ----------------------------------------------- |
+| `.node-version`       | Node.js 런타임 | fnm, nvm, GitHub Actions `setup-node` 자동 감지 |
+| `packageManager` 필드 | pnpm           | corepack이 정확한 pnpm 버전 보장                |
+| `pnpm-lock.yaml`      | 전체 의존성    | 재현 가능한 빌드                                |
 
 **공급망 보안 — `minimumReleaseAge`:**
 
@@ -203,12 +203,12 @@ minimumReleaseAge: 10080
 
 **FinClaw에 영향 없는 Breaking Changes 4개:**
 
-| Breaking Change | FinClaw 영향 없는 이유 |
-|----------------|----------------------|
-| `strict: true` 기본값 전환 | 이미 strict 사용 중 |
-| ES5 target 제거 | ES2023 사용 중 |
-| AMD/UMD/SystemJS 제거 | NodeNext 사용 중 |
-| classic 모듈 해석 제거 | NodeNext 사용 중 |
+| Breaking Change            | FinClaw 영향 없는 이유 |
+| -------------------------- | ---------------------- |
+| `strict: true` 기본값 전환 | 이미 strict 사용 중    |
+| ES5 target 제거            | ES2023 사용 중         |
+| AMD/UMD/SystemJS 제거      | NodeNext 사용 중       |
+| classic 모듈 해석 제거     | NodeNext 사용 중       |
 
 ### 5.3 4-Tier 테스트 아키텍처
 
@@ -460,13 +460,13 @@ lefthook (Go 바이너리)로 pre-commit, commit-msg 훅을 관리한다.
 
 **lefthook vs husky+lint-staged:**
 
-| 비교 | husky + lint-staged | lefthook |
-|------|-------------------|----------|
-| 런타임 | Node.js 필요 | Go 바이너리 (런타임 불필요) |
-| 설정 | `.husky/` + `.lintstagedrc` (2곳) | `lefthook.yml` 단일 파일 |
-| 병렬 실행 | 불가 (순차) | 네이티브 병렬 |
-| staged 파일 필터 | lint-staged 별도 필요 | `{staged_files}` 템플릿 내장 |
-| npm 의존성 | 2개 | 1개 |
+| 비교             | husky + lint-staged               | lefthook                     |
+| ---------------- | --------------------------------- | ---------------------------- |
+| 런타임           | Node.js 필요                      | Go 바이너리 (런타임 불필요)  |
+| 설정             | `.husky/` + `.lintstagedrc` (2곳) | `lefthook.yml` 단일 파일     |
+| 병렬 실행        | 불가 (순차)                       | 네이티브 병렬                |
+| staged 파일 필터 | lint-staged 별도 필요             | `{staged_files}` 템플릿 내장 |
+| npm 의존성       | 2개                               | 1개                          |
 
 **lefthook.yml 전체 명세:**
 
@@ -476,10 +476,10 @@ pre-commit:
   parallel: true
   commands:
     lint:
-      glob: "*.{ts,mts,js,mjs}"
+      glob: '*.{ts,mts,js,mjs}'
       run: npx oxlint --config oxlintrc.json {staged_files}
     format-check:
-      glob: "*.{ts,mts,js,mjs,json,yaml,yml,md}"
+      glob: '*.{ts,mts,js,mjs,json,yaml,yml,md}'
       run: npx oxfmt --check {staged_files}
     typecheck:
       run: npx tsgo --noEmit
@@ -507,11 +507,11 @@ commit-msg:
 ```jsonc
 {
   "scripts": {
-    "prepare": "lefthook install"  // pnpm install 시 Git hooks 자동 설치
+    "prepare": "lefthook install", // pnpm install 시 Git hooks 자동 설치
   },
   "devDependencies": {
-    "lefthook": "^2.1.0"
-  }
+    "lefthook": "^2.1.0",
+  },
 }
 ```
 
@@ -544,19 +544,19 @@ git commit -m "feat(config): add Zod schema"
 
 **허용 타입 (11개):**
 
-| 타입 | 설명 | 예시 |
-|------|------|------|
-| `feat` | 새 기능 | `feat(agent): add Claude API integration` |
-| `fix` | 버그 수정 | `fix(storage): resolve sqlite WAL lock` |
-| `docs` | 문서 | `docs: update README with setup guide` |
-| `style` | 코드 스타일 (동작 변경 없음) | `style: apply oxfmt formatting` |
-| `refactor` | 리팩토링 (기능 변경 없음) | `refactor(config): extract validation logic` |
-| `perf` | 성능 개선 | `perf(query): add index for alert lookup` |
-| `test` | 테스트 추가/수정 | `test(storage): add WAL mode verification` |
-| `build` | 빌드 시스템 | `build: upgrade TypeScript to 5.9.3` |
-| `ci` | CI 설정 | `ci: add coverage threshold check` |
-| `chore` | 기타 유지보수 | `chore: update pnpm to 10.4.1` |
-| `revert` | 커밋 되돌리기 | `revert: feat(agent): add tool registration` |
+| 타입       | 설명                         | 예시                                         |
+| ---------- | ---------------------------- | -------------------------------------------- |
+| `feat`     | 새 기능                      | `feat(agent): add Claude API integration`    |
+| `fix`      | 버그 수정                    | `fix(storage): resolve sqlite WAL lock`      |
+| `docs`     | 문서                         | `docs: update README with setup guide`       |
+| `style`    | 코드 스타일 (동작 변경 없음) | `style: apply oxfmt formatting`              |
+| `refactor` | 리팩토링 (기능 변경 없음)    | `refactor(config): extract validation logic` |
+| `perf`     | 성능 개선                    | `perf(query): add index for alert lookup`    |
+| `test`     | 테스트 추가/수정             | `test(storage): add WAL mode verification`   |
+| `build`    | 빌드 시스템                  | `build: upgrade TypeScript to 5.9.3`         |
+| `ci`       | CI 설정                      | `ci: add coverage threshold check`           |
+| `chore`    | 기타 유지보수                | `chore: update pnpm to 10.4.1`               |
+| `revert`   | 커밋 되돌리기                | `revert: feat(agent): add tool registration` |
 
 **스코프 (선택):** `agent`, `channel`, `config`, `plugin`, `skill`, `storage`, `types`, `ci`, `deps`
 
@@ -614,15 +614,15 @@ jobs:
 
 **CI 설계 결정:**
 
-| 결정 | 근거 |
-|------|------|
-| `pnpm/action-setup@v4` 우선 실행 | pnpm 스토어 감지를 위해 setup-node보다 먼저 설치 (공식 권장 순서) |
-| `cache: 'pnpm'` | pnpm 스토어 캐싱으로 install 시간 60~80% 단축 |
-| `--frozen-lockfile` | CI에서 lockfile 변경 방지 → 재현 가능한 빌드 |
-| `node-version-file` | `.node-version` 파일로 로컬/CI 버전 동기화 |
-| `concurrency` + `cancel-in-progress` | 같은 PR에 새 push 시 이전 CI 취소 → 리소스 절약 |
-| `timeout-minutes: 10` | Phase 0 규모에 충분 (프로젝트 성장 시 조정) |
-| 단일 워크플로우 / 단일 Job | 현재 규모에서 Job 분리는 checkout+install 반복으로 비효율적 |
+| 결정                                 | 근거                                                              |
+| ------------------------------------ | ----------------------------------------------------------------- |
+| `pnpm/action-setup@v4` 우선 실행     | pnpm 스토어 감지를 위해 setup-node보다 먼저 설치 (공식 권장 순서) |
+| `cache: 'pnpm'`                      | pnpm 스토어 캐싱으로 install 시간 60~80% 단축                     |
+| `--frozen-lockfile`                  | CI에서 lockfile 변경 방지 → 재현 가능한 빌드                      |
+| `node-version-file`                  | `.node-version` 파일로 로컬/CI 버전 동기화                        |
+| `concurrency` + `cancel-in-progress` | 같은 PR에 새 push 시 이전 CI 취소 → 리소스 절약                   |
+| `timeout-minutes: 10`                | Phase 0 규모에 충분 (프로젝트 성장 시 조정)                       |
+| 단일 워크플로우 / 단일 Job           | 현재 규모에서 Job 분리는 checkout+install 반복으로 비효율적       |
 
 **Phase별 확장 계획:**
 
@@ -645,43 +645,43 @@ jobs:
 
 ### 완료 기준 체크리스트
 
-| #   | 검증 항목       | 명령어              | 기대 결과               |
-| --- | --------------- | ------------------- | ----------------------- |
-| 1   | 의존성 설치     | `pnpm install`      | 에러 없이 완료          |
-| 2   | 빌드            | `pnpm build`        | `dist/` 생성, 에러 없음 |
-| 3   | 타입체크        | `pnpm typecheck`    | 에러 없음               |
-| 4   | 린트            | `pnpm lint`         | 에러 없음               |
-| 5   | 포매팅          | `pnpm format`       | 위반 없음               |
-| 6   | 유닛 테스트     | `pnpm test`         | sample.test.ts 통과     |
-| 7   | 스토리지 테스트 | `pnpm test:storage` | 통과 (테스트 없어도 OK) |
-| 8   | E2E 테스트      | `pnpm test:e2e`     | 통과 (테스트 없어도 OK) |
-| 9   | CI 테스트       | `pnpm test:ci`      | Phase 1+2 모두 PASS     |
-| 10  | 개발 서버       | `pnpm dev`          | 에러 없이 시작          |
-| 11  | Docker 빌드    | `docker build -t finclaw:dev .` | 이미지 빌드 성공   |
-| 12  | Docker 실행    | `docker run finclaw:dev`        | 컨테이너 시작 확인 |
-| 13  | deploy.yml 검증 | actionlint                     | YAML 문법 유효     |
+| #   | 검증 항목       | 명령어                          | 기대 결과               |
+| --- | --------------- | ------------------------------- | ----------------------- |
+| 1   | 의존성 설치     | `pnpm install`                  | 에러 없이 완료          |
+| 2   | 빌드            | `pnpm build`                    | `dist/` 생성, 에러 없음 |
+| 3   | 타입체크        | `pnpm typecheck`                | 에러 없음               |
+| 4   | 린트            | `pnpm lint`                     | 에러 없음               |
+| 5   | 포매팅          | `pnpm format`                   | 위반 없음               |
+| 6   | 유닛 테스트     | `pnpm test`                     | sample.test.ts 통과     |
+| 7   | 스토리지 테스트 | `pnpm test:storage`             | 통과 (테스트 없어도 OK) |
+| 8   | E2E 테스트      | `pnpm test:e2e`                 | 통과 (테스트 없어도 OK) |
+| 9   | CI 테스트       | `pnpm test:ci`                  | Phase 1+2 모두 PASS     |
+| 10  | 개발 서버       | `pnpm dev`                      | 에러 없이 시작          |
+| 11  | Docker 빌드     | `docker build -t finclaw:dev .` | 이미지 빌드 성공        |
+| 12  | Docker 실행     | `docker run finclaw:dev`        | 컨테이너 시작 확인      |
+| 13  | deploy.yml 검증 | actionlint                      | YAML 문법 유효          |
 
 ### 보강 산출물
 
-| #   | 파일              | 검증 방법                                  |
-| --- | ----------------- | ------------------------------------------ |
-| 1   | `.editorconfig`   | 에디터에서 탭/스페이스/줄끝 자동 적용 확인 |
-| 2   | `README.md`       | 새 개발자가 README만 보고 환경 세팅 가능   |
-| 3   | `.gitignore` 보강 | `.vscode/`, `.DS_Store` 등 무시 확인       |
+| #   | 파일                | 검증 방법                                   |
+| --- | ------------------- | ------------------------------------------- |
+| 1   | `.editorconfig`     | 에디터에서 탭/스페이스/줄끝 자동 적용 확인  |
+| 2   | `README.md`         | 새 개발자가 README만 보고 환경 세팅 가능    |
+| 3   | `.gitignore` 보강   | `.vscode/`, `.DS_Store` 등 무시 확인        |
 | 4   | lefthook pre-commit | 린트 에러 파일 스테이지 후 커밋 → 거부 확인 |
-| 5   | lefthook commit-msg | `git commit -m "bad"` → 거부 확인 |
-| 6   | `.node-version` | `node -v` 출력과 파일 내용 일치 |
-| 7   | `ci.yml` | GitHub PR 생성 → Actions 실행+통과 |
+| 5   | lefthook commit-msg | `git commit -m "bad"` → 거부 확인           |
+| 6   | `.node-version`     | `node -v` 출력과 파일 내용 일치             |
+| 7   | `ci.yml`            | GitHub PR 생성 → Actions 실행+통과          |
 
 ## 8. 복잡도 및 예상 파일 수
 
-| 항목                  | 값                                                                                    |
-| --------------------- | ------------------------------------------------------------------------------------- |
-| 복잡도                | S (스캐폴딩, 비즈니스 로직 없음)                                                      |
-| 완료된 파일           | 설정 8 + vitest 4 + 스크립트 1 + 소스 스텁 2 + 테스트 5 = **20 파일**                 |
-| 보강 파일             | .editorconfig + README.md + .gitignore 보강 = **3 파일**                              |
-| devDependencies       | 7개 (typescript, tsx, vitest, oxlint, oxfmt, @types/node, @typescript/native-preview) |
-| 프로덕션 dependencies | 0개 (Phase 0에서는 런타임 의존성 없음)                                                |
+| 항목                  | 값                                                                                              |
+| --------------------- | ----------------------------------------------------------------------------------------------- |
+| 복잡도                | S (스캐폴딩, 비즈니스 로직 없음)                                                                |
+| 완료된 파일           | 설정 8 + vitest 4 + 스크립트 1 + 소스 스텁 2 + 테스트 5 = **20 파일**                           |
+| 보강 파일             | .editorconfig + README.md + .gitignore 보강 = **3 파일**                                        |
+| devDependencies       | 7개 (typescript, tsx, vitest, oxlint, oxfmt, @types/node, @typescript/native-preview)           |
+| 프로덕션 dependencies | 0개 (Phase 0에서는 런타임 의존성 없음)                                                          |
 | Docker/CI 파일        | Dockerfile + docker-compose.yml + .dockerignore + deploy.yml + build-docker.sh = 5개 (~185 LOC) |
 
 ---
@@ -726,32 +726,32 @@ jobs:
 
 ### 도구 버전 테이블
 
-| 도구 | package.json 범위 | 최신 버전 | 상태 | 비고 |
-|------|-------------------|-----------|------|------|
-| Node.js | >=22.0.0 | 22.20.0 | Maintenance LTS (EOL 2027.04) | `node:sqlite` experimental 내장 |
-| TypeScript | ^5.9.3 | 5.9.3 | Stable | TS 6 beta (2026.02), 마지막 JS 기반 |
-| tsgo | 7.0.0-dev.20260209.1 | 7.0.0 | Stable (2026.01.15) | npm: `@typescript/native-preview` |
-| pnpm | 10.4.1 (packageManager) | 10.30+ | Stable | minimumReleaseAge (10.16+) |
-| Vitest | ^4.0.18 | 4.0.18 | Stable | Browser Mode 안정화, V8 커버리지 |
-| oxlint | ^1.43.0 | 1.49+ | Stable (v1 GA, 2025.06) | 695+ 규칙, type-aware alpha |
-| oxfmt | ^0.28.0 | 0.35.0 | Alpha | beta 예상 2026 중반 |
-| lefthook | ^2.1.0 (추가 예정) | 2.1.1 | Stable | Go 바이너리, 병렬 실행 |
-| tsx | ^4.21.0 | 4.21+ | Stable | dev 서버용 |
+| 도구       | package.json 범위       | 최신 버전 | 상태                          | 비고                                |
+| ---------- | ----------------------- | --------- | ----------------------------- | ----------------------------------- |
+| Node.js    | >=22.0.0                | 22.20.0   | Maintenance LTS (EOL 2027.04) | `node:sqlite` experimental 내장     |
+| TypeScript | ^5.9.3                  | 5.9.3     | Stable                        | TS 6 beta (2026.02), 마지막 JS 기반 |
+| tsgo       | 7.0.0-dev.20260209.1    | 7.0.0     | Stable (2026.01.15)           | npm: `@typescript/native-preview`   |
+| pnpm       | 10.4.1 (packageManager) | 10.30+    | Stable                        | minimumReleaseAge (10.16+)          |
+| Vitest     | ^4.0.18                 | 4.0.18    | Stable                        | Browser Mode 안정화, V8 커버리지    |
+| oxlint     | ^1.43.0                 | 1.49+     | Stable (v1 GA, 2025.06)       | 695+ 규칙, type-aware alpha         |
+| oxfmt      | ^0.28.0                 | 0.35.0    | Alpha                         | beta 예상 2026 중반                 |
+| lefthook   | ^2.1.0 (추가 예정)      | 2.1.1     | Stable                        | Go 바이너리, 병렬 실행              |
+| tsx        | ^4.21.0                 | 4.21+     | Stable                        | dev 서버용                          |
 
 ### 기술 결정 로그
 
-| # | 결정 | 채택 | 보류 대안 | 근거 | 재검토 시점 |
-|---|------|------|----------|------|------------|
-| D-01 | 패키지 매니저 | pnpm 10 | npm, yarn, bun | 엄격한 deps, 워크스페이스, 보안 기본값 | -- |
-| D-02 | 린터 | oxlint | ESLint, Biome | 50~100x 속도, ESLint 호환, VoidZero 생태계 | -- |
-| D-03 | 포매터 | oxfmt (alpha) | Prettier, Biome | 30x 속도, oxlint과 동일 생태계 | **oxfmt beta 릴리스 시** |
-| D-04 | 타입체크 | tsgo (TS 7.0) | tsc --noEmit | 7~10x 빠름, 2026.01 stable, emit 미완성 | **emit 안정화 시** |
-| D-05 | 테스트 | Vitest 4 | Jest | ESM 네이티브, 빠른 HMR, V8 커버리지 | -- |
-| D-06 | Git hooks | lefthook | husky+lint-staged | Go 바이너리, 병렬 실행, npm 1개 의존성 | -- |
-| D-07 | 커밋 검증 | 인라인 regex | commitlint | 의존성 3개 절약, 기본 검증에 충분 | **팀 규모 확대 시** |
-| D-08 | 버전 고정 | .node-version + corepack | mise (.mise.toml) | 범용, 추가 도구 불필요 | **팀 규모 확대 시** |
-| D-09 | CI | GitHub Actions (단일 Job) | CircleCI | 무료, GitHub 네이티브, 공식 pnpm Action | **Phase 5+ e2e Job 추가** |
-| D-10 | 모노레포 도구 | pnpm 워크스페이스 | Turborepo, Nx | 7개 패키지 규모에 pnpm 네이티브로 충분 | **패키지 10+ 시** |
+| #    | 결정          | 채택                      | 보류 대안         | 근거                                       | 재검토 시점               |
+| ---- | ------------- | ------------------------- | ----------------- | ------------------------------------------ | ------------------------- |
+| D-01 | 패키지 매니저 | pnpm 10                   | npm, yarn, bun    | 엄격한 deps, 워크스페이스, 보안 기본값     | --                        |
+| D-02 | 린터          | oxlint                    | ESLint, Biome     | 50~100x 속도, ESLint 호환, VoidZero 생태계 | --                        |
+| D-03 | 포매터        | oxfmt (alpha)             | Prettier, Biome   | 30x 속도, oxlint과 동일 생태계             | **oxfmt beta 릴리스 시**  |
+| D-04 | 타입체크      | tsgo (TS 7.0)             | tsc --noEmit      | 7~10x 빠름, 2026.01 stable, emit 미완성    | **emit 안정화 시**        |
+| D-05 | 테스트        | Vitest 4                  | Jest              | ESM 네이티브, 빠른 HMR, V8 커버리지        | --                        |
+| D-06 | Git hooks     | lefthook                  | husky+lint-staged | Go 바이너리, 병렬 실행, npm 1개 의존성     | --                        |
+| D-07 | 커밋 검증     | 인라인 regex              | commitlint        | 의존성 3개 절약, 기본 검증에 충분          | **팀 규모 확대 시**       |
+| D-08 | 버전 고정     | .node-version + corepack  | mise (.mise.toml) | 범용, 추가 도구 불필요                     | **팀 규모 확대 시**       |
+| D-09 | CI            | GitHub Actions (단일 Job) | CircleCI          | 무료, GitHub 네이티브, 공식 pnpm Action    | **Phase 5+ e2e Job 추가** |
+| D-10 | 모노레포 도구 | pnpm 워크스페이스         | Turborepo, Nx     | 7개 패키지 규모에 pnpm 네이티브로 충분     | **패키지 10+ 시**         |
 
 ### 업그레이드 감시 대상
 
@@ -766,47 +766,47 @@ jobs:
 
 ### Phase 1이 사용할 수 있는 인프라
 
-| 인프라 | 사용 방법 |
-|--------|----------|
-| TypeScript 빌드 | `pnpm build` → `dist/` 생성 |
-| 타입체크 | `pnpm typecheck` → tsgo 7~10x 빠른 검사 |
-| 유닛 테스트 | `src/**/*.test.ts` → `pnpm test` |
-| 스토리지 테스트 | `src/**/*.storage.test.ts` → `pnpm test:storage` |
-| 임시 DB 헬퍼 | `import { createTestDb } from '../test/helpers/test-db.js'` |
-| 비동기 폴링 | `import { poll } from '../test/helpers/poll.js'` |
-| 환경 격리 | `test/setup.ts` 자동 적용 (vitest.config.ts setupFiles) |
-| 린트 + 포매팅 | lefthook이 커밋 전 자동 검증 |
-| CI | push/PR 시 lint → format → typecheck → build → test 자동 실행 |
-| 커밋 규약 | Conventional Commits 형식 강제 (lefthook commit-msg) |
+| 인프라          | 사용 방법                                                     |
+| --------------- | ------------------------------------------------------------- |
+| TypeScript 빌드 | `pnpm build` → `dist/` 생성                                   |
+| 타입체크        | `pnpm typecheck` → tsgo 7~10x 빠른 검사                       |
+| 유닛 테스트     | `src/**/*.test.ts` → `pnpm test`                              |
+| 스토리지 테스트 | `src/**/*.storage.test.ts` → `pnpm test:storage`              |
+| 임시 DB 헬퍼    | `import { createTestDb } from '../test/helpers/test-db.js'`   |
+| 비동기 폴링     | `import { poll } from '../test/helpers/poll.js'`              |
+| 환경 격리       | `test/setup.ts` 자동 적용 (vitest.config.ts setupFiles)       |
+| 린트 + 포매팅   | lefthook이 커밋 전 자동 검증                                  |
+| CI              | push/PR 시 lint → format → typecheck → build → test 자동 실행 |
+| 커밋 규약       | Conventional Commits 형식 강제 (lefthook commit-msg)          |
 
 ### Phase 1에서 추가해야 할 것
 
-| 항목 | 설명 |
-|------|------|
+| 항목                     | 설명                                        |
+| ------------------------ | ------------------------------------------- |
 | `packages/types/` 채우기 | 전체 타입 계약 정의 (OpenClaw Phase 1 참조) |
-| `test/setup.ts` 확장 | 채널 스텁, 로깅 mock 등 필요 시 추가 |
-| `.env.example` 확장 | Phase 1에 필요한 환경변수 추가 |
+| `test/setup.ts` 확장     | 채널 스텁, 로깅 mock 등 필요 시 추가        |
+| `.env.example` 확장      | Phase 1에 필요한 환경변수 추가              |
 
 ### Phase 0 완료 조건
 
-| # | 조건 | 검증 방법 |
-|---|------|----------|
-| 1 | §7 체크리스트 전체 PASS | 전수 실행 |
-| 2 | Phase 0 커밋이 `main` 브랜치에 존재 | `git log --oneline -5` |
-| 3 | lefthook 훅 동작 | 의도적 린트 에러 커밋 → 중단 확인 |
-| 4 | Conventional Commits 강제 | `git commit -m "bad"` → 거부 확인 |
-| 5 | CI 워크플로우 동작 | GitHub Actions 탭에서 PASS 확인 |
+| #   | 조건                                | 검증 방법                         |
+| --- | ----------------------------------- | --------------------------------- |
+| 1   | §7 체크리스트 전체 PASS             | 전수 실행                         |
+| 2   | Phase 0 커밋이 `main` 브랜치에 존재 | `git log --oneline -5`            |
+| 3   | lefthook 훅 동작                    | 의도적 린트 에러 커밋 → 중단 확인 |
+| 4   | Conventional Commits 강제           | `git commit -m "bad"` → 거부 확인 |
+| 5   | CI 워크플로우 동작                  | GitHub Actions 탭에서 PASS 확인   |
 
 ---
 
 ## 부록 D: 미적용 도구 + 도입 시점
 
-| 도구 | 도입 시점 | 도입 조건 |
-|------|----------|----------|
-| oxlint type-aware | Phase 3 (config + CI) | `tsconfig.json` 통합, 43개 규칙 활성화 |
-| Changesets | Phase 20 (릴리스) | 패키지 npm 퍼블리싱 시작 시 |
-| Renovate/Dependabot | GitHub 레포 생성 후 | 자동 의존성 업데이트 |
-| Docker Compose 확장 | Phase 12+ | 외부 서비스 연동 필요 시 |
-| Branch Protection | 팀 개발 시작 시 | 1+ 리뷰어 필수, CI 통과 필수 |
-| commitlint | 팀 규모 확대 시 | shell regex → commitlint 전환 |
-| pnpm catalogs | 패키지 10+ 시 | 워크스페이스 간 버전 중앙 관리 |
+| 도구                | 도입 시점             | 도입 조건                              |
+| ------------------- | --------------------- | -------------------------------------- |
+| oxlint type-aware   | Phase 3 (config + CI) | `tsconfig.json` 통합, 43개 규칙 활성화 |
+| Changesets          | Phase 20 (릴리스)     | 패키지 npm 퍼블리싱 시작 시            |
+| Renovate/Dependabot | GitHub 레포 생성 후   | 자동 의존성 업데이트                   |
+| Docker Compose 확장 | Phase 12+             | 외부 서비스 연동 필요 시               |
+| Branch Protection   | 팀 개발 시작 시       | 1+ 리뷰어 필수, CI 통과 필수           |
+| commitlint          | 팀 규모 확대 시       | shell regex → commitlint 전환          |
+| pnpm catalogs       | 패키지 10+ 시         | 워크스페이스 간 버전 중앙 관리         |

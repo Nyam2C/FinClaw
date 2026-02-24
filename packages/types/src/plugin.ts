@@ -1,5 +1,5 @@
-import type { ChannelPlugin } from './channel.js';
 import type { ToolDefinition } from './agent.js';
+import type { ChannelPlugin } from './channel.js';
 
 /** 플러그인 매니페스트 */
 export interface PluginManifest {

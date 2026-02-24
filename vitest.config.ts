@@ -10,11 +10,6 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     pool: 'forks',
-    poolOptions: {
-      forks: {
-        execArgv: [],
-      },
-    },
     maxWorkers: isCI ? ciWorkers : localWorkers,
     hookTimeout: process.platform === 'win32' ? 60_000 : 30_000,
     include: ['packages/*/src/**/*.test.ts', 'packages/*/test/**/*.test.ts', 'test/**/*.test.ts'],

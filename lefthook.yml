@@ -1,0 +1,26 @@
+# lefthook.yml
+rc: ./.lefthookrc
+
+pre-commit:
+  parallel: true
+  commands:
+    lint:
+      glob: '*.{ts,mts,js,mjs}'
+      run: npx oxlint --config oxlintrc.json {staged_files}
+    format-check:
+      glob: '*.{ts,mts,js,mjs,json,yaml,yml,md}'
+      run: npx oxfmt --check {staged_files}
+    typecheck:
+      run: npx tsgo --noEmit
+
+commit-msg:
+  commands:
+    conventional:
+      run: |
+        MSG=$(head -1 .git/COMMIT_EDITMSG)
+        if ! echo "$MSG" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?: .{1,}'; then
+          echo "ERROR: Commit message must follow Conventional Commits format"
+          echo "  e.g., feat(agent): add tool registration"
+          echo "  e.g., fix: resolve sqlite connection leak"
+          exit 1
+        fi

@@ -1,5 +1,5 @@
-import type { SessionKey, Timestamp, AgentId } from './common.js';
 import type { ConversationMessage } from './agent.js';
+import type { SessionKey, Timestamp, AgentId } from './common.js';
 
 /** 스토리지 어댑터 인터페이스 */
 export interface StorageAdapter {

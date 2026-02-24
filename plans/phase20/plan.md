@@ -837,6 +837,7 @@ buildSkills({ skillFilter, outDir });
 | **Phase 14** (스토리지)      | SQLite `DatabaseSync`                        | DB 헬스 체크, Graceful Shutdown 시 DB 닫기     |
 | **Phase 15** (크론)          | 크론 스케줄러                                | Graceful Shutdown 시 크론 정지                 |
 | **Phase 16-18** (금융 스킬)  | 시장/뉴스/알림 스킬                          | 스킬 빌드 시스템 대상                          |
+
 ### 직접 의존 관계
 
 ```
@@ -886,16 +887,16 @@ pnpm vitest run src/infra/__tests__/health.test.ts src/infra/__tests__/shutdown.
 
 ## 8. 복잡도 및 예상 파일 수
 
-| 항목               | 값                                                    |
-| ------------------ | ----------------------------------------------------- |
-| **복잡도**         | **M** (Medium)                                        |
-| **소스 파일**      | 8개                                                   |
-| **테스트 파일**    | 3개                                                   |
-| **총 파일 수**     | **11개**                                              |
-| **예상 LOC**       | ~860                                                  |
-| **예상 소요 기간** | 2-3일                                                 |
-| **새 외부 의존성** | 없음 (GitHub Actions는 인프라 도구)                   |
-| **인프라 파일**    | 1 GitHub Actions (release.yml)                        |
+| 항목               | 값                                  |
+| ------------------ | ----------------------------------- |
+| **복잡도**         | **M** (Medium)                      |
+| **소스 파일**      | 8개                                 |
+| **테스트 파일**    | 3개                                 |
+| **총 파일 수**     | **11개**                            |
+| **예상 LOC**       | ~860                                |
+| **예상 소요 기간** | 2-3일                               |
+| **새 외부 의존성** | 없음 (GitHub Actions는 인프라 도구) |
+| **인프라 파일**    | 1 GitHub Actions (release.yml)      |
 
 ### 복잡도 근거 (M 판정)
 
@@ -905,15 +906,15 @@ pnpm vitest run src/infra/__tests__/health.test.ts src/infra/__tests__/shutdown.
 
 ### OpenClaw 대비 축소 범위
 
-| OpenClaw 기능             | FinClaw 포함 여부      | 비고                                       |
-| ------------------------- | ---------------------- | ------------------------------------------ |
-| 29개 extensions 패키지    | 1개 템플릿             | 예제만 제공, 실제 플러그인은 커뮤니티 개발 |
-| 6개 GitHub Actions        | 1개 (release) + deploy는 Phase 0 | ci.yml은 Phase 3에서 이미 구축   |
-| 4개 Dockerfile            | Phase 0에서 구축                  | sandbox, browser 제외            |
-| 52개 스킬 빌드            | 3개 금융 스킬          | market, news, alerts                       |
-| Bun 호환성                | 제외                   | Node.js 22+ 전용                           |
-| Calendar Versioning       | 포함                   | YYYY.M.D 형식                              |
-| 패치 시스템 (postinstall) | 제외                   | 단일 패키지이므로 불필요                   |
-| Mintlify 문서 사이트      | 제외                   | README + 인라인 JSDoc으로 대체             |
-| Chrome Extension          | 제외                   | 웹 UI로 대체                               |
-| macOS/iOS/Android 앱      | 제외                   | 서버 + Discord + 웹으로 충분               |
+| OpenClaw 기능             | FinClaw 포함 여부                | 비고                                       |
+| ------------------------- | -------------------------------- | ------------------------------------------ |
+| 29개 extensions 패키지    | 1개 템플릿                       | 예제만 제공, 실제 플러그인은 커뮤니티 개발 |
+| 6개 GitHub Actions        | 1개 (release) + deploy는 Phase 0 | ci.yml은 Phase 3에서 이미 구축             |
+| 4개 Dockerfile            | Phase 0에서 구축                 | sandbox, browser 제외                      |
+| 52개 스킬 빌드            | 3개 금융 스킬                    | market, news, alerts                       |
+| Bun 호환성                | 제외                             | Node.js 22+ 전용                           |
+| Calendar Versioning       | 포함                             | YYYY.M.D 형식                              |
+| 패치 시스템 (postinstall) | 제외                             | 단일 패키지이므로 불필요                   |
+| Mintlify 문서 사이트      | 제외                             | README + 인라인 JSDoc으로 대체             |
+| Chrome Extension          | 제외                             | 웹 UI로 대체                               |
+| macOS/iOS/Android 앱      | 제외                             | 서버 + Discord + 웹으로 충분               |
