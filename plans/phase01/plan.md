@@ -2,7 +2,7 @@
 
 ## 1. 목표
 
-FinClaw 전체 시스템의 계약(contract)을 정의하는 TypeScript 인터페이스/타입 모듈을 구축한다. OpenClaw에서 23개 이상의 타입 파일(config 30개 + agents + channels 등)에 분산된 타입 정의를 FinClaw의 단일 `src/types/` 디렉토리에 응집시키고, 금융 도메인(시장 데이터, 뉴스, 알림, 포트폴리오) 전용 타입을 추가한다.
+FinClaw 전체 시스템의 계약(contract)을 정의하는 TypeScript 인터페이스/타입 모듈을 구축한다. OpenClaw에서 23개 이상의 타입 파일(config 30개 + agents + channels 등)에 분산된 타입 정의를 FinClaw의 단일 `packages/types/src/` 디렉토리에 응집시키고, 금융 도메인(시장 데이터, 뉴스, 알림, 포트폴리오) 전용 타입을 추가한다.
 
 이 Phase의 산출물은 이후 모든 Phase에서 import되는 기반이므로, **인터페이스 안정성**이 최우선이다. 구현 코드 없이 순수 타입만 정의하여, 변경 시 런타임 영향이 없도록 설계한다.
 
@@ -28,33 +28,108 @@ FinClaw 전체 시스템의 계약(contract)을 정의하는 TypeScript 인터�
 
 ---
 
+## 2.1 현재 상태 및 잔여 작업
+
+### 구현 완료 파일 (10개)
+
+Phase 0에서 모노레포 전환 시 아래 소스 파일이 이미 구현되었다.
+
+| 파일                            | LOC     | 상태   |
+| ------------------------------- | ------- | ------ |
+| `packages/types/src/common.ts`  | 54      | 구현됨 |
+| `packages/types/src/config.ts`  | 163     | 구현됨 |
+| `packages/types/src/message.ts` | 94      | 구현됨 |
+| `packages/types/src/agent.ts`   | 89      | 구현됨 |
+| `packages/types/src/channel.ts` | 56      | 구현됨 |
+| `packages/types/src/skill.ts`   | 64      | 구현됨 |
+| `packages/types/src/storage.ts` | 53      | 구현됨 |
+| `packages/types/src/plugin.ts`  | 65      | 구현됨 |
+| `packages/types/src/gateway.ts` | 109     | 구현됨 |
+| `packages/types/src/finance.ts` | 211     | 구현됨 |
+| **합계**                        | **958** |        |
+
+`index.ts`는 현재 스텁 (`export type TODO = 'stub'`) 상태.
+
+### 잔여 작업
+
+| #   | 작업                                                  | 관련 섹션 |
+| --- | ----------------------------------------------------- | --------- |
+| R1  | `index.ts` barrel export 구현                         | §5.1      |
+| R2  | `common.ts`: `AsyncDisposable` → `CleanupFn` 리네이밍 | §4.1      |
+| R3  | `common.ts`: `ErrorReason`, `FinClawError` 추가       | §4.1      |
+| R4  | `config.ts`: `ConfigIoDeps` DI 인터페이스 추가        | §4.2      |
+| R5  | `channel.ts`: `CleanupFn` import 반영                 | §4.5      |
+| R6  | 테스트 파일 4개 작성                                  | §3, §7    |
+| R7  | typecheck / build / lint / test 검증                  | §7        |
+
+### 패키지 디렉토리 구조
+
+```
+packages/types/
+├── package.json
+├── tsconfig.json
+├── src/
+│   ├── index.ts          ← barrel (스텁 → 구현 필요)
+│   ├── common.ts
+│   ├── config.ts
+│   ├── message.ts
+│   ├── agent.ts
+│   ├── channel.ts
+│   ├── skill.ts
+│   ├── storage.ts
+│   ├── plugin.ts
+│   ├── gateway.ts
+│   └── finance.ts
+└── test/
+    ├── config.test.ts    ← 신규
+    ├── message.test.ts   ← 신규
+    ├── finance.test.ts   ← 신규
+    └── type-safety.test.ts ← 신규
+```
+
+### 패키지 의존성 DAG
+
+```
+types (이 패키지, 순수 타입)
+  ↑
+  ├── config
+  ├── storage
+  ├── agent
+  ├── channel-discord
+  ├── skills-finance
+  └── server (모든 패키지 의존)
+```
+
+---
+
 ## 3. 생성할 파일
 
 ### 소스 파일 (11개)
 
-| 파일 경로              | 역할                                                          | 예상 LOC |
-| ---------------------- | ------------------------------------------------------------- | -------- |
-| `src/types/index.ts`   | Barrel export -- 모든 타입 모듈의 공개 API 진입점             | ~30      |
-| `src/types/common.ts`  | 공유 유틸리티 타입 (Brand, Opaque, DeepPartial, Result 등)    | ~80      |
-| `src/types/config.ts`  | FinClawConfig 루트 타입 및 하위 설정 타입                     | ~150     |
-| `src/types/message.ts` | Message, MsgContext, ChatType, ReplyPayload                   | ~120     |
-| `src/types/agent.ts`   | AgentProfile, ModelRef, AuthProfile, AgentRunParams           | ~100     |
-| `src/types/channel.ts` | ChannelPlugin, ChannelDock, ChannelCapabilities               | ~120     |
-| `src/types/skill.ts`   | SkillDefinition, SkillContext, SkillResult                    | ~80      |
-| `src/types/storage.ts` | StorageAdapter, MemoryEntry, SearchResult, ConversationRecord | ~90      |
-| `src/types/plugin.ts`  | PluginManifest, PluginRegistry, PluginHook, PluginSlot        | ~80      |
-| `src/types/gateway.ts` | RpcMethod, RpcRequest, RpcResponse, WsEvent                   | ~100     |
-| `src/types/finance.ts` | MarketData, NewsItem, Alert, Portfolio, FinancialInstrument   | ~150     |
+| 파일 경로                       | 역할                                                          | 예상 LOC |
+| ------------------------------- | ------------------------------------------------------------- | -------- |
+| `packages/types/src/index.ts`   | Barrel export -- 모든 타입 모듈의 공개 API 진입점             | ~30      |
+| `packages/types/src/common.ts`  | 공유 유틸리티 타입 (Brand, Opaque, DeepPartial, Result 등)    | ~80      |
+| `packages/types/src/config.ts`  | FinClawConfig 루트 타입 및 하위 설정 타입                     | ~150     |
+| `packages/types/src/message.ts` | Message, MsgContext, ChatType, ReplyPayload                   | ~120     |
+| `packages/types/src/agent.ts`   | AgentProfile, ModelRef, AuthProfile, AgentRunParams           | ~100     |
+| `packages/types/src/channel.ts` | ChannelPlugin, ChannelDock, ChannelCapabilities               | ~120     |
+| `packages/types/src/skill.ts`   | SkillDefinition, SkillContext, SkillResult                    | ~80      |
+| `packages/types/src/storage.ts` | StorageAdapter, MemoryEntry, SearchResult, ConversationRecord | ~90      |
+| `packages/types/src/plugin.ts`  | PluginManifest, PluginRegistry, PluginHook, PluginSlot        | ~80      |
+| `packages/types/src/gateway.ts` | RpcMethod, RpcRequest, RpcResponse, WsEvent                   | ~100     |
+| `packages/types/src/finance.ts` | MarketData, NewsItem, Alert, Portfolio, FinancialInstrument   | ~150     |
 
-### 테스트 파일 (3개)
+### 테스트 파일 (4개)
 
-| 파일 경로                    | 검증 대상                                           | 예상 LOC |
-| ---------------------------- | --------------------------------------------------- | -------- |
-| `test/types/config.test.ts`  | 설정 타입의 구조적 호환성, 필수 필드 검증           | ~80      |
-| `test/types/message.test.ts` | 메시지 타입의 ChatType 열거형, MsgContext 필드 검증 | ~60      |
-| `test/types/finance.test.ts` | 금융 도메인 타입의 브랜드 타입 안전성, 단위 변환    | ~80      |
+| 파일 경로                                 | 검증 대상                                               | 예상 LOC |
+| ----------------------------------------- | ------------------------------------------------------- | -------- |
+| `packages/types/test/config.test.ts`      | 설정 타입의 구조적 호환성, 필수 필드 검증               | ~80      |
+| `packages/types/test/message.test.ts`     | 메시지 타입의 ChatType 열거형, MsgContext 필드 검증     | ~60      |
+| `packages/types/test/finance.test.ts`     | 금융 도메인 타입의 브랜드 타입 안전성, 단위 변환        | ~80      |
+| `packages/types/test/type-safety.test.ts` | Brand 타입 안전성, `expectTypeOf` 활용 컴파일 타임 검증 | ~60      |
 
-**총 파일 수:** 14개 (소스 11 + 테스트 3)
+**총 파일 수:** 15개 (소스 11 + 테스트 4)
 
 ---
 
@@ -63,7 +138,7 @@ FinClaw 전체 시스템의 계약(contract)을 정의하는 TypeScript 인터�
 ### 4.1 공통 유틸리티 타입 (`common.ts`)
 
 ```typescript
-// src/types/common.ts
+// packages/types/src/common.ts
 
 /** 브랜드 타입 -- 원시 타입에 의미론적 구분 부여 */
 export type Brand<T, B extends string> = T & { readonly __brand: B };
@@ -96,17 +171,40 @@ export type AgentId = Brand<string, 'AgentId'>;
 /** 채널 ID */
 export type ChannelId = Brand<string, 'ChannelId'>;
 
-/** 비동기 정리 함수 */
-export type AsyncDisposable = () => Promise<void>;
+/**
+ * 비동기 정리 함수 -- TC39 `Symbol.asyncDispose`와 이름 충돌 방지를 위해
+ * `AsyncDisposable` 대신 `CleanupFn`으로 명명.
+ */
+export type CleanupFn = () => Promise<void>;
 
 /** 로그 레벨 */
 export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
+
+// ─── 에러 타입 ───
+
+/** 에러 분류 -- FinClaw 시스템 전역에서 사용 */
+export type ErrorReason =
+  | 'CONFIG_INVALID' // 설정 파싱/검증 실패
+  | 'CHANNEL_OFFLINE' // 채널 연결 불가
+  | 'AGENT_TIMEOUT' // 에이전트 응답 초과
+  | 'STORAGE_FAILURE' // 스토리지 읽기/쓰기 실패
+  | 'RATE_LIMITED' // 외부 API 속도 제한
+  | 'AUTH_FAILURE' // 인증/인가 실패
+  | 'INTERNAL'; // 분류 불가 내부 에러
+
+/** 구조화된 에러 인터페이스 */
+export interface FinClawError {
+  reason: ErrorReason;
+  message: string;
+  cause?: unknown;
+  timestamp: Timestamp;
+}
 ```
 
 ### 4.2 설정 타입 (`config.ts`)
 
 ```typescript
-// src/types/config.ts
+// packages/types/src/config.ts
 import type { AgentId, ChannelId, LogLevel, DeepPartial } from './common.js';
 
 /** FinClaw 루트 설정 타입 -- OpenClaw의 OpenClawConfig 대응 */
@@ -278,12 +376,26 @@ export type ConfigChangeEvent = {
   current: FinClawConfig;
   changedPaths: string[];
 };
+
+/** 설정 I/O 의존성 -- OpenClaw ConfigIoDeps 축소판 (DI용) */
+export interface ConfigIoDeps {
+  /** 설정 파일 읽기 */
+  readFile(path: string): Promise<string>;
+  /** 설정 파일 쓰기 */
+  writeFile(path: string, content: string): Promise<void>;
+  /** 파일 존재 여부 확인 */
+  exists(path: string): Promise<boolean>;
+  /** 환경 변수 조회 */
+  env(key: string): string | undefined;
+  /** 로그 출력 */
+  log(level: import('./common.js').LogLevel, message: string): void;
+}
 ```
 
 ### 4.3 메시지 타입 (`message.ts`)
 
 ```typescript
-// src/types/message.ts
+// packages/types/src/message.ts
 import type { ChannelId, SessionKey, Timestamp, AgentId } from './common.js';
 
 /** 정규화된 채팅 유형 -- OpenClaw의 NormalizedChatType 대응 */
@@ -390,7 +502,7 @@ export interface OutboundMessage {
 ### 4.4 에이전트 타입 (`agent.ts`)
 
 ```typescript
-// src/types/agent.ts
+// packages/types/src/agent.ts
 import type { AgentId, SessionKey } from './common.js';
 
 /** 에이전트 프로필 */
@@ -484,8 +596,8 @@ export interface TokenUsage {
 ### 4.5 채널 타입 (`channel.ts`)
 
 ```typescript
-// src/types/channel.ts
-import type { ChannelId, AsyncDisposable } from './common.js';
+// packages/types/src/channel.ts
+import type { ChannelId, CleanupFn } from './common.js';
 import type { InboundMessage, OutboundMessage, ReplyPayload } from './message.js';
 
 /** 채널 플러그인 -- OpenClaw ChannelPlugin<ResolvedAccount> 대응 */
@@ -495,10 +607,10 @@ export interface ChannelPlugin<TAccount = unknown> {
   capabilities: ChannelCapabilities;
 
   /** 채널 초기화 */
-  setup?(config: TAccount): Promise<AsyncDisposable>;
+  setup?(config: TAccount): Promise<CleanupFn>;
 
   /** 메시지 수신 핸들러 등록 */
-  onMessage?(handler: (msg: InboundMessage) => Promise<void>): AsyncDisposable;
+  onMessage?(handler: (msg: InboundMessage) => Promise<void>): CleanupFn;
 
   /** 메시지 전송 */
   send?(msg: OutboundMessage): Promise<void>;
@@ -554,7 +666,7 @@ export interface OutboundLimits {
 ### 4.6 스킬 타입 (`skill.ts`)
 
 ```typescript
-// src/types/skill.ts
+// packages/types/src/skill.ts
 import type { MsgContext } from './message.js';
 
 /** 스킬 정의 */
@@ -623,7 +735,7 @@ export interface SkillMedia {
 ### 4.7 스토리지 타입 (`storage.ts`)
 
 ```typescript
-// src/types/storage.ts
+// packages/types/src/storage.ts
 import type { SessionKey, Timestamp, AgentId } from './common.js';
 import type { ConversationMessage } from './agent.js';
 
@@ -694,7 +806,7 @@ export interface SearchResult {
 ### 4.8 플러그인 타입 (`plugin.ts`)
 
 ```typescript
-// src/types/plugin.ts
+// packages/types/src/plugin.ts
 import type { ChannelPlugin } from './channel.js';
 import type { ToolDefinition } from './agent.js';
 
@@ -764,7 +876,7 @@ export interface PluginCommand {
 ### 4.9 게이트웨이 타입 (`gateway.ts`)
 
 ```typescript
-// src/types/gateway.ts
+// packages/types/src/gateway.ts
 
 /** RPC 메서드 이름 */
 export type RpcMethod =
@@ -880,7 +992,7 @@ export interface GatewayStatus {
 ### 4.10 금융 도메인 타입 (`finance.ts`)
 
 ```typescript
-// src/types/finance.ts
+// packages/types/src/finance.ts
 import type { Brand, Timestamp } from './common.js';
 
 // ─── 금융 상품 식별 ───
@@ -1100,10 +1212,10 @@ export interface PortfolioSummary {
 
 ### 5.1 Barrel Export 패턴
 
-`src/types/index.ts`는 OpenClaw의 `config.ts`(14줄) barrel과 동일한 패턴을 따른다. 모든 외부 모듈은 이 단일 진입점만 import한다.
+`packages/types/src/index.ts`는 OpenClaw의 `config.ts`(14줄) barrel과 동일한 패턴을 따른다. 모든 외부 모듈은 이 단일 진입점만 import한다.
 
 ```typescript
-// src/types/index.ts
+// packages/types/src/index.ts
 export type * from './common.js';
 export type * from './config.js';
 export type * from './message.js';
@@ -1117,14 +1229,27 @@ export type * from './finance.js';
 
 // 런타임 값 (const enum 대체)
 export { RPC_ERROR_CODES } from './gateway.js';
+
+// 브랜드 팩토리 함수
+export { createTimestamp, createSessionKey, createAgentId, createChannelId } from './common.js';
+
+export { createTickerSymbol, createCurrencyCode } from './finance.js';
 ```
+
+> **폴백:** `export type *` 구문이 tsgo에서 문제를 일으킬 경우, 각 모듈에서 명시적으로 re-export한다:
+>
+> ```typescript
+> export type { Brand, Opaque, Result, ... } from './common.js';
+> export type { FinClawConfig, GatewayConfig, ... } from './config.js';
+> // ...
+> ```
 
 ### 5.2 Brand 타입 팩토리 함수
 
 `common.ts`에 브랜드 타입 생성 헬퍼를 포함한다. 런타임에서 타입 안전성을 강제하기 위한 유일한 런타임 코드이다.
 
 ```typescript
-// src/types/common.ts (추가)
+// packages/types/src/common.ts (추가)
 
 /** 브랜드 타입 팩토리 */
 export function createTimestamp(ms: number): Timestamp {
@@ -1149,7 +1274,7 @@ export function createChannelId(id: string): ChannelId {
 `finance.ts`에 브랜드 타입 생성 및 유효성 검증 함수를 포함한다.
 
 ```typescript
-// src/types/finance.ts (추가)
+// packages/types/src/finance.ts (추가)
 
 /** 티커 심볼 생성 (대문자 정규화) */
 export function createTickerSymbol(symbol: string): TickerSymbol {
@@ -1192,17 +1317,34 @@ export function createCurrencyCode(code: string): CurrencyCode {
               [채널 전송]          [WebSocket 클라이언트]
 ```
 
+### 5.5 `Result<T, E>` 사용 가이드라인
+
+- **내부 코드** (storage, config loader 등): `Result<T, FinClawError>` 반환으로 명시적 에러 전파
+- **외부 프로토콜** (JSON-RPC, WebSocket): 기존 `RpcError`, `isError` 필드 유지 (프로토콜 호환)
+- `Result`를 반환하는 함수는 `throw`하지 않는다. 반대로 `throw`하는 함수는 `Result`를 반환하지 않는다. 혼용 금지.
+
+### 5.6 TypeScript 호환 규칙
+
+| 규칙                              | 이유                                    |
+| --------------------------------- | --------------------------------------- |
+| `target: "es2023"`                | Node.js 22 기본 지원 범위               |
+| import 경로에 `.js` 확장자 사용   | ESM 필수, tsc/tsgo 모두 호환            |
+| `const enum` 미사용               | `--isolatedModules` 비호환, tsgo 미지원 |
+| `namespace` 미사용                | 번들러 tree-shaking 불가                |
+| `declare module` 전역 확장 미사용 | 모듈 경계 침범 방지                     |
+
 ---
 
 ## 6. 선행 조건
 
-| 조건                       | 상태 | 비고                                |
-| -------------------------- | ---- | ----------------------------------- |
-| Phase 0: 프로젝트 스캐폴딩 | 완료 | tsc, tsgo, vitest, oxlint 설정됨    |
-| `src/` 디렉토리 존재       | 완료 | 현재 index.ts, entry.ts 존재        |
-| TypeScript strict mode     | 완료 | tsconfig.json에 `"strict": true`    |
-| ESM 모듈 시스템            | 완료 | `"type": "module"` in package.json  |
-| Node.js 22+                | 완료 | `"engines": { "node": ">=22.0.0" }` |
+| 조건                          | 상태 | 비고                                  |
+| ----------------------------- | ---- | ------------------------------------- |
+| Phase 0: 프로젝트 스캐폴딩    | 완료 | tsc, tsgo, vitest, oxlint 설정됨      |
+| `packages/types/src/` 소스    | 완료 | 10개 소스 파일 구현됨 (~958 LOC)      |
+| TypeScript strict mode        | 완료 | tsconfig.base.json에 `"strict": true` |
+| ESM 모듈 시스템               | 완료 | `"type": "module"` in package.json    |
+| Node.js 22+                   | 완료 | `"engines": { "node": ">=22.0.0" }`   |
+| 도구: TS 5.9.3 + tsgo 7.0-dev | 완료 | tsc (빌드/선언), tsgo (빠른 타입체크) |
 
 **외부 의존성:** 없음. 이 Phase는 순수 TypeScript 타입 정의만 포함하며 런타임 의존성이 불필요하다.
 
@@ -1212,39 +1354,42 @@ export function createCurrencyCode(code: string): CurrencyCode {
 
 ### 산출물 목록
 
-| #   | 산출물                            | 검증 방법                                                           |
-| --- | --------------------------------- | ------------------------------------------------------------------- |
-| 1   | `src/types/` 디렉토리 (11개 파일) | `pnpm typecheck` 통과                                               |
-| 2   | 모든 타입의 barrel export         | `import type { ... } from './types/index.js'`가 모든 타입 접근 가능 |
-| 3   | Brand 타입 팩토리 함수            | 단위 테스트에서 타입 안전성 검증                                    |
-| 4   | 금융 도메인 타입                  | `finance.test.ts`에서 TickerSymbol, CurrencyCode 생성/검증          |
-| 5   | 테스트 파일 (3개)                 | `pnpm test` 통과                                                    |
+| #   | 산출물                                     | 검증 방법                                                         |
+| --- | ------------------------------------------ | ----------------------------------------------------------------- |
+| 1   | `packages/types/src/` 디렉토리 (11개 파일) | `pnpm typecheck` 통과                                             |
+| 2   | 모든 타입의 barrel export                  | `import type { ... } from '@finclaw/types'`가 모든 타입 접근 가능 |
+| 3   | Brand 타입 팩토리 함수                     | 단위 테스트에서 타입 안전성 검증                                  |
+| 4   | 금융 도메인 타입                           | `finance.test.ts`에서 TickerSymbol, CurrencyCode 생성/검증        |
+| 5   | 테스트 파일 (4개)                          | `pnpm test` 통과                                                  |
 
 ### 검증 기준
 
 ```bash
-# 1. 타입 체크 통과
+# 1. 타입 체크 (tsgo -- 빠른 검증)
 pnpm typecheck       # tsgo --noEmit: 에러 0
 
-# 2. 빌드 통과
-pnpm build           # tsc: dist/ 에 .d.ts 생성 확인
+# 2. 빌드 (tsc -- .d.ts 생성 + 크로스 검증)
+pnpm build           # tsc --build: dist/ 에 .d.ts 생성 확인
 
-# 3. 단위 테스트 통과
-pnpm test            # vitest: 3개 테스트 파일 전체 통과
+# 3. tsgo/tsc 크로스 검증
+# tsgo와 tsc 모두 에러 0인지 확인 (동작 차이 조기 발견)
 
-# 4. 린트 통과
+# 4. 단위 테스트 통과
+pnpm test            # vitest: 4개 테스트 파일 전체 통과
+
+# 5. 린트 통과
 pnpm lint            # oxlint: 경고/에러 0
 
-# 5. 순환 의존 없음
+# 6. 순환 의존 없음
 # 모든 import가 단방향 DAG 구조 유지
 ```
 
 ### 테스트 예시
 
 ```typescript
-// test/types/finance.test.ts
+// packages/types/test/finance.test.ts
 import { describe, it, expect } from 'vitest';
-import { createTickerSymbol, createCurrencyCode } from '../../src/types/finance.js';
+import { createTickerSymbol, createCurrencyCode } from '@finclaw/types';
 
 describe('TickerSymbol', () => {
   it('대문자로 정규화한다', () => {
@@ -1271,21 +1416,42 @@ describe('CurrencyCode', () => {
 });
 ```
 
+```typescript
+// packages/types/test/type-safety.test.ts
+import { describe, it, expectTypeOf } from 'vitest';
+import type { Timestamp, SessionKey, AgentId, ChannelId } from '@finclaw/types';
+import { createTimestamp, createSessionKey } from '@finclaw/types';
+
+describe('Brand 타입 안전성', () => {
+  it('Timestamp는 number에 할당 불가', () => {
+    const ts = createTimestamp(Date.now());
+    expectTypeOf(ts).toMatchTypeOf<Timestamp>();
+    // @ts-expect-error -- Brand 타입은 plain number에 할당 불가
+    const n: number = ts; // 컴파일 에러 확인용
+  });
+
+  it('서로 다른 Brand 타입은 호환되지 않는다', () => {
+    expectTypeOf<SessionKey>().not.toMatchTypeOf<AgentId>();
+    expectTypeOf<AgentId>().not.toMatchTypeOf<ChannelId>();
+  });
+});
+```
+
 ---
 
 ## 8. 복잡도 및 예상 파일 수
 
-| 항목              | 값                    |
-| ----------------- | --------------------- |
-| **복잡도**        | **M (Medium)**        |
-| 소스 파일         | 11개                  |
-| 테스트 파일       | 3개                   |
-| **총 파일 수**    | **14개**              |
-| 예상 LOC (소스)   | ~1,100줄              |
-| 예상 LOC (테스트) | ~220줄                |
-| 예상 작업 시간    | 2-3시간               |
-| 런타임 의존성     | 0개                   |
-| 난이도            | 낮음 (순수 타입 정의) |
+| 항목              | 값                                     |
+| ----------------- | -------------------------------------- |
+| **복잡도**        | **M (Medium)**                         |
+| 소스 파일         | 11개 (10개 구현 완료, barrel 1개 잔여) |
+| 테스트 파일       | 4개                                    |
+| **총 파일 수**    | **15개**                               |
+| 현재 LOC (소스)   | ~958줄 (구현됨) + ~75줄 (보강 예정)    |
+| 예상 LOC (테스트) | ~280줄                                 |
+| 잔여 작업 시간    | 1-1.5시간 (보강 + 테스트만)            |
+| 런타임 의존성     | 0개                                    |
+| 난이도            | 낮음 (순수 타입 정의)                  |
 
 **위험 요소:**
 
