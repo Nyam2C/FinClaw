@@ -12,8 +12,12 @@ function cleanup(signal) {
   }
 }
 
-process.on('SIGINT', () => { cleanup('SIGINT'); });
-process.on('SIGTERM', () => { cleanup('SIGTERM'); });
+process.on('SIGINT', () => {
+  cleanup('SIGINT');
+});
+process.on('SIGTERM', () => {
+  cleanup('SIGTERM');
+});
 
 /** @param {string} label @param {string[]} args */
 function run(label, args) {
@@ -24,10 +28,9 @@ function run(label, args) {
       shell: true,
       env: {
         ...process.env,
-        NODE_OPTIONS: [
-          process.env.NODE_OPTIONS ?? '',
-          '--disable-warning=ExperimentalWarning',
-        ].filter(Boolean).join(' '),
+        NODE_OPTIONS: [process.env.NODE_OPTIONS ?? '', '--disable-warning=ExperimentalWarning']
+          .filter(Boolean)
+          .join(' '),
       },
     });
     children.push(child);
@@ -41,7 +44,9 @@ function run(label, args) {
 
 async function main() {
   const workers = process.env.FINCLAW_TEST_WORKERS;
-  const workerArgs = workers ? ['--pool.forks.maxForks', workers, '--pool.forks.minForks', workers] : [];
+  const workerArgs = workers
+    ? ['--pool.forks.maxForks', workers, '--pool.forks.minForks', workers]
+    : [];
 
   console.log('--- Phase 1: unit + storage (parallel) ---\n');
 
@@ -62,7 +67,9 @@ async function main() {
   let failed = false;
   for (const r of results) {
     const status = r.code === 0 ? 'PASS' : 'FAIL';
-    if (r.code !== 0) failed = true;
+    if (r.code !== 0) {
+      failed = true;
+    }
     console.log(`  ${status}  ${r.label.padEnd(10)} ${r.elapsed}s`);
   }
   console.log('=============================\n');

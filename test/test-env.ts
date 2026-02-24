@@ -19,7 +19,9 @@ interface EnvSnapshot {
 let snapshot: EnvSnapshot | null = null;
 
 export function isolateEnv(): void {
-  if (snapshot) return;
+  if (snapshot) {
+    return;
+  }
 
   const vars: Record<string, string | undefined> = {};
   for (const key of SENSITIVE_KEYS) {
@@ -37,7 +39,9 @@ export function isolateEnv(): void {
 }
 
 export function restoreEnv(): void {
-  if (!snapshot) return;
+  if (!snapshot) {
+    return;
+  }
 
   for (const [key, value] of Object.entries(snapshot.vars)) {
     if (value === undefined) {

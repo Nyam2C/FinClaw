@@ -11,7 +11,9 @@ export async function poll(
   const deadline = Date.now() + timeout;
 
   while (Date.now() < deadline) {
-    if (await fn()) return;
+    if (await fn()) {
+      return;
+    }
     await new Promise((r) => setTimeout(r, interval));
   }
 

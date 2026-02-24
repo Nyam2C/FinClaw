@@ -30,6 +30,62 @@ importers:
         specifier: ^4.0.18
         version: 4.0.18(@types/node@25.2.2)(tsx@4.21.0)
 
+  packages/agent:
+    dependencies:
+      '@finclaw/types':
+        specifier: workspace:*
+        version: link:../types
+
+  packages/channel-discord:
+    dependencies:
+      '@finclaw/types':
+        specifier: workspace:*
+        version: link:../types
+
+  packages/config:
+    dependencies:
+      '@finclaw/types':
+        specifier: workspace:*
+        version: link:../types
+
+  packages/server:
+    dependencies:
+      '@finclaw/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@finclaw/channel-discord':
+        specifier: workspace:*
+        version: link:../channel-discord
+      '@finclaw/config':
+        specifier: workspace:*
+        version: link:../config
+      '@finclaw/skills-finance':
+        specifier: workspace:*
+        version: link:../skills-finance
+      '@finclaw/storage':
+        specifier: workspace:*
+        version: link:../storage
+      '@finclaw/types':
+        specifier: workspace:*
+        version: link:../types
+
+  packages/skills-finance:
+    dependencies:
+      '@finclaw/storage':
+        specifier: workspace:*
+        version: link:../storage
+      '@finclaw/types':
+        specifier: workspace:*
+        version: link:../types
+
+  packages/storage:
+    dependencies:
+      '@finclaw/types':
+        specifier: workspace:*
+        version: link:../types
+
+  packages/types: {}
+
 packages:
 
   '@esbuild/aix-ppc64@0.27.3':

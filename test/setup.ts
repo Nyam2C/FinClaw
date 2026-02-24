@@ -1,5 +1,4 @@
 import { afterAll, afterEach, beforeAll, vi } from 'vitest';
-
 import { isolateEnv, restoreEnv } from './test-env.js';
 
 beforeAll(() => {

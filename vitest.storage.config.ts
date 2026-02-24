@@ -7,7 +7,11 @@ export default defineConfig({
     pool: 'forks',
     maxWorkers: 1,
     testTimeout: 30_000,
-    include: ['src/**/*.storage.test.ts', 'test/**/*.storage.test.ts'],
+    include: [
+      'packages/*/src/**/*.storage.test.ts',
+      'packages/*/test/**/*.storage.test.ts',
+      'test/**/*.storage.test.ts',
+    ],
     exclude: ['dist/**', 'node_modules/**'],
     setupFiles: ['test/setup.ts'],
     passWithNoTests: true,

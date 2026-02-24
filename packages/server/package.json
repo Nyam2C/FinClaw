@@ -1,0 +1,14 @@
+{
+  "name": "@finclaw/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@finclaw/agent": "workspace:*",
+    "@finclaw/channel-discord": "workspace:*",
+    "@finclaw/config": "workspace:*",
+    "@finclaw/skills-finance": "workspace:*",
+    "@finclaw/storage": "workspace:*",
+    "@finclaw/types": "workspace:*"
+  }
+}

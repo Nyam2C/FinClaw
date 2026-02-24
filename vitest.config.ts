@@ -10,8 +10,14 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     pool: 'forks',
+    poolOptions: {
+      forks: {
+        execArgv: [],
+      },
+    },
     maxWorkers: isCI ? ciWorkers : localWorkers,
-    include: ['src/**/*.test.ts', 'test/**/*.test.ts'],
+    hookTimeout: process.platform === 'win32' ? 60_000 : 30_000,
+    include: ['packages/*/src/**/*.test.ts', 'packages/*/test/**/*.test.ts', 'test/**/*.test.ts'],
     exclude: [
       'dist/**',
       'node_modules/**',
@@ -22,6 +28,7 @@ export default defineConfig({
     setupFiles: ['test/setup.ts'],
     coverage: {
       provider: 'v8',
+      include: ['packages/*/src/**/*.ts'],
       thresholds: {
         statements: 70,
         branches: 70,

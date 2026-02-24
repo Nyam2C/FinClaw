@@ -12,7 +12,11 @@ export default defineConfig({
     pool: 'forks',
     maxWorkers: e2eWorkers,
     testTimeout: 120_000,
-    include: ['src/**/*.e2e.test.ts', 'test/**/*.e2e.test.ts'],
+    include: [
+      'packages/*/src/**/*.e2e.test.ts',
+      'packages/*/test/**/*.e2e.test.ts',
+      'test/**/*.e2e.test.ts',
+    ],
     exclude: ['dist/**', 'node_modules/**'],
     setupFiles: ['test/setup.ts'],
     passWithNoTests: true,
