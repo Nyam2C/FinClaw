@@ -2,15 +2,16 @@
 
 ## 1. 목표
 
-FinClaw 플랫폼의 확장성과 프로덕션 배포 인프라를 구축한다. 구체적으로:
+FinClaw 플랫폼의 확장성과 프로덕션 강화를 구축한다. 구체적으로:
 
 1. **플러그인 확장 시스템**: 서드파티 개발자가 새로운 채널 어댑터나 금융 스킬을 독립적으로 개발하고 FinClaw에 연결할 수 있는 플러그인 SDK와 템플릿을 제공한다.
-2. **Docker 배포**: 멀티 스테이지 빌드 Dockerfile, docker-compose 구성, amd64/arm64 멀티 플랫폼 지원으로 어디서든 배포 가능한 컨테이너 이미지를 생성한다.
-3. **CI/CD 파이프라인**: GitHub Actions 기반 자동화 워크플로우(배포, 릴리즈)로 main 브랜치 push 시 Docker 이미지 빌드 + ghcr.io 퍼블리시를 자동화한다.
-4. **프로덕션 강화**: 헬스 모니터링, 구조화 로깅, Graceful Shutdown, 리소스 제한 및 정리를 통해 프로덕션 환경에서 안정적으로 운영 가능하게 한다.
-5. **스킬 빌드 시스템**: 금융 스킬을 독립적으로 번들링하여 배포할 수 있는 빌드 스크립트를 구현한다.
+2. **릴리즈 CI/CD**: GitHub Actions 기반 릴리즈 워크플로우(release.yml)로 시맨틱 버전 태그, 체인지로그, GitHub Release를 자동화한다.
+3. **프로덕션 강화**: 헬스 모니터링, 구조화 로깅, Graceful Shutdown, 리소스 제한 및 정리를 통해 프로덕션 환경에서 안정적으로 운영 가능하게 한다.
+4. **스킬 빌드 시스템**: 금융 스킬을 독립적으로 번들링하여 배포할 수 있는 빌드 스크립트를 구현한다.
 
-이 Phase는 Phase 1-19의 모든 기능이 완성된 후 실행되며, FinClaw를 개발 프로젝트에서 배포 가능한 프로덕션 시스템으로 전환하는 마지막 단계이다.
+이 Phase는 Phase 1-19의 모든 기능이 완성된 후 실행되며, FinClaw를 개발 프로젝트에서 프로덕션 시스템으로 전환하는 마지막 단계이다.
+
+> **참고:** Docker 배포 인프라(Dockerfile, docker-compose.yml, .dockerignore, deploy.yml, build-docker.sh)는 Phase 0에서 스캐폴딩으로 구축됨.
 
 ---
 
@@ -46,44 +47,34 @@ FinClaw 플랫폼의 확장성과 프로덕션 배포 인프라를 구축한다.
 | 3   | `extensions/plugin-template/src/index.ts`        | 예제 플러그인 진입점 (스켈레톤)                           | ~50      |
 | 4   | `extensions/plugin-template/finclaw.plugin.json` | 플러그인 매니페스트 (채널/스킬 등록 정보)                 | ~15      |
 
-### Docker 배포 (3개)
-
-| #   | 파일 경로            | 설명                                   | 예상 LOC |
-| --- | -------------------- | -------------------------------------- | -------- |
-| 5   | `Dockerfile`         | 멀티 스테이지 빌드 (builder -> runner) | ~50      |
-| 6   | `docker-compose.yml` | FinClaw 서비스 + 선택적 부가 서비스    | ~40      |
-| 7   | `.dockerignore`      | Docker 빌드 제외 파일 목록             | ~20      |
-
-### CI/CD 워크플로우 (2개)
+### CI/CD 워크플로우 (1개)
 
 | #   | 파일 경로                       | 설명                                         | 예상 LOC |
 | --- | ------------------------------- | -------------------------------------------- | -------- |
-| 8   | `.github/workflows/deploy.yml`  | Docker 이미지 빌드 + ghcr.io push (main/tag) | ~80      |
-| 9   | `.github/workflows/release.yml` | 시맨틱 버전 태그, 체인지로그, GitHub Release | ~60      |
+| 5   | `.github/workflows/release.yml` | 시맨틱 버전 태그, 체인지로그, GitHub Release | ~60      |
 
-### 빌드 스크립트 (2개)
+### 빌드 스크립트 (1개)
 
 | #   | 파일 경로                 | 설명                      | 예상 LOC |
 | --- | ------------------------- | ------------------------- | -------- |
-| 10  | `scripts/build-skills.ts` | 금융 스킬 번들링 스크립트 | ~80      |
-| 11  | `scripts/build-docker.sh` | 로컬 Docker 빌드 헬퍼     | ~40      |
+| 6   | `scripts/build-skills.ts` | 금융 스킬 번들링 스크립트 | ~80      |
 
 ### 프로덕션 강화 (2개)
 
 | #   | 파일 경로               | 설명                                     | 예상 LOC |
 | --- | ----------------------- | ---------------------------------------- | -------- |
-| 12  | `src/infra/health.ts`   | 헬스 체크 엔드포인트 + 프로세스 모니터링 | ~100     |
-| 13  | `src/infra/shutdown.ts` | Graceful Shutdown 오케스트레이터         | ~90      |
+| 7   | `src/infra/health.ts`   | 헬스 체크 엔드포인트 + 프로세스 모니터링 | ~100     |
+| 8   | `src/infra/shutdown.ts` | Graceful Shutdown 오케스트레이터         | ~90      |
 
 ### 테스트 파일 (3개)
 
 | #   | 파일 경로                              | 테스트 대상                   | 예상 LOC |
 | --- | -------------------------------------- | ----------------------------- | -------- |
-| 14  | `src/plugins/__tests__/sdk.test.ts`    | 플러그인 SDK (등록, 생명주기) | ~100     |
-| 15  | `src/infra/__tests__/health.test.ts`   | 헬스 체크 응답 형식           | ~80      |
-| 16  | `src/infra/__tests__/shutdown.test.ts` | Graceful Shutdown 순서        | ~90      |
+| 9   | `src/plugins/__tests__/sdk.test.ts`    | 플러그인 SDK (등록, 생명주기) | ~100     |
+| 10  | `src/infra/__tests__/health.test.ts`   | 헬스 체크 응답 형식           | ~80      |
+| 11  | `src/infra/__tests__/shutdown.test.ts` | Graceful Shutdown 순서        | ~90      |
 
-**합계: 소스 13개 + 테스트 3개 = 16개 파일, 예상 ~1,090 LOC**
+**합계: 소스 8개 + 테스트 3개 = 11개 파일, 예상 ~860 LOC**
 
 ---
 
@@ -486,235 +477,7 @@ export default function myPlugin(context: PluginContext): PluginLifecycle {
 }
 ```
 
-### 5.3 Docker 멀티 스테이지 빌드
-
-```dockerfile
-# Dockerfile
-
-# ── Stage 1: Builder ──
-FROM node:22-bookworm-slim AS builder
-
-RUN corepack enable
-
-WORKDIR /app
-
-# 의존성 캐시 레이어 (소스 변경 시 재설치 방지)
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
-
-# 소스 복사 및 빌드
-COPY tsconfig.json tsconfig.base.json ./
-COPY src/ ./src/
-COPY scripts/ ./scripts/
-
-RUN pnpm build
-
-# 웹 UI 빌드 (Phase 19)
-COPY src/web/ ./src/web/
-RUN pnpm ui:build
-
-# 프로덕션 의존성만 재설치
-RUN pnpm install --frozen-lockfile --prod
-
-# ── Stage 2: Runner ──
-FROM node:22-bookworm-slim AS runner
-
-RUN corepack enable
-
-WORKDIR /app
-
-# 보안: non-root 사용자
-USER node
-
-# builder에서 필요한 파일만 복사
-COPY --from=builder --chown=node:node /app/package.json ./
-COPY --from=builder --chown=node:node /app/node_modules/ ./node_modules/
-COPY --from=builder --chown=node:node /app/dist/ ./dist/
-COPY --from=builder --chown=node:node /app/dist/web/ ./dist/web/
-
-# 스킬 파일 복사 (SKILL.md 기반)
-COPY --chown=node:node skills/ ./skills/
-
-ENV NODE_ENV=production
-ENV FINCLAW_HOST=0.0.0.0
-ENV FINCLAW_PORT=3000
-
-EXPOSE 3000
-
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD node -e "fetch('http://localhost:3000/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
-
-CMD ["node", "dist/entry.js", "serve"]
-```
-
-**docker-compose.yml:**
-
-```yaml
-# docker-compose.yml
-
-version: '3.8'
-
-services:
-  finclaw:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: finclaw
-    restart: unless-stopped
-    init: true
-    ports:
-      - '${FINCLAW_PORT:-3000}:3000'
-    environment:
-      - NODE_ENV=production
-      - FINCLAW_HOST=0.0.0.0
-      - FINCLAW_PORT=3000
-      # AI 프로바이더
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      # 금융 데이터
-      - ALPHA_VANTAGE_KEY=${ALPHA_VANTAGE_KEY:-}
-      - NEWSAPI_KEY=${NEWSAPI_KEY:-}
-      # Discord
-      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
-      # 데이터 저장소
-      - FINCLAW_DATA_DIR=/data
-    volumes:
-      - finclaw-data:/data
-    healthcheck:
-      test:
-        [
-          'CMD',
-          'node',
-          '-e',
-          "fetch('http://localhost:3000/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))",
-        ]
-      interval: 30s
-      timeout: 5s
-      start-period: 10s
-      retries: 3
-
-volumes:
-  finclaw-data:
-    driver: local
-```
-
-### 5.4 CI/CD 워크플로우
-
-**배포 워크플로우 (`.github/workflows/deploy.yml`)**:
-
-```yaml
-# .github/workflows/deploy.yml
-name: Docker Deploy
-
-on:
-  push:
-    branches: [main]
-    tags: ['v*']
-
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
-
-jobs:
-  build-amd64:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=tag
-            type=sha,prefix=
-
-      - name: Build and push (amd64)
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          platforms: linux/amd64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  build-arm64:
-    runs-on: ubuntu-24.04-arm
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch,suffix=-arm64
-            type=ref,event=tag,suffix=-arm64
-
-      - name: Build and push (arm64)
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          platforms: linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  create-manifest:
-    needs: [build-amd64, build-arm64]
-    runs-on: ubuntu-latest
-    permissions:
-      packages: write
-    steps:
-      - name: Log in to Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create multi-platform manifest
-        run: |
-          docker buildx imagetools create \
-            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main-arm64
-```
-
-**릴리즈 워크플로우 (`.github/workflows/release.yml`)**:
+### 5.3 릴리즈 워크플로우
 
 ````yaml
 # .github/workflows/release.yml
@@ -765,7 +528,7 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') }}
 ````
 
-### 5.5 Graceful Shutdown 오케스트레이터
+### 5.4 Graceful Shutdown 오케스트레이터
 
 ```typescript
 // src/infra/shutdown.ts
@@ -871,7 +634,7 @@ export function setupSignalHandlers(orchestrator: ShutdownOrchestrator): void {
 }
 ```
 
-### 5.6 헬스 체크
+### 5.5 헬스 체크
 
 ```typescript
 // src/infra/health.ts
@@ -974,7 +737,7 @@ export function createGatewayHealthCheck(deps: {
 }
 ```
 
-### 5.7 스킬 빌드 스크립트
+### 5.6 스킬 빌드 스크립트
 
 ```typescript
 // scripts/build-skills.ts
@@ -1067,24 +830,20 @@ buildSkills({ skillFilter, outDir });
 | ---------------------------- | -------------------------------------------- | ---------------------------------------------- |
 | **Phase 1** (타입)           | 핵심 타입 정의                               | 플러그인 SDK 타입 export                       |
 | **Phase 2** (인프라)         | 로거, 에러 클래스                            | 구조화 로깅, Graceful Shutdown 로깅            |
-| **Phase 3** (설정+CI)        | CI 워크플로우 기초 (`ci.yml`)                | deploy.yml/release.yml이 ci.yml과 연계         |
+| **Phase 3** (설정+CI)        | CI 워크플로우 기초 (`ci.yml`)                | release.yml이 ci.yml과 연계                    |
 | **Phase 5** (채널/플러그인)  | `PluginRegistry`, `ChannelPlugin` 인터페이스 | 플러그인 SDK가 Phase 5의 인터페이스를 확장     |
 | **Phase 7** (도구 시스템)    | `ToolDefinition`, `ToolRegistry`             | 플러그인에서 도구 등록                         |
 | **Phase 10-11** (게이트웨이) | HTTP 서버, WebSocket 서버                    | 헬스 체크 엔드포인트 마운트, Graceful Shutdown |
 | **Phase 14** (스토리지)      | SQLite `DatabaseSync`                        | DB 헬스 체크, Graceful Shutdown 시 DB 닫기     |
 | **Phase 15** (크론)          | 크론 스케줄러                                | Graceful Shutdown 시 크론 정지                 |
 | **Phase 16-18** (금융 스킬)  | 시장/뉴스/알림 스킬                          | 스킬 빌드 시스템 대상                          |
-| **Phase 19** (TUI/웹)        | 웹 UI 빌드                                   | Docker 이미지에 UI 포함                        |
-
 ### 직접 의존 관계
 
 ```
-Phase 1-19 (전체) ──→ Phase 20 (확장 & 배포)
-
 핵심 의존:
-Phase 5  (플러그인 기반)  ─┐
-Phase 10 (게이트웨이)     ├──→ Phase 20
-Phase 19 (TUI/웹)        ─┘
+Phase 5      (플러그인 기반)  ─┐
+Phase 10     (게이트웨이)     ├──→ Phase 20
+Phase 16-18  (금융 스킬)     ─┘
 ```
 
 ---
@@ -1106,10 +865,8 @@ Phase 19 (TUI/웹)        ─┘
 | 9   | Graceful Shutdown: 단계별 순서 실행                     | unit test: 훅 실행 순서 기록 | unit        |
 | 10  | Graceful Shutdown: 개별 훅 실패 시 다음 훅 계속         | unit test: 하나 reject       | unit        |
 | 11  | Graceful Shutdown: 전체 30초 타임아웃 초과 시 강제 종료 | unit test: fake timers       | unit        |
-| 12  | Docker 빌드: `docker build .` 성공                      | 수동 검증                    | manual      |
-| 13  | docker-compose: `docker-compose up` 서비스 시작         | 수동 검증                    | manual      |
-| 14  | CI 워크플로우: YAML 문법 유효성                         | `actionlint` 또는 수동 검증  | manual      |
-| 15  | 스킬 빌드: `tsx scripts/build-skills.ts` 성공           | 수동 검증                    | manual      |
+| 12  | CI 워크플로우: release.yml YAML 문법 유효성             | `actionlint` 또는 수동 검증  | manual      |
+| 13  | 스킬 빌드: `tsx scripts/build-skills.ts` 성공           | 수동 검증                    | manual      |
 
 ### vitest 실행 기대 결과
 
@@ -1125,53 +882,34 @@ pnpm vitest run src/infra/__tests__/health.test.ts src/infra/__tests__/shutdown.
 # 총 23 tests
 ```
 
-### Docker 검증
-
-```bash
-# 로컬 빌드 테스트
-docker build -t finclaw:dev .
-docker run -d --name finclaw-test -p 3000:3000 \
-  -e ANTHROPIC_API_KEY=test \
-  finclaw:dev
-
-# 헬스 체크
-curl http://localhost:3000/health
-# 예상: {"status":"healthy","version":"...","uptime":...,"checks":{...}}
-
-# 정리
-docker stop finclaw-test && docker rm finclaw-test
-```
-
 ---
 
 ## 8. 복잡도 및 예상 파일 수
 
-| 항목               | 값                                                              |
-| ------------------ | --------------------------------------------------------------- |
-| **복잡도**         | **L** (Large)                                                   |
-| **소스 파일**      | 13개                                                            |
-| **테스트 파일**    | 3개                                                             |
-| **총 파일 수**     | **16개**                                                        |
-| **예상 LOC**       | ~1,090                                                          |
-| **예상 소요 기간** | 3-4일                                                           |
-| **새 외부 의존성** | 없음 (Docker, GitHub Actions는 인프라 도구)                     |
-| **인프라 파일**    | Dockerfile, docker-compose.yml, .dockerignore, 2 GitHub Actions |
+| 항목               | 값                                                    |
+| ------------------ | ----------------------------------------------------- |
+| **복잡도**         | **M** (Medium)                                        |
+| **소스 파일**      | 8개                                                   |
+| **테스트 파일**    | 3개                                                   |
+| **총 파일 수**     | **11개**                                              |
+| **예상 LOC**       | ~860                                                  |
+| **예상 소요 기간** | 2-3일                                                 |
+| **새 외부 의존성** | 없음 (GitHub Actions는 인프라 도구)                   |
+| **인프라 파일**    | 1 GitHub Actions (release.yml)                        |
 
-### 복잡도 근거 (L 판정)
+### 복잡도 근거 (M 판정)
 
-- **넓은 범위**: 플러그인 시스템, Docker 배포, CI/CD, 프로덕션 강화 4개 영역을 동시에 다룸
-- **인프라 지식 요구**: Dockerfile 멀티 스테이지, GitHub Actions 문법, docker-compose 구성
-- **통합 테스트 필요**: Docker 빌드 성공 여부, CI 워크플로우 유효성은 수동 검증 필요
+- **3개 영역**: 플러그인 시스템, 프로덕션 강화, 스킬 빌드 (Docker는 Phase 0으로 이동)
 - **Graceful Shutdown 복잡성**: 7단계 순서화된 셧다운, 개별 타임아웃, 에러 격리
-- **전체 시스템 의존**: Phase 1-19 모든 모듈과의 통합 지점 존재
+- **전체 시스템 의존**: Phase 1-18 모듈과의 통합 지점 존재
 
 ### OpenClaw 대비 축소 범위
 
 | OpenClaw 기능             | FinClaw 포함 여부      | 비고                                       |
 | ------------------------- | ---------------------- | ------------------------------------------ |
 | 29개 extensions 패키지    | 1개 템플릿             | 예제만 제공, 실제 플러그인은 커뮤니티 개발 |
-| 6개 GitHub Actions        | 2개 (deploy + release) | ci.yml은 Phase 3에서 이미 구축             |
-| 4개 Dockerfile            | 1개 (프로덕션용)       | sandbox, browser 제외                      |
+| 6개 GitHub Actions        | 1개 (release) + deploy는 Phase 0 | ci.yml은 Phase 3에서 이미 구축   |
+| 4개 Dockerfile            | Phase 0에서 구축                  | sandbox, browser 제외            |
 | 52개 스킬 빌드            | 3개 금융 스킬          | market, news, alerts                       |
 | Bun 호환성                | 제외                   | Node.js 22+ 전용                           |
 | Calendar Versioning       | 포함                   | YYYY.M.D 형식                              |
