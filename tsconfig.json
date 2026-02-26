@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "packages/types" },
+    { "path": "packages/infra" },
     { "path": "packages/config" },
     { "path": "packages/storage" },
     { "path": "packages/agent" },
