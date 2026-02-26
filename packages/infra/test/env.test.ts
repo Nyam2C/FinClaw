@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { normalizeEnv, getEnv, requireEnv, isTruthyEnvValue } from '../src/env.js';
+import {
+  normalizeEnv,
+  getEnv,
+  requireEnv,
+  isTruthyEnvValue,
+  logAcceptedEnvOption,
+} from '../src/env.js';
 
 describe('normalizeEnv', () => {
   beforeEach(() => {
@@ -73,5 +79,13 @@ describe('isTruthyEnvValue', () => {
     [undefined, false],
   ])('isTruthyEnvValue(%j) → %s', (input, expected) => {
     expect(isTruthyEnvValue(input)).toBe(expected);
+  });
+});
+
+describe('logAcceptedEnvOption', () => {
+  it('logger.info에 key=value 형식으로 기록한다', () => {
+    const logger = { info: vi.fn() };
+    logAcceptedEnvOption('PORT', '8080', logger);
+    expect(logger.info).toHaveBeenCalledWith('env: PORT = 8080');
   });
 });

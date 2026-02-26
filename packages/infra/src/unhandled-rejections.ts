@@ -1,4 +1,5 @@
 // packages/infra/src/unhandled-rejections.ts
+import { getEventBus } from './events.js';
 
 /**
  * L1: AbortError → warn
@@ -13,6 +14,7 @@ export function setupUnhandledRejectionHandler(logger: {
 }): void {
   process.on('unhandledRejection', (reason: unknown) => {
     const level = classifyError(reason);
+    getEventBus().emit('system:unhandledRejection', level, reason);
 
     switch (level) {
       case 'abort':

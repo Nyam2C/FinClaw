@@ -1,11 +1,16 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { CircuitBreaker, createCircuitBreaker } from '../src/circuit-breaker.js';
 
 describe('CircuitBreaker', () => {
   let cb: CircuitBreaker;
 
   beforeEach(() => {
+    vi.useFakeTimers();
     cb = createCircuitBreaker({ failureThreshold: 3, resetTimeoutMs: 100 });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('closed 상태에서 성공 → closed 유지', async () => {
@@ -46,10 +51,8 @@ describe('CircuitBreaker', () => {
     }
     expect(cb.getState()).toBe('open');
 
-    // resetTimeout 경과 대기
-    await new Promise((r) => setTimeout(r, 150));
+    vi.advanceTimersByTime(150);
 
-    // half-open에서 성공 → closed
     const result = await cb.execute(async () => 'recovered');
     expect(result).toBe('recovered');
     expect(cb.getState()).toBe('closed');
@@ -65,7 +68,7 @@ describe('CircuitBreaker', () => {
       .catch(() => {});
     expect(fastCb.getState()).toBe('open');
 
-    await new Promise((r) => setTimeout(r, 60));
+    vi.advanceTimersByTime(60);
 
     await fastCb
       .execute(async () => {
@@ -103,5 +106,40 @@ describe('CircuitBreaker', () => {
 
     await cb.execute(async () => 'ok');
     expect(cb.getFailures()).toBe(0);
+  });
+
+  it('half-open에서 halfOpenMaxAttempts 초과 시 에러 throw', async () => {
+    const limitedCb = createCircuitBreaker({
+      failureThreshold: 1,
+      resetTimeoutMs: 50,
+      halfOpenMaxAttempts: 1,
+    });
+
+    // open으로 전환
+    await limitedCb
+      .execute(async () => {
+        throw new Error('fail');
+      })
+      .catch(() => {});
+    expect(limitedCb.getState()).toBe('open');
+
+    vi.advanceTimersByTime(60);
+
+    // 느린 probe 시작 (아직 resolve하지 않음 → half-open 슬롯 점유)
+    let resolveProbe!: (v: string) => void;
+    const probePromise = limitedCb.execute(
+      () =>
+        new Promise<string>((r) => {
+          resolveProbe = r;
+        }),
+    );
+
+    // 두 번째 요청은 max attempts 초과로 거부
+    await expect(limitedCb.execute(async () => 'ok')).rejects.toThrow('max probe attempts');
+
+    // 첫 probe 완료 → closed
+    resolveProbe('recovered');
+    await probePromise;
+    expect(limitedCb.getState()).toBe('closed');
   });
 });

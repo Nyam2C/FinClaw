@@ -16,7 +16,7 @@ import { EventEmitter } from 'node:events';
 export type EventMap = Record<string, (...args: never[]) => void>;
 
 /** 타입 안전 EventEmitter 래퍼 */
-export interface TypedEmitter<T extends EventMap> {
+export interface TypedEmitter<T extends { [K in keyof T]: (...args: never[]) => void }> {
   on<K extends keyof T & string>(event: K, listener: T[K]): this;
   off<K extends keyof T & string>(event: K, listener: T[K]): this;
   once<K extends keyof T & string>(event: K, listener: T[K]): this;
@@ -26,13 +26,14 @@ export interface TypedEmitter<T extends EventMap> {
 }
 
 /** TypedEmitter 팩토리 */
-export function createTypedEmitter<T extends EventMap>(): TypedEmitter<T> {
+export function createTypedEmitter<
+  T extends { [K in keyof T]: (...args: never[]) => void },
+>(): TypedEmitter<T> {
   return new EventEmitter() as unknown as TypedEmitter<T>;
 }
 
 /** FinClaw 시스템 이벤트 맵 */
 export interface FinClawEventMap {
-  [key: string]: (...args: never[]) => void;
   /** 시스템 초기화 완료 */
   'system:ready': () => void;
   /** 시스템 종료 시작 */
@@ -51,6 +52,8 @@ export interface FinClawEventMap {
   'skill:execute': (skillName: string, agentId: string) => void;
   /** 스킬 실행 완료 */
   'skill:complete': (skillName: string, agentId: string, durationMs: number) => void;
+  /** 미처리 rejection */
+  'system:unhandledRejection': (level: string, reason: unknown) => void;
 }
 
 /** 전역 이벤트 버스 (싱글턴) */

@@ -26,7 +26,9 @@ export async function validateUrlSafety(url: string, policy?: SsrfPolicy): Promi
   }
 
   // 호스트명 수준 차단
-  if (BLOCKED_HOSTNAMES.some((pattern) => hostname.endsWith(pattern))) {
+  if (
+    BLOCKED_HOSTNAMES.some((pattern) => hostname === pattern || hostname.endsWith(`.${pattern}`))
+  ) {
     throw new SsrfBlockedError(hostname, hostname);
   }
 
@@ -82,4 +84,4 @@ function isPrivateIpv6(ip: string): boolean {
   );
 }
 
-const BLOCKED_HOSTNAMES = ['localhost', '.local', '.internal', '.localhost'];
+const BLOCKED_HOSTNAMES = ['localhost', 'local', 'internal'];

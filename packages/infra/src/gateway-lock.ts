@@ -63,7 +63,7 @@ export async function acquireGatewayLock(opts: GatewayLockOptions): Promise<Gate
         port,
         acquiredAt,
       });
-      await fd.write(payload);
+      await fd.writeFile(payload);
       await fd.close();
 
       return {

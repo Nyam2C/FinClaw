@@ -69,6 +69,12 @@ describe('validateUrlSafety', () => {
     await expect(validateUrlSafety('https://server.local')).rejects.toThrow(SsrfBlockedError);
   });
 
+  it('localhost를 부분 포함하는 호스트명은 차단하지 않는다', async () => {
+    vi.mocked(mockDnsResolve).mockResolvedValue(['93.184.216.34'] as never);
+    const ip = await validateUrlSafety('https://evillocalhost.com');
+    expect(ip).toBe('93.184.216.34');
+  });
+
   it('allowPrivateNetwork: true에서 사설 IP를 허용한다', async () => {
     vi.mocked(mockDnsResolve).mockResolvedValue(['10.0.0.1'] as never);
     const ip = await validateUrlSafety('https://internal.dev', {

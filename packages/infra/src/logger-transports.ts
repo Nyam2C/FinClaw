@@ -19,9 +19,9 @@ export interface FileTransportConfig {
 export function attachFileTransport(
   logger: { attachTransport: (fn: (logObj: unknown) => void) => void },
   config: FileTransportConfig,
-): void {
+): (() => Promise<void>) | undefined {
   if (!config.enabled) {
-    return;
+    return undefined;
   }
 
   const logDir = config.path ?? getLogDir();
@@ -46,6 +46,16 @@ export function attachFileTransport(
 
     stream.write(line);
   });
+
+  // 현재 활성 스트림의 flush 콜백 반환 (closure로 stream 참조 추적)
+  return () =>
+    new Promise<void>((resolve) => {
+      if (stream.writableFinished) {
+        resolve();
+      } else {
+        stream.end(resolve);
+      }
+    });
 }
 
 function createWriteStream(filePath: string): fs.WriteStream {

@@ -1,3 +1,4 @@
+import * as fsSync from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { describe, it, expect } from 'vitest';
@@ -33,6 +34,15 @@ describe('writeFileAtomic', () => {
       expect(content).toBe('second');
     });
   });
+
+  it('mode 파라미터가 파일 퍼미션에 적용된다', async () => {
+    await withTempDir(async (dir) => {
+      const filePath = path.join(dir, 'perm.txt');
+      await writeFileAtomic(filePath, 'data', 0o644);
+      const stat = await fs.stat(filePath);
+      expect(stat.mode & 0o777).toBe(0o644);
+    });
+  });
 });
 
 describe('readFileSafe', () => {
@@ -47,6 +57,16 @@ describe('readFileSafe', () => {
 
   it('존재하지 않는 파일에 에러를 던진다', async () => {
     await expect(readFileSafe('/nonexistent/file')).rejects.toThrow();
+  });
+
+  it('심링크에 대해 에러를 던진다', async () => {
+    await withTempDir(async (dir) => {
+      const target = path.join(dir, 'target.txt');
+      const link = path.join(dir, 'link.txt');
+      await fs.writeFile(target, 'content');
+      await fs.symlink(target, link);
+      await expect(readFileSafe(link)).rejects.toThrow();
+    });
   });
 });
 
@@ -107,6 +127,14 @@ describe('JSON file operations', () => {
       await writeJsonFile(filePath, { sync: true });
       const result = readJsonFileSync(filePath);
       expect(result).toEqual({ sync: true });
+    });
+  });
+
+  it('잘못된 JSON 파일 → parse error throw', async () => {
+    await withTempDir(async (dir) => {
+      const filePath = path.join(dir, 'bad.json');
+      fsSync.writeFileSync(filePath, '{invalid json!!!');
+      await expect(readJsonFile(filePath)).rejects.toThrow();
     });
   });
 });

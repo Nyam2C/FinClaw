@@ -15,6 +15,7 @@ export class CircuitBreaker {
   private state: CircuitState = 'closed';
   private failures = 0;
   private lastFailureAt = 0;
+  private halfOpenAttempts = 0;
   private readonly failureThreshold: number;
   private readonly resetTimeoutMs: number;
   private readonly halfOpenMaxAttempts: number;
@@ -30,9 +31,17 @@ export class CircuitBreaker {
     if (this.state === 'open') {
       if (Date.now() - this.lastFailureAt >= this.resetTimeoutMs) {
         this.state = 'half-open';
+        this.halfOpenAttempts = 0;
       } else {
         throw new Error(`Circuit is open (failures: ${this.failures})`);
       }
+    }
+
+    if (this.state === 'half-open') {
+      if (this.halfOpenAttempts >= this.halfOpenMaxAttempts) {
+        throw new Error(`Circuit is half-open (max probe attempts: ${this.halfOpenMaxAttempts})`);
+      }
+      this.halfOpenAttempts++;
     }
 
     try {
@@ -54,6 +63,7 @@ export class CircuitBreaker {
   reset(): void {
     this.state = 'closed';
     this.failures = 0;
+    this.halfOpenAttempts = 0;
   }
 
   private onSuccess(): void {

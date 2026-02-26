@@ -64,15 +64,17 @@ export function createLogger(config: LoggerConfig): FinClawLogger {
   });
 
   // 파일 트랜스포트 부착
-  if (config.file?.enabled) {
-    attachFileTransport(tsLogger, config.file);
-  }
+  const fileFlushFn = config.file?.enabled ? attachFileTransport(tsLogger, config.file) : undefined;
 
-  return wrapLogger(tsLogger, config.autoInjectContext ?? true);
+  return wrapLogger(tsLogger, config.autoInjectContext ?? true, fileFlushFn);
 }
 
 /** tslog 인스턴스를 FinClawLogger로 래핑 */
-function wrapLogger(tsLogger: TsLogger<unknown>, injectContext: boolean): FinClawLogger {
+function wrapLogger(
+  tsLogger: TsLogger<unknown>,
+  injectContext: boolean,
+  fileFlushFn?: () => Promise<void>,
+): FinClawLogger {
   const withCtx = (args: unknown[]): unknown[] => {
     if (!injectContext) {
       return args;
@@ -85,6 +87,9 @@ function wrapLogger(tsLogger: TsLogger<unknown>, injectContext: boolean): FinCla
   };
 
   const flushCallbacks: (() => Promise<void>)[] = [];
+  if (fileFlushFn) {
+    flushCallbacks.push(fileFlushFn);
+  }
 
   return {
     trace: (msg, ...args) => tsLogger.trace(msg, ...withCtx(args)),
