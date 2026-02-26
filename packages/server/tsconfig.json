@@ -4,6 +4,7 @@
   "include": ["src"],
   "references": [
     { "path": "../types" },
+    { "path": "../infra" },
     { "path": "../config" },
     { "path": "../storage" },
     { "path": "../agent" },

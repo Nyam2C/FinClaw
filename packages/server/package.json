@@ -7,6 +7,7 @@
     "@finclaw/agent": "workspace:*",
     "@finclaw/channel-discord": "workspace:*",
     "@finclaw/config": "workspace:*",
+    "@finclaw/infra": "workspace:*",
     "@finclaw/skills-finance": "workspace:*",
     "@finclaw/storage": "workspace:*",
     "@finclaw/types": "workspace:*"
