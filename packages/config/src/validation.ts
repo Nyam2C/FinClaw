@@ -28,7 +28,7 @@ export function validateConfig(raw: unknown): ValidationResult {
     };
   }
 
-  const tree = z.treeifyError(result.error);
+  const tree = z.treeifyError(result.error) as unknown as ErrorTree;
   const issues = collectIssues(tree);
 
   return {
@@ -52,8 +52,14 @@ export function validateConfigStrict(raw: unknown): FinClawConfig {
   return config;
 }
 
+/** treeifyError 반환 구조 (zod v4 $ZodErrorTree 호환) */
+interface ErrorTree {
+  errors: string[];
+  properties?: Record<string, ErrorTree>;
+}
+
 /** z.treeifyError 결과를 ConfigValidationIssue[]로 평탄화 */
-function collectIssues(tree: z.ZodErrorTree<unknown>, path = ''): ConfigValidationIssue[] {
+function collectIssues(tree: ErrorTree, path = ''): ConfigValidationIssue[] {
   const issues: ConfigValidationIssue[] = [];
 
   if (tree.errors && tree.errors.length > 0) {
@@ -69,7 +75,7 @@ function collectIssues(tree: z.ZodErrorTree<unknown>, path = ''): ConfigValidati
   if (tree.properties) {
     for (const [key, subtree] of Object.entries(tree.properties)) {
       const childPath = path ? `${path}.${key}` : key;
-      issues.push(...collectIssues(subtree as z.ZodErrorTree<unknown>, childPath));
+      issues.push(...collectIssues(subtree, childPath));
     }
   }
 
