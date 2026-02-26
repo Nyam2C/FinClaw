@@ -1,8 +1,8 @@
-# Phase 3: 설정 시스템 + CI 기초
+# Phase 3: 설정 시스템
 
 ## 1. 목표
 
-FinClaw의 "single source of truth" 설정 시스템을 구축한다. OpenClaw `src/config/`(134파일, 18.2K LOC)의 11단계 설정 파이프라인을 FinClaw에 적응하여 ~35파일, ~5K LOC 규모로 구현한다. 동시에 GitHub Actions CI 워크플로우를 구성하여 lint + typecheck + test 자동화를 시작한다.
+FinClaw의 "single source of truth" 설정 시스템을 구축한다. OpenClaw `src/config/`(134파일, 18.2K LOC)의 11단계 설정 파이프라인을 FinClaw에 적응하여 ~32파일, ~5K LOC 규모로 구현한다.
 
 **설정 파이프라인 11단계:**
 
@@ -35,64 +35,92 @@ FinClaw의 "single source of truth" 설정 시스템을 구축한다. OpenClaw `
 - OpenClaw 레거시 마이그레이션(8파일) → 제외 (신규 프로젝트)
 - OpenClaw `plugin-auto-enable.ts`(379줄) → 제외 (Phase 5에서 단순화)
 - OpenClaw 43개 테스트 → FinClaw 12개 핵심 테스트로 축소
-- OpenClaw `.passthrough()` Zod 모드 → FinClaw `.strict()` 모드 (오타 감지)
+- OpenClaw `.passthrough()` Zod 모드 → FinClaw `z.strictObject()` 모드 (오타 감지, Zod v4 네이티브)
 
 ---
 
-## 3. 생성할 파일
+## 3. 생성/수정할 파일
 
-### 소스 파일 (21개)
+### 패키지 인프라 (기존 스텁 업데이트)
 
-| 파일 경로                            | 역할                                                    | 예상 LOC |
-| ------------------------------------ | ------------------------------------------------------- | -------- |
-| **진입점**                           |                                                         |          |
-| `src/config/index.ts`                | Barrel export -- 공개 API 진입점                        | ~30      |
-| `src/config/io.ts`                   | createConfigIO() DI 팩토리, loadConfig, writeConfigFile | ~350     |
-| **핵심 엔진**                        |                                                         |          |
-| `src/config/paths.ts`                | 설정 파일 경로 해석, 레거시 경로 탐색                   | ~120     |
-| `src/config/defaults.ts`             | 7단계 불변 기본값 적용                                  | ~200     |
-| `src/config/validation.ts`           | Zod 기반 2단계 검증                                     | ~150     |
-| `src/config/zod-schema.ts`           | FinClawConfig Zod 스키마 정의                           | ~300     |
-| **기능 해석기**                      |                                                         |          |
-| `src/config/includes.ts`             | `$include` 재귀 해석, 순환 감지, deep merge             | ~180     |
-| `src/config/env-substitution.ts`     | `${VAR}` 환경변수 치환 (대문자만, 재귀 없음)            | ~100     |
-| `src/config/normalize-paths.ts`      | `~/` 경로 확장                                          | ~40      |
-| `src/config/runtime-overrides.ts`    | 인메모리 런타임 오버라이드 (set/unset/apply/reset)      | ~60      |
-| `src/config/merge-config.ts`         | 섹션 단위 shallow merge + deep merge                    | ~80      |
-| `src/config/cache-utils.ts`          | TTL 캐시 활성화, mtime 조회                             | ~50      |
-| **세션**                             |                                                         |          |
-| `src/config/sessions/store.ts`       | 파일 기반 세션 영속화 + 파일 잠금 + TTL 캐시            | ~250     |
-| `src/config/sessions/session-key.ts` | 세션 키 도출 (channel + account + chat)                 | ~60      |
-| `src/config/sessions/types.ts`       | SessionEntry, SessionScope, mergeSessionEntry           | ~50      |
-| **타입**                             |                                                         |          |
-| `src/config/types.ts`                | ConfigIoDeps, ConfigCache, ConfigChangeEvent 내부 타입  | ~80      |
-| **유틸**                             |                                                         |          |
-| `src/config/test-helpers.ts`         | withTempHome, withEnvOverride 테스트 헬퍼               | ~60      |
-| **CI**                               |                                                         |          |
-| `.github/workflows/ci.yml`           | lint + typecheck + test 워크플로우                      | ~50      |
-| `.github/workflows/ci-full.yml`      | 풀 CI (스토리지 + e2e 포함) -- 스켈레톤                 | ~30      |
-| **설정 예시**                        |                                                         |          |
-| `config.example.json5`               | FinClaw 설정 파일 예시                                  | ~50      |
-| `.env.example`                       | 환경변수 예시                                           | ~20      |
+| 파일 경로                       | 작업                   | 변경 사항                                      |
+| ------------------------------- | ---------------------- | ---------------------------------------------- |
+| `packages/config/package.json`  | **기존 스텁 업데이트** | deps 추가: `@finclaw/infra`, `zod@^4`, `json5` |
+| `packages/config/tsconfig.json` | **기존 스텁 업데이트** | references에 `{ "path": "../infra" }` 추가     |
+| `packages/config/src/index.ts`  | **기존 스텁 교체**     | barrel export로 교체                           |
+
+### 소스 파일 (18개)
+
+| 파일 경로                                     | 역할                                                     | 예상 LOC |
+| --------------------------------------------- | -------------------------------------------------------- | -------- |
+| **진입점**                                    |                                                          |          |
+| `packages/config/src/index.ts`                | Barrel export -- 공개 API 진입점                         | ~30      |
+| `packages/config/src/io.ts`                   | createConfigIO() DI 팩토리, loadConfig, writeConfigFile  | ~350     |
+| **핵심 엔진**                                 |                                                          |          |
+| `packages/config/src/paths.ts`                | 설정 파일 경로 해석 (JSON5, 자체 구현)                   | ~120     |
+| `packages/config/src/defaults.ts`             | 7단계 불변 기본값 적용                                   | ~200     |
+| `packages/config/src/validation.ts`           | Zod 기반 2단계 검증                                      | ~150     |
+| `packages/config/src/zod-schema.ts`           | FinClawConfig Zod v4 스키마 정의                         | ~300     |
+| **기능 해석기**                               |                                                          |          |
+| `packages/config/src/includes.ts`             | `$include` 재귀 해석, 순환 감지, deep merge              | ~180     |
+| `packages/config/src/env-substitution.ts`     | `${VAR}` 환경변수 치환 (대문자만, 재귀 없음)             | ~100     |
+| `packages/config/src/normalize-paths.ts`      | `~/` 경로 확장                                           | ~40      |
+| `packages/config/src/runtime-overrides.ts`    | 인메모리 런타임 오버라이드 (set/unset/apply/reset)       | ~60      |
+| `packages/config/src/merge-config.ts`         | 섹션 단위 shallow merge + deep merge                     | ~80      |
+| `packages/config/src/cache-utils.ts`          | TTL 캐시 활성화, mtime 조회                              | ~50      |
+| **세션**                                      |                                                          |          |
+| `packages/config/src/sessions/store.ts`       | 파일 기반 세션 영속화 + 파일 잠금 + TTL 캐시             | ~250     |
+| `packages/config/src/sessions/session-key.ts` | 세션 키 도출 (channel + account + chat)                  | ~60      |
+| `packages/config/src/sessions/types.ts`       | SessionEntry, SessionScope, mergeSessionEntry            | ~50      |
+| **타입/에러**                                 |                                                          |          |
+| `packages/config/src/types.ts`                | ConfigDeps, ConfigCache, ConfigChangeEvent 내부 타입     | ~80      |
+| `packages/config/src/errors.ts`               | ConfigError, MissingEnvVarError, CircularIncludeError 등 | ~60      |
+| **유틸**                                      |                                                          |          |
+| `packages/config/src/test-helpers.ts`         | withTempHome, withEnvOverride 테스트 헬퍼                | ~60      |
+
+> **설정 파일 경로 결정:**
+> Phase 2 `packages/infra/src/paths.ts:43`은 `finclaw.json`을 반환한다.
+> Phase 3 config 패키지는 JSON5 포맷(`finclaw.json5`)을 사용하며,
+> `packages/config/src/paths.ts`에서 자체 경로 해석을 구현한다.
+> infra의 `getConfigFilePath()`는 사용하지 않고, config 패키지가 자체적으로
+> `FINCLAW_CONFIG` 환경변수 → `~/.finclaw/config/finclaw.json5` → `./finclaw.json5` 순서로 탐색한다.
+
+> **ConfigDeps 이름 결정:**
+> Phase 1 `@finclaw/types`에 이미 `ConfigIoDeps`(async 메서드)가 정의되어 있다.
+> Phase 3 config 패키지의 DI 인터페이스는 sync 메서드를 사용하므로,
+> 이름 충돌을 피하기 위해 `packages/config/src/types.ts`에 **`ConfigDeps`**로 정의한다.
+
+### 설정 예시 파일 (2개)
+
+| 파일 경로              | 역할                   | 예상 LOC |
+| ---------------------- | ---------------------- | -------- |
+| `config.example.json5` | FinClaw 설정 파일 예시 | ~50      |
+| `.env.example`         | 환경변수 예시          | ~20      |
 
 ### 테스트 파일 (12개)
 
-| 파일 경로                               | 검증 대상                                  | 예상 LOC |
-| --------------------------------------- | ------------------------------------------ | -------- |
-| `test/config/io.test.ts`                | 파이프라인 통합, DI 팩토리, 캐시 TTL       | ~150     |
-| `test/config/validation.test.ts`        | Zod 검증 통과/실패, strict 모드 오타 감지  | ~100     |
-| `test/config/defaults.test.ts`          | 7단계 체이닝 순서, 불변 업데이트           | ~100     |
-| `test/config/includes.test.ts`          | $include 해석, 순환 감지, deep merge       | ~100     |
-| `test/config/env-substitution.test.ts`  | ${VAR} 치환, 대문자만, escape, 미설정 에러 | ~80      |
-| `test/config/normalize-paths.test.ts`   | ~/ 확장, Windows 경로                      | ~40      |
-| `test/config/runtime-overrides.test.ts` | set/unset/apply/reset                      | ~50      |
-| `test/config/paths.test.ts`             | 경로 해석, 환경변수 우선순위               | ~60      |
-| `test/config/merge-config.test.ts`      | 배열 연결, 객체 재귀 병합, 원시값 우선     | ~60      |
-| `test/config/sessions.test.ts`          | 세션 읽기/쓰기/잠금/캐시                   | ~120     |
-| `test/config/sessions-key.test.ts`      | 세션 키 도출 정규화                        | ~40      |
-| `test/config/zod-schema.test.ts`        | 스키마 호환성, 필수/선택 필드              | ~60      |
+| 파일 경로                                        | 검증 대상                                  | 예상 LOC |
+| ------------------------------------------------ | ------------------------------------------ | -------- |
+| `packages/config/test/io.test.ts`                | 파이프라인 통합, DI 팩토리, 캐시 TTL       | ~150     |
+| `packages/config/test/validation.test.ts`        | Zod 검증 통과/실패, strict 모드 오타 감지  | ~100     |
+| `packages/config/test/defaults.test.ts`          | 7단계 체이닝 순서, 불변 업데이트           | ~100     |
+| `packages/config/test/includes.test.ts`          | $include 해석, 순환 감지, deep merge       | ~100     |
+| `packages/config/test/env-substitution.test.ts`  | ${VAR} 치환, 대문자만, escape, 미설정 에러 | ~80      |
+| `packages/config/test/normalize-paths.test.ts`   | ~/ 확장, Windows 경로                      | ~40      |
+| `packages/config/test/runtime-overrides.test.ts` | set/unset/apply/reset                      | ~50      |
+| `packages/config/test/paths.test.ts`             | 경로 해석, 환경변수 우선순위               | ~60      |
+| `packages/config/test/merge-config.test.ts`      | 배열 연결, 객체 재귀 병합, 원시값 우선     | ~60      |
+| `packages/config/test/sessions.test.ts`          | 세션 읽기/쓰기/잠금/캐시                   | ~120     |
+| `packages/config/test/sessions-key.test.ts`      | 세션 키 도출 정규화                        | ~40      |
+| `packages/config/test/zod-schema.test.ts`        | 스키마 호환성, 필수/선택 필드              | ~60      |
 
-**총 파일 수:** 35개 (소스 21 + CI 2 + 테스트 12)
+**총 파일 수:** 32개 (소스 18 + 설정예시 2 + 테스트 12)
+
+### CI 관련
+
+- `.github/workflows/ci.yml` — **이미 존재** (lint, format, typecheck, build, test:ci). 변경 불필요.
+- `.github/workflows/deploy.yml` — **이미 존재** (Docker build & push). 변경 불필요.
+- lefthook — **이미 구성됨**. 변경 불필요.
 
 ---
 
@@ -101,24 +129,30 @@ FinClaw의 "single source of truth" 설정 시스템을 구축한다. OpenClaw `
 ### 4.1 DI 팩토리 (`io.ts`)
 
 ```typescript
-// src/config/io.ts
-import type { FinClawConfig, ConfigFileSnapshot } from '../types/index.js';
-import type { FinClawLogger } from '../infra/logger.js';
+// packages/config/src/io.ts
+import type { FinClawConfig, ConfigFileSnapshot } from '@finclaw/types';
+import type { FinClawLogger } from '@finclaw/infra';
+
+// Phase 1 @finclaw/types의 ConfigIoDeps(async)와 충돌 방지를 위해
+// config 패키지 내부 타입으로 분리 → packages/config/src/types.ts의 ConfigDeps
+import type { ConfigDeps } from './types.js';
 
 /**
- * ConfigIoDeps -- createConfigIO()에 주입하는 의존성 인터페이스
+ * ConfigDeps -- createConfigIO()에 주입하는 의존성 인터페이스
  *
  * OpenClaw 패턴: fs, json5, env, homedir, configPath, logger 6개 주입
- * FinClaw: fs, json5, env, homedir, configPath, logger 동일 구조
+ * FinClaw: 동일 구조이나 sync 메서드 사용 (Phase 1 ConfigIoDeps는 async)
+ *
+ * 정의 위치: packages/config/src/types.ts
  */
-export interface ConfigIoDeps {
-  fs?: typeof import('node:fs');
-  json5?: typeof import('json5');
-  env?: NodeJS.ProcessEnv;
-  homedir?: () => string;
-  configPath?: string;
-  logger?: Pick<FinClawLogger, 'error' | 'warn' | 'info' | 'debug'>;
-}
+// interface ConfigDeps {
+//   fs?: typeof import('node:fs');
+//   json5?: typeof import('json5');
+//   env?: NodeJS.ProcessEnv;
+//   homedir?: () => string;
+//   configPath?: string;
+//   logger?: Pick<FinClawLogger, 'error' | 'warn' | 'info' | 'debug'>;
+// }
 
 export interface ConfigIO {
   configPath: string;
@@ -135,7 +169,7 @@ export interface ConfigIO {
  * - 200ms TTL 캐시 적용
  * - 11단계 파이프라인 선형 실행
  */
-export function createConfigIO(overrides: ConfigIoDeps = {}): ConfigIO {
+export function createConfigIO(overrides: ConfigDeps = {}): ConfigIO {
   const deps = normalizeDeps(overrides);
   const cache = createConfigCache();
 
@@ -180,200 +214,177 @@ export function clearConfigCache(): void {
 }
 ```
 
-### 4.2 Zod 스키마 (`zod-schema.ts`)
+### 4.2 Zod v4 스키마 (`zod-schema.ts`)
+
+FinClaw는 Zod 미설치 상태이므로 처음부터 Zod v4 네이티브 API를 사용한다.
+
+**Zod v4 주요 변경점:**
+
+| v3 (deprecated)           | v4 권장                 |
+| ------------------------- | ----------------------- |
+| `.object({...}).strict()` | `z.strictObject({...})` |
+| `z.string().url()`        | `z.url()`               |
+| `error.flatten()`         | `z.treeifyError(error)` |
+| `{ message: "..." }`      | `{ error: "..." }`      |
+
+> **`.default()` 동작 변경 주의:** v4에서 `.default()`는 output type에 영향을 준다.
+> 7단계 defaults 체이닝과의 상호작용을 검증하는 테스트를 반드시 추가할 것.
 
 ```typescript
-// src/config/zod-schema.ts
-import { z } from 'zod';
+// packages/config/src/zod-schema.ts
+import { z } from 'zod/v4';
 
 /** 게이트웨이 설정 스키마 */
-const GatewaySchema = z
-  .object({
-    port: z.number().int().min(1).max(65535).default(18789),
-    host: z.string().default('localhost'),
-    tls: z.boolean().default(true),
-    corsOrigins: z.array(z.string()).default([]),
-  })
-  .strict();
+const GatewaySchema = z.strictObject({
+  port: z.number().int().min(1).max(65535).default(18789),
+  host: z.string().default('localhost'),
+  tls: z.boolean().default(true),
+  corsOrigins: z.array(z.string()).default([]),
+});
 
 /** 에이전트 기본값 스키마 */
-const AgentDefaultsSchema = z
-  .object({
-    model: z.string().default('claude-sonnet-4-20250514'),
-    provider: z.string().default('anthropic'),
-    maxConcurrent: z.number().int().min(1).max(10).default(3),
-    maxTokens: z.number().int().min(1).default(4096),
-    temperature: z.number().min(0).max(2).default(0.7),
-  })
-  .strict();
+const AgentDefaultsSchema = z.strictObject({
+  model: z.string().default('claude-sonnet-4-20250514'),
+  provider: z.string().default('anthropic'),
+  maxConcurrent: z.number().int().min(1).max(10).default(3),
+  maxTokens: z.number().int().min(1).default(4096),
+  temperature: z.number().min(0).max(2).default(0.7),
+});
 
 /** 에이전트 엔트리 스키마 */
-const AgentEntrySchema = z
-  .object({
-    agentDir: z.string().optional(),
-    model: z.string().optional(),
-    provider: z.string().optional(),
-    maxConcurrent: z.number().int().optional(),
-    systemPrompt: z.string().optional(),
-    skills: z.array(z.string()).optional(),
-  })
-  .strict();
+const AgentEntrySchema = z.strictObject({
+  agentDir: z.string().optional(),
+  model: z.string().optional(),
+  provider: z.string().optional(),
+  maxConcurrent: z.number().int().optional(),
+  systemPrompt: z.string().optional(),
+  skills: z.array(z.string()).optional(),
+});
 
 /** 세션 설정 스키마 */
-const SessionSchema = z
-  .object({
-    mainKey: z.string().default('main'),
-    resetPolicy: z.enum(['daily', 'idle', 'never']).default('idle'),
-    idleTimeoutMs: z.number().int().min(0).default(1800000),
-  })
-  .strict();
+const SessionSchema = z.strictObject({
+  mainKey: z.string().default('main'),
+  resetPolicy: z.enum(['daily', 'idle', 'never']).default('idle'),
+  idleTimeoutMs: z.number().int().min(0).default(1800000),
+});
 
 /** 로깅 설정 스키마 */
-const LoggingSchema = z
-  .object({
-    level: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
-    file: z.boolean().default(true),
-    redactSensitive: z.boolean().default(true),
-  })
-  .strict();
+const LoggingSchema = z.strictObject({
+  level: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
+  file: z.boolean().default(true),
+  redactSensitive: z.boolean().default(true),
+});
 
 /** 모델 정의 스키마 */
-const ModelDefinitionSchema = z
-  .object({
-    provider: z.string(),
-    model: z.string(),
-    contextWindow: z.number().int().optional(),
-    maxOutputTokens: z.number().int().optional(),
-    costPer1kInput: z.number().optional(),
-    costPer1kOutput: z.number().optional(),
-  })
-  .strict();
+const ModelDefinitionSchema = z.strictObject({
+  provider: z.string(),
+  model: z.string(),
+  contextWindow: z.number().int().optional(),
+  maxOutputTokens: z.number().int().optional(),
+  costPer1kInput: z.number().optional(),
+  costPer1kOutput: z.number().optional(),
+});
 
 /** Discord 채널 설정 스키마 */
-const DiscordChannelSchema = z
-  .object({
-    botToken: z.string(),
-    applicationId: z.string(),
-    guildIds: z.array(z.string()).optional(),
-  })
-  .strict();
+const DiscordChannelSchema = z.strictObject({
+  botToken: z.string(),
+  applicationId: z.string(),
+  guildIds: z.array(z.string()).optional(),
+});
 
 /** 데이터 프로바이더 스키마 */
-const DataProviderSchema = z
-  .object({
-    name: z.string(),
-    apiKey: z.string().optional(),
-    baseUrl: z.string().url().optional(),
-    rateLimit: z.number().int().optional(),
-  })
-  .strict();
+const DataProviderSchema = z.strictObject({
+  name: z.string(),
+  apiKey: z.string().optional(),
+  baseUrl: z.url().optional(),
+  rateLimit: z.number().int().optional(),
+});
 
 /** 알림 기본값 스키마 */
-const AlertDefaultsSchema = z
-  .object({
-    cooldownMs: z.number().int().default(300000), // 5분
-    maxActiveAlerts: z.number().int().default(100),
-  })
-  .strict();
+const AlertDefaultsSchema = z.strictObject({
+  cooldownMs: z.number().int().default(300000), // 5분
+  maxActiveAlerts: z.number().int().default(100),
+});
 
 /** 보유 종목 스키마 */
-const HoldingSchema = z
-  .object({
-    symbol: z.string(),
-    quantity: z.number(),
-    avgCost: z.number().optional(),
-    currency: z.string().optional(),
-  })
-  .strict();
+const HoldingSchema = z.strictObject({
+  symbol: z.string(),
+  quantity: z.number(),
+  avgCost: z.number().optional(),
+  currency: z.string().optional(),
+});
 
 /** 포트폴리오 스키마 */
-const PortfolioSchema = z
-  .object({
-    name: z.string(),
-    holdings: z.array(HoldingSchema),
-  })
-  .strict();
+const PortfolioSchema = z.strictObject({
+  name: z.string(),
+  holdings: z.array(HoldingSchema),
+});
 
 /** 금융 설정 스키마 */
-const FinanceSchema = z
-  .object({
-    dataProviders: z.array(DataProviderSchema).optional(),
-    newsFeeds: z
-      .array(
-        z
-          .object({
-            name: z.string(),
-            url: z.string().url(),
-            refreshIntervalMs: z.number().int().optional(),
-          })
-          .strict(),
-      )
-      .optional(),
-    alertDefaults: AlertDefaultsSchema.optional(),
-    portfolios: z.record(z.string(), PortfolioSchema).optional(),
-  })
-  .strict();
+const FinanceSchema = z.strictObject({
+  dataProviders: z.array(DataProviderSchema).optional(),
+  newsFeeds: z
+    .array(
+      z.strictObject({
+        name: z.string(),
+        url: z.url(),
+        refreshIntervalMs: z.number().int().optional(),
+      }),
+    )
+    .optional(),
+  alertDefaults: AlertDefaultsSchema.optional(),
+  portfolios: z.record(z.string(), PortfolioSchema).optional(),
+});
 
 /**
  * FinClawConfig 루트 스키마
  *
  * OpenClaw과 차이:
- * - .passthrough() 대신 .strict() 사용 (오타 감지)
+ * - .passthrough() 대신 z.strictObject() 사용 (오타 감지, Zod v4)
  * - superRefine 교차 검증 포함
  */
-export const FinClawConfigSchema = z
-  .object({
-    gateway: GatewaySchema.optional(),
-    agents: z
-      .object({
-        defaults: AgentDefaultsSchema.optional(),
-        entries: z.record(z.string(), AgentEntrySchema).optional(),
-      })
-      .strict()
-      .optional(),
-    channels: z
-      .object({
-        discord: DiscordChannelSchema.optional(),
-        cli: z
-          .object({ enabled: z.boolean().default(true) })
-          .strict()
-          .optional(),
-        web: z
-          .object({
-            enabled: z.boolean().default(false),
-            port: z.number().int().optional(),
-          })
-          .strict()
-          .optional(),
-      })
-      .strict()
-      .optional(),
-    session: SessionSchema.optional(),
-    logging: LoggingSchema.optional(),
-    models: z
-      .object({
-        definitions: z.record(z.string(), ModelDefinitionSchema).optional(),
-        aliases: z.record(z.string(), z.string()).optional(),
-      })
-      .strict()
-      .optional(),
-    plugins: z
-      .object({
-        enabled: z.array(z.string()).optional(),
-        disabled: z.array(z.string()).optional(),
-      })
-      .strict()
-      .optional(),
-    finance: FinanceSchema.optional(),
-    meta: z
-      .object({
-        lastTouchedVersion: z.string().optional(),
-        lastTouchedAt: z.string().optional(),
-      })
-      .strict()
-      .optional(),
-  })
-  .strict();
+export const FinClawConfigSchema = z.strictObject({
+  gateway: GatewaySchema.optional(),
+  agents: z
+    .strictObject({
+      defaults: AgentDefaultsSchema.optional(),
+      entries: z.record(z.string(), AgentEntrySchema).optional(),
+    })
+    .optional(),
+  channels: z
+    .strictObject({
+      discord: DiscordChannelSchema.optional(),
+      cli: z.strictObject({ enabled: z.boolean().default(true) }).optional(),
+      web: z
+        .strictObject({
+          enabled: z.boolean().default(false),
+          port: z.number().int().optional(),
+        })
+        .optional(),
+    })
+    .optional(),
+  session: SessionSchema.optional(),
+  logging: LoggingSchema.optional(),
+  models: z
+    .strictObject({
+      definitions: z.record(z.string(), ModelDefinitionSchema).optional(),
+      aliases: z.record(z.string(), z.string()).optional(),
+    })
+    .optional(),
+  plugins: z
+    .strictObject({
+      enabled: z.array(z.string()).optional(),
+      disabled: z.array(z.string()).optional(),
+    })
+    .optional(),
+  finance: FinanceSchema.optional(),
+  meta: z
+    .strictObject({
+      lastTouchedVersion: z.string().optional(),
+      lastTouchedAt: z.string().optional(),
+    })
+    .optional(),
+});
 
 export type ValidatedFinClawConfig = z.infer<typeof FinClawConfigSchema>;
 ```
@@ -381,7 +392,8 @@ export type ValidatedFinClawConfig = z.infer<typeof FinClawConfigSchema>;
 ### 4.3 환경변수 치환 (`env-substitution.ts`)
 
 ```typescript
-// src/config/env-substitution.ts
+// packages/config/src/env-substitution.ts
+import { MissingEnvVarError } from './errors.js';
 
 /**
  * 환경변수 치환 엔진
@@ -395,15 +407,6 @@ export type ValidatedFinClawConfig = z.infer<typeof FinClawConfigSchema>;
 
 const ENV_VAR_PATTERN = /\$\{([A-Z_][A-Z0-9_]*)\}/g;
 const ESCAPED_PATTERN = /\$\$\{([A-Z_][A-Z0-9_]*)\}/g;
-
-export class MissingEnvVarError extends Error {
-  readonly variable: string;
-  constructor(variable: string) {
-    super(`Environment variable not set: ${variable}`);
-    this.name = 'MissingEnvVarError';
-    this.variable = variable;
-  }
-}
 
 export function resolveEnvVars(value: unknown, env: NodeJS.ProcessEnv = process.env): unknown {
   if (typeof value === 'string') {
@@ -454,8 +457,8 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 ### 4.4 7단계 Defaults 체이닝 (`defaults.ts`)
 
 ```typescript
-// src/config/defaults.ts
-import type { FinClawConfig } from '../types/index.js';
+// packages/config/src/defaults.ts
+import type { FinClawConfig } from '@finclaw/types';
 
 /**
  * 7단계 불변 기본값 적용
@@ -497,16 +500,25 @@ function applySessionDefaults(cfg: FinClawConfig): FinClawConfig {
   };
 }
 
+// ✅ 수정됨: applySessionDefaults와 동일한 불변 업데이트 패턴 적용
+// 이전 코드는 `...logging` spread가 앞의 `??` 기본값을 덮어쓰는 버그가 있었음
 function applyLoggingDefaults(cfg: FinClawConfig): FinClawConfig {
   const logging = cfg.logging ?? {};
+  const level = logging.level ?? 'info';
+  const file = logging.file ?? true;
+  const redactSensitive = logging.redactSensitive ?? true;
+
+  if (
+    level === logging.level &&
+    file === logging.file &&
+    redactSensitive === logging.redactSensitive
+  ) {
+    return cfg;
+  }
+
   return {
     ...cfg,
-    logging: {
-      level: logging.level ?? 'info',
-      file: logging.file ?? true,
-      redactSensitive: logging.redactSensitive ?? true,
-      ...logging,
-    },
+    logging: { ...logging, level, file, redactSensitive },
   };
 }
 
@@ -534,10 +546,10 @@ function applyAgentDefaults(cfg: FinClawConfig): FinClawConfig {
 ### 4.5 세션 스토어 (`sessions/store.ts`)
 
 ```typescript
-// src/config/sessions/store.ts
-import type { SessionKey, Timestamp } from '../../types/index.js';
+// packages/config/src/sessions/store.ts
+import type { SessionKey, Timestamp } from '@finclaw/types';
 import type { SessionEntry } from './types.js';
-import { writeFileAtomic } from '../../infra/fs-safe.js';
+import { writeFileAtomic } from '@finclaw/infra';
 
 /**
  * 파일 기반 세션 스토어
@@ -601,6 +613,56 @@ export function createSessionStore(storeDir: string): SessionStore {
 }
 ```
 
+### 4.6 에러 클래스 (`errors.ts`)
+
+```typescript
+// packages/config/src/errors.ts
+import { FinClawError } from '@finclaw/infra';
+
+/**
+ * 설정 관련 에러 클래스 (Phase 2 co-location 원칙)
+ * packages/infra/src/errors.ts:51-56 참조
+ */
+
+/** 설정 시스템 기본 에러 */
+export class ConfigError extends FinClawError {
+  constructor(message: string, opts?: { cause?: Error; details?: Record<string, unknown> }) {
+    super(message, 'CONFIG_ERROR', opts);
+    this.name = 'ConfigError';
+  }
+}
+
+/** 필수 환경변수 누락 */
+export class MissingEnvVarError extends ConfigError {
+  readonly variable: string;
+  constructor(variable: string) {
+    super(`Environment variable not set: ${variable}`, {
+      details: { variable },
+    });
+    this.name = 'MissingEnvVarError';
+    this.variable = variable;
+  }
+}
+
+/** $include 순환 참조 */
+export class CircularIncludeError extends ConfigError {
+  constructor(chain: string[]) {
+    super(`Circular $include detected: ${chain.join(' -> ')}`, {
+      details: { chain },
+    });
+    this.name = 'CircularIncludeError';
+  }
+}
+
+/** Zod 검증 실패 */
+export class ConfigValidationError extends ConfigError {
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, { details });
+    this.name = 'ConfigValidationError';
+  }
+}
+```
+
 ---
 
 ## 5. 구현 상세
@@ -613,7 +675,8 @@ export function createSessionStore(storeDir: string): SessionStore {
     ├── 캐시 히트? ──Yes──> 캐시된 config 반환
     │     No
     ├── 1. resolveConfigPath() → 파일 경로 결정
-    │     (FINCLAW_CONFIG > ~/.finclaw/config.json5 > ./config.json5)
+    │     (FINCLAW_CONFIG > ~/.finclaw/config/finclaw.json5 > ./finclaw.json5)
+    │     ※ Phase 2 infra의 getConfigFilePath()는 finclaw.json → 사용하지 않음
     │
     ├── 2. readFileSync + JSON5.parse
     │
@@ -629,7 +692,7 @@ export function createSessionStore(storeDir: string): SessionStore {
     │
     ├── 5. FinClawConfigSchema.safeParse()
     │     ├── 성공 → validated config
-    │     └── 실패 → issues 수집, 빈 {} 반환
+    │     └── 실패 → z.treeifyError()로 이슈 수집, 빈 {} 반환
     │
     ├── 6. applyAllDefaults() (7단계 체이닝)
     │     Session → Logging → Agent → Models → Gateway → Finance → Meta
@@ -644,16 +707,10 @@ export function createSessionStore(storeDir: string): SessionStore {
 ### 5.2 $include Deep Merge 알고리즘
 
 ```typescript
-// src/config/includes.ts
+// packages/config/src/includes.ts
+import { CircularIncludeError } from './errors.js';
 
 const MAX_INCLUDE_DEPTH = 10;
-
-export class CircularIncludeError extends Error {
-  constructor(chain: string[]) {
-    super(`Circular $include detected: ${chain.join(' -> ')}`);
-    this.name = 'CircularIncludeError';
-  }
-}
 
 export function deepMerge(target: unknown, source: unknown): unknown {
   if (Array.isArray(target) && Array.isArray(source)) {
@@ -674,43 +731,7 @@ export function deepMerge(target: unknown, source: unknown): unknown {
 }
 ```
 
-### 5.3 GitHub Actions CI 워크플로우
-
-```yaml
-# .github/workflows/ci.yml
-name: CI
-on:
-  push:
-    branches: [main, 'feature/**']
-  pull_request:
-    branches: [main]
-
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
-
-jobs:
-  check:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
-      - run: pnpm format
-      - run: pnpm typecheck
-      - run: pnpm test
-      - run: pnpm test:storage
-```
-
-### 5.4 설정 파일 예시
+### 5.3 설정 파일 예시
 
 ```json5
 // config.example.json5
@@ -755,18 +776,20 @@ jobs:
 
 ## 6. 선행 조건
 
-| 조건                    | 산출물                              | Phase   |
-| ----------------------- | ----------------------------------- | ------- |
-| FinClawConfig 타입 정의 | `src/types/config.ts`               | Phase 1 |
-| 로깅 인프라             | `src/infra/logger.ts`               | Phase 2 |
-| 에러 클래스 계층        | `src/infra/errors.ts` (ConfigError) | Phase 2 |
-| 원자적 파일 쓰기        | `src/infra/fs-safe.ts`              | Phase 2 |
-| 경로 해석               | `src/infra/paths.ts`                | Phase 2 |
+| 조건                    | 산출물                          | Phase   |
+| ----------------------- | ------------------------------- | ------- |
+| FinClawConfig 타입 정의 | `packages/types/src/config.ts`  | Phase 1 |
+| 로깅 인프라             | `packages/infra/src/logger.ts`  | Phase 2 |
+| 에러 클래스 계층        | `packages/infra/src/errors.ts`  | Phase 2 |
+| 원자적 파일 쓰기        | `packages/infra/src/fs-safe.ts` | Phase 2 |
+| 경로 해석               | `packages/infra/src/paths.ts`   | Phase 2 |
 
-**신규 외부 의존성:** `dotenv`, `zod`, `json5`
+**신규 외부 의존성:** `zod@^4`, `json5` (2개)
+
+- `dotenv` 불필요 — `packages/infra/src/dotenv.ts`에서 `process.loadEnvFile()` 사용 (Node.js 22+ 내장)
 
 ```bash
-pnpm add dotenv zod json5
+cd packages/config && pnpm add zod@^4 json5
 ```
 
 ---
@@ -775,36 +798,32 @@ pnpm add dotenv zod json5
 
 ### 산출물 목록
 
-| #   | 산출물                     | 검증 방법                              |
-| --- | -------------------------- | -------------------------------------- |
-| 1   | 설정 파이프라인 (11단계)   | io.test.ts 통합 테스트                 |
-| 2   | createConfigIO() DI 팩토리 | 가짜 fs/env로 격리 테스트              |
-| 3   | Zod 스키마 (.strict())     | 유효/무효 설정 파일 검증               |
-| 4   | 7단계 defaults 체이닝      | 순서 보장 + 불변 업데이트 검증         |
-| 5   | $include 합성              | 순환 감지, 깊이 10 제한, deep merge    |
-| 6   | ${VAR} 환경변수 치환       | 대문자만, escape, 미설정 에러          |
-| 7   | 세션 스토어                | 파일 잠금, TTL 캐시, read-modify-write |
-| 8   | GitHub Actions CI          | push/PR에서 자동 실행 확인             |
-| 9   | 설정 예시 파일             | config.example.json5 파싱 성공         |
-| 10  | 테스트 (12개)              | `pnpm test` 전체 통과                  |
+| #   | 산출물                       | 검증 방법                              |
+| --- | ---------------------------- | -------------------------------------- |
+| 1   | 설정 파이프라인 (11단계)     | io.test.ts 통합 테스트                 |
+| 2   | createConfigIO() DI 팩토리   | 가짜 fs/env로 격리 테스트              |
+| 3   | Zod v4 스키마 (strictObject) | 유효/무효 설정 파일 검증               |
+| 4   | 7단계 defaults 체이닝        | 순서 보장 + 불변 업데이트 검증         |
+| 5   | $include 합성                | 순환 감지, 깊이 10 제한, deep merge    |
+| 6   | ${VAR} 환경변수 치환         | 대문자만, escape, 미설정 에러          |
+| 7   | 세션 스토어                  | 파일 잠금, TTL 캐시, read-modify-write |
+| 8   | 설정 예시 파일               | config.example.json5 파싱 성공         |
+| 9   | 테스트 (12개)                | `pnpm test` 전체 통과                  |
 
 ### 검증 기준
 
 ```bash
 # 1. 설정 로딩 통합 테스트
-pnpm test -- test/config/io.test.ts
+pnpm test -- packages/config/test/io.test.ts
 
-# 2. Zod strict 모드로 오타 감지
+# 2. Zod v4 strictObject 모드로 오타 감지
 # { "gatway": {} } -> ZodError (unknown key "gatway")
 
 # 3. $include 순환 감지
 # a.json5 -> $include: "b.json5" -> $include: "a.json5"
 # -> CircularIncludeError
 
-# 4. CI 워크플로우
-# git push -> GitHub Actions 실행 -> lint/typecheck/test 통과
-
-# 5. 전체 테스트 스위트
+# 4. 전체 테스트 스위트
 pnpm test            # 12개 파일 전체 통과
 pnpm typecheck       # 에러 0
 pnpm lint            # 에러 0
@@ -814,22 +833,99 @@ pnpm lint            # 에러 0
 
 ## 8. 복잡도 및 예상 파일 수
 
-| 항목              | 값                                          |
-| ----------------- | ------------------------------------------- |
-| **복잡도**        | **L (Large)**                               |
-| 소스 파일         | 21개                                        |
-| CI 파일           | 2개                                         |
-| 테스트 파일       | 12개                                        |
-| **총 파일 수**    | **35개**                                    |
-| 예상 LOC (소스)   | ~2,200줄                                    |
-| 예상 LOC (테스트) | ~960줄                                      |
-| 예상 작업 시간    | 6-8시간                                     |
-| 신규 의존성       | 3개 (dotenv, zod, json5)                    |
-| 난이도            | 중상 (DI 팩토리, Zod 스키마, 파일 잠금, CI) |
+| 항목              | 값                                         |
+| ----------------- | ------------------------------------------ |
+| **복잡도**        | **L (Large)**                              |
+| 소스 파일         | 18개                                       |
+| 설정 예시         | 2개                                        |
+| CI 파일           | 0개 (이미 존재)                            |
+| 테스트 파일       | 12개                                       |
+| **총 파일 수**    | **32개**                                   |
+| 예상 LOC (소스)   | ~2,200줄                                   |
+| 예상 LOC (테스트) | ~960줄                                     |
+| 신규 의존성       | 2개 (`zod@^4`, `json5`)                    |
+| 난이도            | 중상 (DI 팩토리, Zod v4 스키마, 파일 잠금) |
 
 **위험 요소:**
 
-- Zod `.strict()` 모드가 플러그인 설정 확장 시 호환성 문제 유발 가능 → Phase 5에서 플러그인 설정은 `.passthrough()` 허용
+- Zod `z.strictObject()` 모드가 플러그인 설정 확장 시 호환성 문제 유발 가능 → Phase 5에서 플러그인 설정은 `.passthrough()` 허용
 - 7단계 defaults 체이닝 순서가 미묘한 버그 유발 가능 → 각 단계의 독립 테스트로 방어
 - 세션 스토어의 파일 잠금이 Windows에서 불안정 → atomic write fallback으로 대응
-- CI에서 Node.js 22 설정이 GitHub Actions 캐시와 충돌 가능 → pnpm/action-setup으로 해결
+- **Zod v4 `.default()` 동작 변경** → 7단계 defaults와 충돌 가능성 (테스트로 검증 필수)
+- **Phase 1 `ConfigIoDeps`(async) vs Phase 3 `ConfigDeps`(sync)** → 이름 분리로 해결, 혼동 주의
+- **`.json` (Phase 2 infra) vs `.json5` (Phase 3 config)** → 설정 파일 경로가 다름, 문서화 완료 (§3 참고)
+
+---
+
+## 9. 구현 순서 (6단계)
+
+Phase 2와 일관된 단계별 구현 + 검증 흐름.
+
+### Step 1: 패키지 인프라 + 에러 클래스
+
+```
+1. packages/config/package.json 스텁 업데이트 (deps: @finclaw/infra, zod@^4, json5)
+2. packages/config/tsconfig.json 스텁 업데이트 (references: ../infra)
+3. packages/config/src/errors.ts 생성 (ConfigError, MissingEnvVarError, CircularIncludeError, ConfigValidationError)
+4. packages/config/src/types.ts 생성 (ConfigDeps, ConfigCache)
+→ 검증: pnpm typecheck (에러 0)
+```
+
+### Step 2: Zod v4 스키마 + 검증
+
+```
+1. packages/config/src/zod-schema.ts 생성 (z.strictObject, z.url 등 v4 API)
+2. packages/config/src/validation.ts 생성 (safeParse + z.treeifyError)
+3. packages/config/test/zod-schema.test.ts 생성
+4. packages/config/test/validation.test.ts 생성
+→ 검증: pnpm test -- packages/config/test/zod-schema.test.ts (통과)
+→ 검증: pnpm test -- packages/config/test/validation.test.ts (통과)
+```
+
+### Step 3: 기능 해석기 (includes, env, paths, merge, normalize, overrides, cache)
+
+```
+1. packages/config/src/includes.ts (deepMerge, CircularIncludeError)
+2. packages/config/src/env-substitution.ts (resolveEnvVars, MissingEnvVarError)
+3. packages/config/src/paths.ts (resolveConfigPath — 자체 구현)
+4. packages/config/src/merge-config.ts
+5. packages/config/src/normalize-paths.ts
+6. packages/config/src/runtime-overrides.ts
+7. packages/config/src/cache-utils.ts
+8. 대응 테스트 6개 생성
+→ 검증: 각 테스트 파일 개별 통과
+```
+
+### Step 4: Defaults + 파이프라인 통합
+
+```
+1. packages/config/src/defaults.ts (7단계, applyLoggingDefaults 버그 수정 패턴 적용)
+2. packages/config/src/io.ts (createConfigIO, loadConfig)
+3. packages/config/test/defaults.test.ts (Zod v4 .default()와 상호작용 검증 포함)
+4. packages/config/test/io.test.ts (11단계 파이프라인 통합)
+→ 검증: pnpm test -- packages/config/test/defaults.test.ts (통과)
+→ 검증: pnpm test -- packages/config/test/io.test.ts (통과)
+```
+
+### Step 5: 세션 스토어
+
+```
+1. packages/config/src/sessions/types.ts
+2. packages/config/src/sessions/session-key.ts
+3. packages/config/src/sessions/store.ts
+4. packages/config/test/sessions.test.ts
+5. packages/config/test/sessions-key.test.ts
+→ 검증: pnpm test -- packages/config/test/sessions.test.ts (통과)
+```
+
+### Step 6: Barrel export + 설정 예시 + 최종 검증
+
+```
+1. packages/config/src/index.ts 스텁 교체 (barrel export)
+2. packages/config/src/test-helpers.ts
+3. config.example.json5, .env.example 생성
+→ 검증: pnpm typecheck (에러 0)
+→ 검증: pnpm lint (에러 0)
+→ 검증: pnpm test (12개 전체 통과)
+→ 검증: pnpm build (성공)
+```

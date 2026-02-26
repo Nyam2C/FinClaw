@@ -1,0 +1,45 @@
+// config.example.json5 — FinClaw 설정 예시
+// 이 파일을 finclaw.json5로 복사하여 사용하세요.
+{
+  gateway: {
+    port: 3000,
+    host: '127.0.0.1',
+    tls: false,
+    corsOrigins: [],
+  },
+
+  agents: {
+    defaults: {
+      model: 'claude-sonnet-4-20250514',
+      provider: 'anthropic',
+      maxConcurrent: 2,
+      maxTokens: 4096,
+      temperature: 0.7,
+    },
+  },
+
+  channels: {
+    discord: {
+      botToken: '${DISCORD_TOKEN}',
+      applicationId: '${DISCORD_CLIENT_ID}',
+    },
+    cli: { enabled: true },
+    web: { enabled: false, port: 3001 },
+  },
+
+  session: {
+    mainKey: 'default',
+    resetPolicy: 'idle',
+    idleTimeoutMs: 1800000, // 30분
+  },
+
+  logging: {
+    level: 'info',
+    file: false,
+    redactSensitive: true,
+  },
+
+  finance: {
+    dataProviders: [{ name: 'alpha-vantage', apiKey: '${ALPHA_VANTAGE_KEY}' }],
+  },
+}
