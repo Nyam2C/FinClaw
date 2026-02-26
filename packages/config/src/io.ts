@@ -125,10 +125,16 @@ export function createConfigIO(deps: ConfigDeps = {}): ConfigIO {
 // ─── 모듈 레벨 래퍼 (편의) ───
 
 let defaultIO: ConfigIO | null = null;
+let defaultDeps: ConfigDeps | undefined;
 
-/** 기본 ConfigIO로 설정 로드 */
+/**
+ * 기본 ConfigIO로 설정 로드 (싱글턴).
+ * deps가 이전 호출과 다르면 내부 IO를 재생성한다.
+ * deps 없이 반복 호출하면 캐시된 IO를 재사용한다.
+ */
 export function loadConfig(deps?: ConfigDeps): FinClawConfig {
-  if (!defaultIO) {
+  if (!defaultIO || (deps && deps !== defaultDeps)) {
+    defaultDeps = deps;
     defaultIO = createConfigIO(deps);
   }
   return defaultIO.loadConfig();
@@ -140,4 +146,5 @@ export function clearConfigCache(): void {
     defaultIO.invalidateCache();
   }
   defaultIO = null;
+  defaultDeps = undefined;
 }

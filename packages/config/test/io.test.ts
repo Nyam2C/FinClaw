@@ -114,4 +114,20 @@ describe('loadConfig / clearConfigCache', () => {
     });
     expect(config.gateway?.port).toBe(3000);
   });
+
+  it('다른 deps로 호출하면 IO를 재생성한다', () => {
+    const cfgA = path.join(tmpDir, 'a.json5');
+    const cfgB = path.join(tmpDir, 'b.json5');
+    fs.writeFileSync(cfgA, '{ gateway: { port: 1111 } }', 'utf-8');
+    fs.writeFileSync(cfgB, '{ gateway: { port: 2222 } }', 'utf-8');
+
+    const depsA = { configPath: cfgA };
+    const depsB = { configPath: cfgB };
+
+    const configA = loadConfig(depsA);
+    expect(configA.gateway?.port).toBe(1111);
+
+    const configB = loadConfig(depsB);
+    expect(configB.gateway?.port).toBe(2222);
+  });
 });

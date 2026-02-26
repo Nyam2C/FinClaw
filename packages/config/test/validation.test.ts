@@ -29,6 +29,15 @@ describe('validateConfig', () => {
     const portIssue = result.issues.find((i) => i.path.includes('port'));
     expect(portIssue).toBeDefined();
   });
+
+  it('배열 내부 에러를 수집한다', () => {
+    const result = validateConfig({
+      finance: { dataProviders: [{ name: 123 }] },
+    });
+    expect(result.valid).toBe(false);
+    const arrayIssue = result.issues.find((i) => i.path.includes('[0]'));
+    expect(arrayIssue).toBeDefined();
+  });
 });
 
 describe('validateConfigStrict', () => {
