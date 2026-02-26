@@ -104,3 +104,13 @@ export {
   classifyError,
   type ErrorLevel,
 } from './unhandled-rejections.js';
+
+// 동시성
+export {
+  ConcurrencyLane,
+  ConcurrencyLaneManager,
+  DEFAULT_LANE_CONFIG,
+  type LaneId,
+  type LaneConfig,
+  type LaneHandle,
+} from './concurrency-lane.js';

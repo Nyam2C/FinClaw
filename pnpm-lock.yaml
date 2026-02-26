@@ -83,6 +83,9 @@ importers:
       '@finclaw/config':
         specifier: workspace:*
         version: link:../config
+      '@finclaw/infra':
+        specifier: workspace:*
+        version: link:../infra
       '@finclaw/skills-finance':
         specifier: workspace:*
         version: link:../skills-finance
