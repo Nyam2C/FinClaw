@@ -10,6 +10,8 @@
     "@finclaw/infra": "workspace:*",
     "@finclaw/skills-finance": "workspace:*",
     "@finclaw/storage": "workspace:*",
-    "@finclaw/types": "workspace:*"
+    "@finclaw/types": "workspace:*",
+    "jiti": "^2.6.0",
+    "zod": "^4.0.0"
   }
 }
