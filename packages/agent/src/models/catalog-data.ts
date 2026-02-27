@@ -1,7 +1,12 @@
 // packages/agent/src/models/catalog-data.ts
 import type { ModelEntry } from './catalog.js';
 
-/** 내장 모델 카탈로그 데이터 (6종) */
+/**
+ * 내장 모델 카탈로그 데이터 (6종)
+ *
+ * TODO(M6): config.models.definitions에서 읽어 registerModel()로 등록하는 초기화 로직 추가.
+ * 이 하드코딩 데이터는 폴백 기본값으로만 유지할 것.
+ */
 export const BUILT_IN_MODELS: readonly ModelEntry[] = [
   {
     id: 'claude-opus-4-6',
@@ -113,7 +118,7 @@ export const BUILT_IN_MODELS: readonly ModelEntry[] = [
       numericalReasoningTier: 'high',
     },
     pricing: { inputPerMillion: 10, outputPerMillion: 40 },
-    aliases: ['o3'],
+    aliases: [],
     deprecated: false,
     releaseDate: '2025-04-16',
   },

@@ -80,6 +80,7 @@ export class InMemoryModelCatalog implements ModelCatalog {
     });
   }
 
+  // TODO(L6): 중복 등록 시 throw. upsert 옵션이나 updateModel() 메서드 추가 고려.
   registerModel(entry: ModelEntry): void {
     if (this.models.has(entry.id)) {
       throw new Error(`Model already registered: ${entry.id}`);

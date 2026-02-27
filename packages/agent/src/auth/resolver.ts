@@ -54,7 +54,7 @@ export async function resolveApiKeyForProvider(
   // Step 1: 프로필 저장소 (라운드 로빈)
   const profile = await options.profileStore.selectNext(provider);
   if (profile) {
-    log.info(`Resolved API key for ${provider}: ${maskApiKey(profile.apiKey)} (source: profile)`);
+    log.debug(`Resolved API key for ${provider}: ${maskApiKey(profile.apiKey)} (source: profile)`);
     bus.emit('auth:resolve', provider, 'profile');
     return { apiKey: profile.apiKey, source: 'profile', profileId: profile.id };
   }
@@ -63,7 +63,7 @@ export async function resolveApiKeyForProvider(
   const envKey = ENV_KEY_MAP[provider];
   const envValue = options.env[envKey];
   if (envValue) {
-    log.info(`Resolved API key for ${provider}: ${maskApiKey(envValue)} (source: environment)`);
+    log.debug(`Resolved API key for ${provider}: ${maskApiKey(envValue)} (source: environment)`);
     bus.emit('auth:resolve', provider, 'environment');
     return { apiKey: envValue, source: 'environment' };
   }
@@ -71,7 +71,7 @@ export async function resolveApiKeyForProvider(
   // Step 3: 설정 파일
   const configKey = options.config.providers?.[provider]?.apiKey;
   if (configKey) {
-    log.info(`Resolved API key for ${provider}: ${maskApiKey(configKey)} (source: config)`);
+    log.debug(`Resolved API key for ${provider}: ${maskApiKey(configKey)} (source: config)`);
     bus.emit('auth:resolve', provider, 'config');
     return { apiKey: configKey, source: 'config' };
   }
@@ -82,7 +82,7 @@ export async function resolveApiKeyForProvider(
   // Step 5: 기본값 (개발용)
   if (options.config.allowDefaultKeys && options.config.defaultKeys?.[provider]) {
     const defaultKey = options.config.defaultKeys[provider];
-    log.info(`Resolved API key for ${provider}: ${maskApiKey(defaultKey)} (source: default)`);
+    log.debug(`Resolved API key for ${provider}: ${maskApiKey(defaultKey)} (source: default)`);
     bus.emit('auth:resolve', provider, 'default');
     return { apiKey: defaultKey, source: 'default' };
   }

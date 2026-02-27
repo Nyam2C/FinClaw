@@ -11,6 +11,7 @@ export class AnthropicAdapter implements ProviderAdapter {
     this.client = new Anthropic({ apiKey, baseURL: baseUrl });
   }
 
+  // TODO(L3): params.tools를 SDK 호출에 전달해야 함 (Phase 9+ 도구 사용 기능)
   async chatCompletion(params: ProviderRequestParams): Promise<unknown> {
     // system 메시지 분리 (Anthropic API는 system을 별도 파라미터로 받음)
     const systemMessages = params.messages.filter((m) => m.role === 'system');

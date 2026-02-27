@@ -31,7 +31,12 @@ export interface StreamChunk {
   readonly usage?: Partial<NormalizedUsage>;
 }
 
-/** 비용 계산 헬퍼 */
+/**
+ * 비용 계산 헬퍼
+ *
+ * TODO(L1): cacheReadTokens/cacheWriteTokens 비용 미산정.
+ * pricing.cacheReadPerMillion / cacheWritePerMillion 필드를 반영해야 함.
+ */
 export function calculateEstimatedCost(
   inputTokens: number,
   outputTokens: number,
@@ -56,6 +61,8 @@ export type ResponseNormalizer = (raw: unknown, pricing: ModelPricing) => Normal
  * - usage.cache_creation_input_tokens → cacheWriteTokens
  * - stop_reason: 'end_turn' | 'max_tokens' | 'stop_sequence' | 'tool_use'
  */
+// TODO(M5): raw를 as 캐스트 대신 런타임 검증(zod 등)으로 교체 권장.
+// TODO(L5): stop_reason을 직접 캐스트 대신 mapAnthropicStopReason() 헬퍼로 변환 권장.
 export function normalizeAnthropicResponse(
   raw: unknown,
   pricing: ModelPricing,
@@ -111,6 +118,7 @@ export function normalizeAnthropicResponse(
  * - usage.total_tokens → totalTokens
  * - finish_reason: 'stop' → 'end_turn', 'length' → 'max_tokens', 'tool_calls' → 'tool_use'
  */
+// TODO(M5): raw를 as 캐스트 대신 런타임 검증(zod 등)으로 교체 권장.
 export function normalizeOpenAIResponse(raw: unknown, pricing: ModelPricing): NormalizedResponse {
   const r = raw as {
     id?: string;

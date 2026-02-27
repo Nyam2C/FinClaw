@@ -1,21 +1,12 @@
 // packages/agent/src/models/fallback.ts
 import { sleepWithAbort, computeBackoff, getEventBus } from '@finclaw/infra';
-import type { ResolvedModel } from './selection.js';
+import type { FallbackReason } from '../errors.js';
+import type { UnresolvedModelRef, ResolvedModel } from './selection.js';
 import { classifyFallbackError } from '../errors.js';
 import { getBreakerForProvider } from '../providers/adapter.js';
 
-/** 해석 전 모델 참조 */
-export interface UnresolvedModelRef {
-  readonly raw: string;
-}
-
-/** 폴백 트리거 사유 */
-export type FallbackTrigger =
-  | 'rate-limit'
-  | 'server-error'
-  | 'timeout'
-  | 'context-overflow'
-  | 'model-unavailable';
+/** FallbackReason의 별칭 (fallback 컨텍스트 가독성용) */
+export type FallbackTrigger = FallbackReason;
 
 /** 폴백 체인 설정 */
 export interface FallbackConfig {
@@ -74,13 +65,28 @@ export async function runWithModelFallback<T>(
   const attempts: FallbackAttempt[] = [];
   const bus = getEventBus();
 
+  let previousModelId: string | undefined;
+
   for (const modelRef of config.models) {
     const resolved = resolve(modelRef);
 
     // CircuitBreaker: open 상태면 이 제공자 건너뛰기
+    // TODO(L4): circuit.execute() 내부 CircuitBreakerOpenError가 classifyFallbackError에 미매핑.
+    // 현재는 getState() 선 검사로 우회되므로 실질적 영향 없음.
     const circuit = getBreakerForProvider(resolved.provider);
     if (circuit.getState() === 'open') {
       continue;
+    }
+
+    // 모델 전환 시에만 fallback 이벤트 발행 (재시도는 제외)
+    if (previousModelId !== undefined && previousModelId !== resolved.modelId) {
+      const lastTrigger = classifyFallbackError(attempts.at(-1)?.error ?? new Error('unknown'));
+      bus.emit(
+        'model:fallback',
+        previousModelId,
+        resolved.modelId,
+        lastTrigger ?? 'model-unavailable',
+      );
     }
 
     for (let retry = 0; retry <= config.maxRetriesPerModel; retry++) {
@@ -114,8 +120,6 @@ export async function runWithModelFallback<T>(
           throw err; // 폴백 대상이 아닌 에러 → 즉시 throw
         }
 
-        bus.emit('model:fallback', resolved.modelId, modelRef.raw, trigger);
-
         // 동일 모델 재시도 전 대기
         if (retry < config.maxRetriesPerModel) {
           const delayMs = computeBackoff(retry, { minDelay: config.retryBaseDelayMs });
@@ -123,6 +127,8 @@ export async function runWithModelFallback<T>(
         }
       }
     }
+
+    previousModelId = resolved.modelId;
   }
 
   // 모든 모델 소진

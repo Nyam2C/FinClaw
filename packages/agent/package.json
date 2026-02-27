@@ -14,7 +14,6 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
-    "@finclaw/config": "workspace:*",
     "@finclaw/infra": "workspace:*",
     "@finclaw/types": "workspace:*",
     "openai": "^6.25.0"

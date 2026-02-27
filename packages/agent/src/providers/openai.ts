@@ -11,6 +11,7 @@ export class OpenAIAdapter implements ProviderAdapter {
     this.client = new OpenAI({ apiKey, baseURL: baseUrl });
   }
 
+  // TODO(L3): params.tools를 SDK 호출에 전달해야 함 (Phase 9+ 도구 사용 기능)
   async chatCompletion(params: ProviderRequestParams): Promise<unknown> {
     try {
       return await this.client.chat.completions.create(

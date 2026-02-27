@@ -27,6 +27,7 @@ interface HealthRecord {
 }
 
 /** 프로필별 상태 */
+// TODO(L8): records를 readonly HealthRecord[]로 변경하고 filter 결과를 재할당하는 패턴 적용 고려
 interface ProfileState {
   records: HealthRecord[];
   consecutiveFailures: number;

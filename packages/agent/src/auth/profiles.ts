@@ -93,6 +93,7 @@ export class InMemoryAuthProfileStore implements AuthProfileStore {
     if (!existing) {
       throw new Error(`Profile not found: ${id}`);
     }
+    // TODO(L7): as 캐스트 대신 명시적 필드 매핑으로 타입 안전성 강화 고려
     const updated = { ...existing, ...patch } as ManagedAuthProfile;
     this.profiles.set(id, updated);
     return updated;
@@ -136,9 +137,10 @@ export class InMemoryAuthProfileStore implements AuthProfileStore {
     });
 
     const selected = sorted[0];
-    // lastUsedAt 업데이트
-    this.profiles.set(selected.id, { ...selected, lastUsedAt: new Date() });
-    return selected;
+    // lastUsedAt 업데이트 후 갱신된 객체 반환
+    const updated = { ...selected, lastUsedAt: new Date() };
+    this.profiles.set(selected.id, updated);
+    return updated;
   }
 
   /** 사용 결과 기록 */
