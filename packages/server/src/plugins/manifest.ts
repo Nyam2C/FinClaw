@@ -34,7 +34,7 @@ export const manifestJsonSchema = z.toJSONSchema(PluginManifestSchema, {
 });
 
 /** z.treeifyError 결과를 단일 문자열로 평탄화 */
-function formatTreeErrors(tree: z.ZodErrorTree<unknown>, path = ''): string {
+function formatTreeErrors(tree: z.core.$ZodErrorTree<Record<string, unknown>>, path = ''): string {
   const messages: string[] = [];
 
   if (tree.errors && tree.errors.length > 0) {
@@ -46,7 +46,9 @@ function formatTreeErrors(tree: z.ZodErrorTree<unknown>, path = ''): string {
   if (tree.properties) {
     for (const [key, subtree] of Object.entries(tree.properties)) {
       const childPath = path ? `${path}.${key}` : key;
-      messages.push(formatTreeErrors(subtree as z.ZodErrorTree<unknown>, childPath));
+      messages.push(
+        formatTreeErrors(subtree as z.core.$ZodErrorTree<Record<string, unknown>>, childPath),
+      );
     }
   }
 

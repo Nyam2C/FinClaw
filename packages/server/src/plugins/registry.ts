@@ -65,6 +65,8 @@ export function registerToSlot<S extends SlotName>(
   (state.registry[slot] as unknown[]).push(entry);
 }
 
+// TODO(review): getSlot() — shallow copy + Object.freeze 호출마다 GC 부담.
+// Phase 6+ 프로파일링 후 hot path면 캐싱 또는 Proxy 기반 읽기 전용 뷰로 교체 검토.
 /** 슬롯 조회 (frozen 복사본 반환) */
 export function getSlot<S extends SlotName>(slot: S): ReadonlyArray<PluginRegistry[S][number]> {
   return Object.freeze([...state.registry[slot]]) as ReadonlyArray<PluginRegistry[S][number]>;

@@ -57,6 +57,8 @@ export function createHookRunner<T>(
 
   switch (mode) {
     case 'void':
+      // TODO(review): async wrapper + Promise.allSettled 대신 Promise.resolve()로 감싸는 스타일 검토.
+      // 의미적 동치이나 추가 마이크로태스크 1회 발생. 실측 영향 없으면 유지.
       return {
         tap,
         async fire(payload: T): Promise<PromiseSettledResult<unknown>[]> {

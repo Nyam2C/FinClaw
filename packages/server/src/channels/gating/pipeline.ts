@@ -5,6 +5,8 @@ import type { InboundMessage } from '@finclaw/types';
  * 게이트 함수 — 메시지를 통과시키면 true, 차단하면 false.
  * 비동기 게이트도 허용.
  */
+// TODO(review): GatingResult 타입(거부 사유 포함) 미도입. 운영 로깅 시 Gate 반환을
+// { passed: boolean; reason?: string } 형태로 확장 필요.
 export type Gate = (msg: InboundMessage) => boolean | Promise<boolean>;
 
 /**

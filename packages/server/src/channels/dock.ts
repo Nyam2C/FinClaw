@@ -2,6 +2,7 @@
 import type { ChannelDock, ChannelCapabilities, ChannelMeta, OutboundLimits } from '@finclaw/types';
 import { createChannelId } from '@finclaw/types';
 
+// TODO(review): capabilities가 필수 전체 지정. Partial<ChannelCapabilities> + defaults 병합 재도입 권장.
 export interface CreateDockOptions {
   id: string;
   meta: ChannelMeta;

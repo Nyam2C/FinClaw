@@ -23,6 +23,8 @@ export function startTyping(
 
   const send = channel.sendTyping.bind(channel);
 
+  // TODO(review): void send() — unhandled rejection 위험. stopAllTyping/shutdown 정리 메커니즘 부재.
+  // 에러 핸들링 래퍼 + 전역 타이머 추적 맵 도입 검토.
   // 즉시 1회 전송
   void send(channelId, chatId);
 

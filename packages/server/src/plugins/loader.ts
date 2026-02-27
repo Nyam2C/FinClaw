@@ -18,6 +18,7 @@ import { registerToSlot } from './registry.js';
 
 // ─── 타입 ───
 
+// TODO(review): PluginExports 인터페이스가 런타임 타입 검증에 사용되지 않음 — 활용처 확보 또는 제거 검토.
 /** 플러그인 모듈 exports (register || activate) */
 export interface PluginExports {
   readonly register?: (api: PluginBuildApi) => void;
@@ -61,6 +62,7 @@ function getOrCreateJiti(): ReturnType<typeof createJiti> {
   return jitiLoader;
 }
 
+// TODO(review): resetJiti() — 현재 테스트에서 미사용. 필요 시 테스트 격리에 활용, 불필요 시 제거.
 /** 테스트용 jiti 리셋 */
 export function resetJiti(): void {
   jitiLoader = null;
@@ -137,7 +139,12 @@ function recordDiagnostic(
     phase,
     message,
     ...(error
-      ? { error: { code: (error as Record<string, string>).code ?? 'UNKNOWN', stack: error.stack } }
+      ? {
+          error: {
+            code: (error as unknown as Record<string, string>).code ?? 'UNKNOWN',
+            stack: error.stack,
+          },
+        }
       : {}),
   });
 }
@@ -148,8 +155,8 @@ function recordDiagnostic(
  * 플러그인 로딩 파이프라인
  *
  * Stage 1: Discovery — searchPaths 스캔
- * Stage 2: Security  — 3단계 보안 검증 (validatePluginPath)
- * Stage 3: Manifest  — Zod v4 파싱/검증
+ * Stage 2: Manifest  — Zod v4 파싱/검증
+ * Stage 3: Security  — 3단계 보안 검증 (validatePluginPath)
  * Stage 4: Load      — 3-tier fallback 모듈 로딩
  * Stage 5: Register  — createPluginBuildApi + register()/activate() 호출
  */
@@ -188,7 +195,7 @@ export async function loadPlugins(
       // Stage 5: Register
       const api = createPluginBuildApi(pluginName);
       const registerFn = (mod.register ?? mod.activate) as
-        | ((api: PluginBuildApi) => void)
+        | ((api: PluginBuildApi) => unknown)
         | undefined;
 
       if (registerFn) {
@@ -252,4 +259,5 @@ export async function loadPlugins(
   return result;
 }
 
+// TODO(review): loadPluginModule — 내부 구현 함수이나 export됨. 테스트 외 외부 사용처 없으면 unexport 검토.
 export { createPluginBuildApi, loadPluginModule };

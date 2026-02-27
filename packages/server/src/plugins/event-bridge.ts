@@ -17,6 +17,7 @@ export function bridgeHooksToEventBus(hooks: {
 }): void {
   const bus = getEventBus();
 
+  // TODO(review): durationMs=0 하드코딩. payload에 durationMs 필드 추가 후 전달 필요.
   hooks.afterAgentRun.tap(
     (payload) => {
       bus.emit('agent:run:end', payload.agentId, payload.sessionKey, 0);

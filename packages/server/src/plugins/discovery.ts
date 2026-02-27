@@ -58,7 +58,10 @@ export function validatePluginPath(pluginPath: string, allowedRoots: string[]): 
 
   // 1. Path traversal 방지
   const realPath = fs.realpathSync(resolved);
-  const isAllowed = allowedRoots.some((root) => realPath.startsWith(path.resolve(root)));
+  const isAllowed = allowedRoots.some((root) => {
+    const resolvedRoot = path.resolve(root);
+    return realPath === resolvedRoot || realPath.startsWith(resolvedRoot + path.sep);
+  });
   if (!isAllowed) {
     throw new PluginSecurityError(`Path outside allowed roots: ${resolved}`);
   }

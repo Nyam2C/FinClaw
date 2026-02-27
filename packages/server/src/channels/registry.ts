@@ -1,6 +1,7 @@
 // packages/server/src/channels/registry.ts
 import type { ChannelDock, ChannelId } from '@finclaw/types';
 
+// TODO(review): CORE_DOCKS(dock.ts)를 부팅 시 자동 등록하는 코드 필요. initChannels() 등에서 호출.
 const docks = new Map<string, ChannelDock>();
 
 /** 채널 도크 등록 — 중복 시 에러 */
