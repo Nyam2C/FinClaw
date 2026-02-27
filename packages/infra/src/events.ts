@@ -54,6 +54,18 @@ export interface FinClawEventMap {
   'skill:complete': (skillName: string, agentId: string, durationMs: number) => void;
   /** 미처리 rejection */
   'system:unhandledRejection': (level: string, reason: unknown) => void;
+  /** 모델 별칭 해석 완료 */
+  'model:resolve': (alias: string, modelId: string) => void;
+  /** 폴백 모델 전환 */
+  'model:fallback': (from: string, to: string, reason: string) => void;
+  /** 모든 모델 소진 */
+  'model:exhausted': (models: string[], lastError: string) => void;
+  /** API 키 해석 완료 */
+  'auth:resolve': (provider: string, source: string) => void;
+  /** 프로필 쿨다운 진입 */
+  'auth:cooldown': (profileId: string, reason: string, ms: number) => void;
+  /** 프로필 건강 상태 변경 */
+  'auth:health:change': (profileId: string, from: string, to: string) => void;
 }
 
 /** 전역 이벤트 버스 (싱글턴) */
