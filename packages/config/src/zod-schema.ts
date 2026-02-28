@@ -137,6 +137,8 @@ export const FinClawConfigSchema = z.strictObject({
     .strictObject({
       definitions: z.record(z.string(), ModelDefinitionSchema).optional(),
       aliases: z.record(z.string(), z.string()).optional(),
+      defaultModel: z.string().optional(),
+      fallbacks: z.array(z.string()).optional(),
     })
     .optional(),
   plugins: z

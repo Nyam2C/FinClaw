@@ -78,6 +78,8 @@ export interface LoggingConfig {
 export interface ModelsConfig {
   definitions?: Record<string, ModelDefinition>;
   aliases?: Record<string, string>;
+  defaultModel?: string;
+  fallbacks?: string[];
 }
 
 export interface ModelDefinition {
