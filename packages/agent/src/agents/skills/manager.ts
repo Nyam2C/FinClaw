@@ -5,7 +5,7 @@
  * 핫 리로드, 의존성 해결 등은 후속 Phase에서 확장.
  */
 
-import type { ToolDefinition } from '@finclaw/types/agent.js';
+import type { ToolDefinition } from '@finclaw/types';
 
 /** 스킬 정의 */
 export interface SkillDefinition {

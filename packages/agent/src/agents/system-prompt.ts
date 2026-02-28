@@ -1,5 +1,4 @@
-import type { ToolDefinition } from '@finclaw/types/agent.js';
-import type { ChatType } from '@finclaw/types/message.js';
+import type { ToolDefinition, ChatType } from '@finclaw/types';
 
 // ── 타입 ──
 

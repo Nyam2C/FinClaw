@@ -1,4 +1,4 @@
-import type { ToolDefinition } from '@finclaw/types/agent.js';
+import type { ToolDefinition } from '@finclaw/types';
 import { getEventBus, createCircuitBreaker, type CircuitBreaker } from '@finclaw/infra';
 import { z } from 'zod/v4';
 import type { ToolGroupId } from './groups.js';
@@ -147,7 +147,7 @@ function jsonSchemaToZod(prop: Record<string, unknown>): z.ZodType {
         prop.items ? jsonSchemaToZod(prop.items as Record<string, unknown>) : z.unknown(),
       );
     case 'object':
-      return z.record(z.unknown());
+      return z.record(z.string(), z.unknown());
     default:
       return z.unknown();
   }
