@@ -8,21 +8,21 @@
 
 ## 1. 명세 일치 체크리스트
 
-| Step | 설명                                       | 파일                                                    | 일치   |
-| ---- | ------------------------------------------ | ------------------------------------------------------- | ------ |
-| 1    | FinClawEventMap에 session/context 이벤트 6종 | `packages/infra/src/events.ts:81-89`                    | ✅     |
-| 2    | Write Lock                                 | `packages/agent/src/agents/session/write-lock.ts`       | ✅     |
-| 3    | Transcript Repair                          | `packages/agent/src/agents/session/transcript-repair.ts`| ✅ \*  |
-| 4    | session/index.ts 배럴                       | `packages/agent/src/agents/session/index.ts`            | ✅     |
-| 5    | Context Window Guard                       | `packages/agent/src/agents/context/window-guard.ts`     | ✅ \*  |
-| 6    | Compaction                                 | `packages/agent/src/agents/context/compaction.ts`       | ✅ \*  |
-| 7    | context/index.ts 배럴                       | `packages/agent/src/agents/context/index.ts`            | ✅     |
-| 8    | System Prompt Builder                      | `packages/agent/src/agents/system-prompt.ts`            | ✅     |
-| 9    | Skills Manager (스텁)                       | `packages/agent/src/agents/skills/manager.ts`           | ✅     |
-| 10   | agent/index.ts 배럴 업데이트                | `packages/agent/src/index.ts`                           | ✅     |
-| 11   | write-lock.test.ts                         | `packages/agent/test/write-lock.test.ts`                | ✅     |
-| 12   | transcript-repair.test.ts                  | `packages/agent/test/transcript-repair.test.ts`         | ✅     |
-| 13   | compaction.test.ts                         | `packages/agent/test/compaction.test.ts`                | ✅ \*  |
+| Step | 설명                                         | 파일                                                     | 일치  |
+| ---- | -------------------------------------------- | -------------------------------------------------------- | ----- |
+| 1    | FinClawEventMap에 session/context 이벤트 6종 | `packages/infra/src/events.ts:81-89`                     | ✅    |
+| 2    | Write Lock                                   | `packages/agent/src/agents/session/write-lock.ts`        | ✅    |
+| 3    | Transcript Repair                            | `packages/agent/src/agents/session/transcript-repair.ts` | ✅ \* |
+| 4    | session/index.ts 배럴                        | `packages/agent/src/agents/session/index.ts`             | ✅    |
+| 5    | Context Window Guard                         | `packages/agent/src/agents/context/window-guard.ts`      | ✅ \* |
+| 6    | Compaction                                   | `packages/agent/src/agents/context/compaction.ts`        | ✅ \* |
+| 7    | context/index.ts 배럴                        | `packages/agent/src/agents/context/index.ts`             | ✅    |
+| 8    | System Prompt Builder                        | `packages/agent/src/agents/system-prompt.ts`             | ✅    |
+| 9    | Skills Manager (스텁)                        | `packages/agent/src/agents/skills/manager.ts`            | ✅    |
+| 10   | agent/index.ts 배럴 업데이트                 | `packages/agent/src/index.ts`                            | ✅    |
+| 11   | write-lock.test.ts                           | `packages/agent/test/write-lock.test.ts`                 | ✅    |
+| 12   | transcript-repair.test.ts                    | `packages/agent/test/transcript-repair.test.ts`          | ✅    |
+| 13   | compaction.test.ts                           | `packages/agent/test/compaction.test.ts`                 | ✅ \* |
 
 **결론: 모든 Step(1~13) 구현 완료, 코드 내용이 todo-2.md 명세와 일치.**
 
@@ -68,6 +68,7 @@ offset = -sortedDuplicates.length;
 중복 제거 후 나머지 작업(empty tool 교체, orphan 삽입, missing 삽입)의 인덱스를 보정할 때 "제거된 중복 수"를 일괄 차감한다. 이는 **모든 중복이 대상 인덱스보다 앞에** 있을 때만 정확.
 
 **시나리오:** 중복이 index 5에서 제거되고, empty tool이 index 3에 있을 때:
+
 - 실제: index 3은 이동하지 않음 (뒤의 요소만 shift)
 - 계산: `adjustedIdx = 3 + (-1) = 2` → 잘못된 위치 참조
 
@@ -85,6 +86,7 @@ offset = -sortedDuplicates.length;
 첫 번째 잠금 획득 시 시그널 핸들러(`onSignal`)가 등록되고, 반환된 `release`에서 `process.removeListener`로 정리한다. 그러나 재진입 경로(line 154-166)의 `release` 함수에는 시그널 핸들러 정리 코드가 없다.
 
 **시나리오:**
+
 ```
 lock1 = acquire(reentrant=true)   // SIGINT/SIGTERM 핸들러 등록, count=1
 lock2 = acquire(reentrant=true)   // count=2, 다른 release 함수 반환
@@ -107,8 +109,7 @@ lock2.release()                   // count 1→0, unlink + delete 수행, 핸들
 **위치:** `compaction.ts:176-177`
 
 ```typescript
-const safeTarget =
-  Math.floor(options.targetTokens / SAFETY_MARGIN) - SUMMARIZATION_OVERHEAD_TOKENS;
+const safeTarget = Math.floor(options.targetTokens / SAFETY_MARGIN) - SUMMARIZATION_OVERHEAD_TOKENS;
 ```
 
 `targetTokens`가 약 4916 이하(`ceil(4096 * 1.2)`)이면 `safeTarget`이 음수가 된다. 이 경우 summarize 1~2단계가 항상 실패하여 3단계(truncate-oldest)로 폴백된다.
@@ -121,15 +122,16 @@ const safeTarget =
 
 ## 3. 테스트 커버리지 요약
 
-| 테스트 파일                 | 테스트 수 | 커버 대상                                                              |
-| --------------------------- | --------- | ---------------------------------------------------------------------- |
-| `write-lock.test.ts`        | 7         | 획득/이중잠금/해제/재획득/stale(시간)/stale(PID)/재진입                |
-| `transcript-repair.test.ts` | 10        | detect: 정상/중복/orphan/missing/empty/sequence + repair: 4개 복구전략 |
+| 테스트 파일                 | 테스트 수 | 커버 대상                                                                   |
+| --------------------------- | --------- | --------------------------------------------------------------------------- |
+| `write-lock.test.ts`        | 7         | 획득/이중잠금/해제/재획득/stale(시간)/stale(PID)/재진입                     |
+| `transcript-repair.test.ts` | 10        | detect: 정상/중복/orphan/missing/empty/sequence + repair: 4개 복구전략      |
 | `compaction.test.ts`        | 7         | 불필요시 skip/truncate-tools/truncate-oldest/summarize/hybrid/preserve/폴백 |
 
 총 24개 테스트. 주요 분기 커버됨.
 
 **테스트 미커버 영역:**
+
 - window-guard.ts (`evaluateContextWindow`) — 테스트 없음. 순수 함수이므로 단위 테스트 추가 용이.
 - system-prompt.ts (`buildSystemPrompt`) — 테스트 없음. 출력 형식 검증이 필요할 수 있음.
 - skills/manager.ts (`InMemorySkillManager`) — 테스트 없음. CRUD 로직이 단순하여 우선순위 낮음.
@@ -160,7 +162,7 @@ offset = -sortedDuplicates.length;
 
 // after (제안)
 function countRemovedBefore(idx: number, removed: number[]): number {
-  return removed.filter(r => r < idx).length;
+  return removed.filter((r) => r < idx).length;
 }
 // ... adjustedIdx = idx - countRemovedBefore(idx, sortedDuplicates);
 ```
@@ -174,13 +176,14 @@ interface HeldLock {
   lockPath: string;
   pid: number;
   count: number;
-  cleanupSignals?: () => void;  // 추가
+  cleanupSignals?: () => void; // 추가
 }
 ```
 
 ### 발견 3: window-guard, system-prompt, skills/manager 테스트 추가
 
 세 모듈 모두 테스트가 없음. todo-2 명세에 포함되지 않았으므로 구현 누락은 아니지만, Phase 7 완료 전에 커버리지 보강 권장:
+
 - `evaluateContextWindow`: threshold 경계값 테스트 (safe/warning/critical/exceeded)
 - `buildSystemPrompt`: mode별 섹션 포함 여부, priority 정렬 순서
 - `InMemorySkillManager`: load/unload/getTools 기본 CRUD

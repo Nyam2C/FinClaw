@@ -8,7 +8,7 @@ pre-commit:
       glob: '*.{ts,mts,js,mjs}'
       run: npx oxlint --config oxlintrc.json {staged_files}
     format-check:
-      glob: '*.{ts,mts,js,mjs,json}'
+      glob: '*.{ts,mts,js,mjs,json,md}'
       run: npx oxfmt --check {staged_files}
     typecheck:
       run: npx tsgo --noEmit
