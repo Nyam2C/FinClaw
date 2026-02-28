@@ -87,6 +87,18 @@ export interface FinClawEventMap {
   'context:window:status': (status: string, usageRatio: number) => void;
   'context:compact': (strategy: string, beforeTokens: number, afterTokens: number) => void;
   'context:compact:fallback': (fromStrategy: string, toStrategy: string) => void;
+
+  // ── Phase 8: Pipeline events ──
+  'pipeline:start': (data: { sessionKey: unknown }) => void;
+  'pipeline:complete': (data: {
+    sessionKey: unknown;
+    success: boolean;
+    durationMs: number;
+    stagesExecuted: readonly string[];
+    abortedAt?: string;
+    abortReason?: string;
+  }) => void;
+  'pipeline:error': (data: { sessionKey: unknown; error: Error }) => void;
 }
 
 /** 전역 이벤트 버스 (싱글턴) */
