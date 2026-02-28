@@ -3,6 +3,7 @@ import type { FinClawConfig } from '@finclaw/types';
 import { writeFileAtomic } from '@finclaw/infra';
 import * as JSON5 from 'json5';
 import * as fs from 'node:fs';
+import { homedir as osHomedir } from 'node:os';
 import type { ConfigCache, ConfigDeps } from './types.js';
 import { createConfigCache } from './cache-utils.js';
 import { applyDefaults } from './defaults.js';
@@ -43,7 +44,7 @@ export function createConfigIO(deps: ConfigDeps = {}): ConfigIO {
   const fsModule = deps.fs ?? fs;
   const json5Module = deps.json5 ?? JSON5;
   const env = deps.env ?? process.env;
-  const homedir = deps.homedir ?? (() => require('node:os').homedir());
+  const homedir = deps.homedir ?? osHomedir;
   const configPath = deps.configPath ?? resolveConfigPath(env);
   const logger = deps.logger;
   const cache: ConfigCache = createConfigCache();

@@ -187,17 +187,12 @@ export class AutoReplyPipeline {
       stagesExecuted.push('context');
       this.deps.observer?.onStageComplete?.('context', ctxResult);
 
-      // context skip 시: abort만 observer에 알림. skip은 정상 흐름(금융 데이터 부분 실패 등)이므로 별도 알림 불필요.
       if (ctxResult.action !== 'continue') {
         typing?.seal();
         if (ctxResult.action === 'abort') {
-          this.deps.observer?.onPipelineComplete?.(ctx, {
-            success: false,
-            stagesExecuted,
-            abortedAt: 'context',
-            abortReason: ctxResult.reason,
-            durationMs: performance.now() - startTime,
-          });
+          this.emitAbort(ctx, stagesExecuted, 'context', startTime);
+        } else {
+          this.emitComplete(ctx, stagesExecuted, startTime);
         }
         return;
       }
