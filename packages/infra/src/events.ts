@@ -66,6 +66,17 @@ export interface FinClawEventMap {
   'auth:cooldown': (profileId: string, reason: string, ms: number) => void;
   /** 프로필 건강 상태 변경 */
   'auth:health:change': (profileId: string, from: string, to: string) => void;
+
+  // ── Phase 7: Tool events ──
+  'tool:register': (name: string, group: string, source: string) => void;
+  'tool:unregister': (name: string) => void;
+  'tool:execute:start': (name: string, sessionId: string) => void;
+  'tool:execute:end': (name: string, sessionId: string, durationMs: number) => void;
+  'tool:execute:error': (name: string, sessionId: string, error: string) => void;
+  'tool:execute:timeout': (name: string, sessionId: string, timeoutMs: number) => void;
+  'tool:policy:verdict': (name: string, verdict: string, stage: string) => void;
+  'tool:policy:deny': (name: string, reason: string) => void;
+  'tool:circuit:change': (name: string, from: string, to: string) => void;
 }
 
 /** 전역 이벤트 버스 (싱글턴) */
