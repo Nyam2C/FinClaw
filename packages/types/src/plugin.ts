@@ -72,7 +72,9 @@ export type PluginHookName =
   | 'onGatewayStart'
   | 'onGatewayStop'
   | 'onPluginLoaded'
-  | 'onPluginUnloaded';
+  | 'onPluginUnloaded'
+  | 'beforeToolExecute' // Phase 7
+  | 'afterToolExecute'; // Phase 7
 
 /** 플러그인 서비스 */
 export interface PluginService {

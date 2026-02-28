@@ -28,6 +28,38 @@ AI 에이전트의 **도구 실행 계층(L5)**, **세션 관리(L3)**, **컨텍
 
 FinClaw 금융 도메인 특화: 도구 그룹에 "finance" 카테고리(시세 조회, 포트폴리오 분석, 뉴스 검색), 시스템 프롬프트에 금융 규정 준수 가이드라인 섹션 추가.
 
+### 1.1 ToolDefinition 타입 충돌 해소
+
+`@finclaw/types/agent.ts`에 이미 3필드 `ToolDefinition { name, description, inputSchema }`이 존재한다. 본 plan의 7필드 ToolDefinition(group, requiresApproval, isTransactional, accessesSensitiveData 추가)은 이와 충돌하므로 다음과 같이 해소한다.
+
+- plan의 7필드 타입을 **`RegisteredToolDefinition`**으로 개명
+- `RegisteredToolDefinition extends ToolDefinition` (기존 3필드 상속)
+- API 전송 시 `toApiToolDefinition(reg: RegisteredToolDefinition): ToolDefinition` 변환 유틸 제공
+
+```typescript
+// src/agents/tools/registry.ts
+import type { ToolDefinition } from '@finclaw/types/agent.js';
+
+/** Phase 7 확장 도구 정의 — 기존 ToolDefinition 3필드를 상속 */
+export interface RegisteredToolDefinition extends ToolDefinition {
+  readonly group: ToolGroupId;
+  readonly requiresApproval: boolean;
+  readonly isTransactional: boolean;
+  readonly accessesSensitiveData: boolean;
+  /** 도구별 실행 타임아웃 (ms). 미지정 시 기본 30_000 */
+  readonly timeoutMs?: number;
+  /** 외부 API 호출 도구 여부 (true이면 CircuitBreaker 적용) */
+  readonly isExternal?: boolean;
+}
+
+/** RegisteredToolDefinition → ToolDefinition 변환 (LLM API 전송용) */
+export function toApiToolDefinition(reg: RegisteredToolDefinition): ToolDefinition {
+  return { name: reg.name, description: reg.description, inputSchema: reg.inputSchema };
+}
+```
+
+> **영향 범위**: §4.1의 `ToolDefinition` 참조를 모두 `RegisteredToolDefinition`으로 교체. `ToolRegistry.register()`, `RegisteredTool.definition`, `PolicyContext.toolDefinition` 등의 타입이 변경된다. `PromptBuildContext.availableTools`는 API 전송 직전에 `toApiToolDefinition()`으로 변환하므로 기존 `ToolDefinition[]`을 유지한다.
+
 ---
 
 ## 2. OpenClaw 참조
@@ -686,6 +718,75 @@ export class InMemoryToolRegistry implements ToolRegistry {
 }
 ```
 
+### 5.1.1 execute() 안전성 보강
+
+`ToolRegistry.execute()` 내부에 3개 안전 단계를 추가한다. 모두 기존 코드베이스 인프라를 재사용하며 새 의존성은 없다.
+
+**① Zod v4 입력 검증** — 코드베이스에 이미 `zod/v4` 존재
+
+```typescript
+import { z } from 'zod/v4';
+
+// execute() 내부, 정책 평가 전
+if (tool.definition.inputSchema) {
+  const schema = z.object(
+    Object.fromEntries(
+      Object.entries(tool.definition.inputSchema.properties ?? {}).map(([k, v]) => [
+        k,
+        jsonSchemaToZod(v),
+      ]),
+    ),
+  );
+  const parsed = schema.safeParse(input);
+  if (!parsed.success) {
+    return guardToolResult(
+      { content: `Invalid input: ${parsed.error.message}`, isError: true },
+      this.resultGuardOptions,
+    );
+  }
+}
+```
+
+**② 도구별 타임아웃** — 수동 AbortController 조합 (`AbortSignal.any()` 메모리 누수 회피)
+
+```typescript
+const toolTimeout = tool.definition.timeoutMs ?? 30_000;
+const controller = new AbortController();
+const timer = setTimeout(() => controller.abort(), toolTimeout);
+
+// 호출자의 abortSignal도 연결
+const onExternalAbort = () => controller.abort();
+context.abortSignal.addEventListener('abort', onExternalAbort, { once: true });
+
+try {
+  const mergedCtx = { ...context, abortSignal: controller.signal };
+  const result = await tool.executor(input, mergedCtx);
+  return guardToolResult(result, this.resultGuardOptions);
+} finally {
+  clearTimeout(timer);
+  context.abortSignal.removeEventListener('abort', onExternalAbort);
+}
+```
+
+**③ CircuitBreaker** — 외부 API 도구용 (`@finclaw/infra/circuit-breaker.ts` 재사용)
+
+```typescript
+import { createCircuitBreaker, type CircuitBreaker } from '@finclaw/infra/circuit-breaker.js';
+
+// InMemoryToolRegistry 클래스에 필드 추가
+private readonly breakers = new Map<string, CircuitBreaker>();
+
+// execute() 내부, 도구 실행 직전
+if (tool.definition.isExternal) {
+  const breaker = this.breakers.get(name)
+    ?? this.breakers.set(name, createCircuitBreaker()).get(name)!;
+  return breaker.execute(() => tool.executor(input, mergedCtx))
+    .then(r => guardToolResult(r, this.resultGuardOptions));
+}
+```
+
+> `RegisteredToolDefinition`에 추가되는 필드: `timeoutMs?: number`, `isExternal?: boolean` (§1.1 참조)
+
 ### 5.2 9단계 정책 필터 구현
 
 ```typescript
@@ -709,23 +810,44 @@ export function evaluateToolPolicy(
   stages: readonly PolicyStage[] = DEFAULT_STAGES,
 ): PolicyEvaluationResult {
   const stageResults: PolicyStageResult[] = [];
+  let pendingApproval: PolicyStageResult | undefined;
 
   for (const stage of stages) {
     const result = stage.evaluate(ctx, rules);
     stageResults.push(result);
 
-    // 'continue' 이외의 판정이 나오면 즉시 종료
-    if (result.verdict !== 'continue') {
-      return {
-        finalVerdict: result.verdict,
-        stageResults,
-        decidingStage: stage.name,
-        reason: result.reason,
-      };
+    switch (result.verdict) {
+      // deny → 즉시 중단 (후속 단계 무시)
+      case 'deny':
+        return {
+          finalVerdict: 'deny',
+          stageResults,
+          decidingStage: stage.name,
+          reason: result.reason,
+        };
+
+      // require-approval → 누적, 파이프라인 끝에서 적용
+      case 'require-approval':
+        pendingApproval ??= result;
+        break;
+
+      // allow / continue → 계속 진행 (후속 finance-safety 단계 보장)
+      default:
+        break;
     }
   }
 
-  // 모든 단계를 통과하면 기본 allow
+  // 파이프라인 완주 후 누적된 require-approval 적용
+  if (pendingApproval) {
+    return {
+      finalVerdict: 'require-approval',
+      stageResults,
+      decidingStage: pendingApproval.stage,
+      reason: pendingApproval.reason,
+    };
+  }
+
+  // 모든 단계를 통과하고 누적 승인 요청도 없으면 기본 allow
   return {
     finalVerdict: 'allow',
     stageResults,
@@ -832,6 +954,85 @@ export async function acquireWriteLock(options: LockOptions): Promise<LockResult
 }
 ```
 
+### 5.3.1 Write Lock 보강
+
+기존 §5.3의 stale 감지가 시간 기반(`staleAfterMs`)만 사용하여 프로세스 비정상 종료 시 최대 5분 대기가 발생한다. `gateway-lock.ts`의 `isProcessAlive` 패턴을 재사용하여 즉시 감지한다.
+
+**① PID 생존 확인** — `gateway-lock.ts`의 `isProcessAlive` 패턴 재사용
+
+```typescript
+// stale 검사 부분 교체
+const info = JSON.parse(await fs.readFile(lockPath, 'utf-8'));
+if (!isProcessAlive(info.pid)) {
+  // 프로세스가 죽었으면 시간과 무관하게 즉시 stale 처리
+  await fs.unlink(lockPath);
+  continue;
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+```
+
+**② 재진입 잠금** — `HeldLock.count` 참조 카운팅
+
+```typescript
+interface HeldLock {
+  lockPath: string;
+  pid: number;
+  count: number; // 참조 카운트
+  release(): Promise<void>;
+}
+
+// 동일 프로세스가 이미 잠금을 보유한 경우
+if (info.pid === process.pid && options.allowReentrant) {
+  held.count++;
+  return {
+    acquired: true,
+    lockPath,
+    release: async () => {
+      held.count--;
+      if (held.count <= 0) await fs.unlink(lockPath);
+    },
+  };
+}
+```
+
+**③ 시그널 핸들러 정리** — SIGINT/SIGTERM/exit 핸들러 등록 + release 시 해제
+
+```typescript
+const cleanup = async () => {
+  try {
+    await fs.unlink(lockPath);
+  } catch {
+    /* ignore */
+  }
+};
+const onSignal = () => {
+  cleanup();
+  process.exit(1);
+};
+
+process.once('SIGINT', onSignal);
+process.once('SIGTERM', onSignal);
+process.once('exit', cleanup);
+
+// release() 에서 핸들러 해제
+const release = async () => {
+  process.removeListener('SIGINT', onSignal);
+  process.removeListener('SIGTERM', onSignal);
+  process.removeListener('exit', cleanup);
+  await cleanup();
+};
+```
+
+> `LockOptions`에 추가되는 필드: `allowReentrant?: boolean`, `maxHoldMs?: number`
+
 ### 5.4 적응형 컨텍스트 압축
 
 ```typescript
@@ -931,17 +1132,118 @@ export async function compactContext(
 }
 ```
 
+### 5.4.1 Compaction 보강
+
+기존 §5.4의 압축이 실패하거나 목표 토큰에 도달하지 못하는 경우를 대비한 3단계 폴백과 안전 상수를 추가한다.
+
+**① 안전 상수**
+
+```typescript
+/** 토큰 카운터 오차 보정 (1.2 = 20% 마진) */
+const SAFETY_MARGIN = 1.2;
+/** 요약 생성 시 소비되는 추가 토큰 (요약 프롬프트 + 출력) */
+const SUMMARIZATION_OVERHEAD_TOKENS = 4096;
+
+// targetTokens 계산 시 적용
+const safeTarget = Math.floor(options.targetTokens / SAFETY_MARGIN) - SUMMARIZATION_OVERHEAD_TOKENS;
+```
+
+**② 3단계 폴백 요약**
+
+```typescript
+async function compactWithFallback(
+  toCompact: readonly TranscriptEntry[],
+  safeTarget: number,
+  summarizer: (text: string) => Promise<string>,
+  tokenCounter: (text: string) => number,
+): Promise<{ entries: TranscriptEntry[]; summary?: string; strategy: CompactionStrategy }> {
+  // 1단계: Full summarize — 전체를 한 번에 요약
+  try {
+    const text = toCompact.map((e) => `[${e.role}]: ${e.content}`).join('\n');
+    const summary = await summarizer(text);
+    if (tokenCounter(summary) <= safeTarget) {
+      return {
+        entries: [
+          {
+            role: 'system',
+            content: `[Previous conversation summary]\n${summary}`,
+            timestamp: new Date().toISOString(),
+          },
+        ],
+        summary,
+        strategy: 'summarize',
+      };
+    }
+  } catch {
+    /* 요약 실패 → 2단계로 */
+  }
+
+  // 2단계: Partial — 청크 분할 후 개별 요약
+  const chunkCount = Math.max(
+    2,
+    Math.ceil(tokenCounter(toCompact.map((e) => e.content).join('')) / safeTarget),
+  );
+  try {
+    const chunkSize = Math.ceil(toCompact.length / chunkCount);
+    const summaries: string[] = [];
+    for (let i = 0; i < toCompact.length; i += chunkSize) {
+      const chunk = toCompact.slice(i, i + chunkSize);
+      const text = chunk.map((e) => `[${e.role}]: ${e.content}`).join('\n');
+      summaries.push(await summarizer(text));
+    }
+    const combined = summaries.join('\n---\n');
+    if (tokenCounter(combined) <= safeTarget) {
+      return {
+        entries: [
+          {
+            role: 'system',
+            content: `[Previous conversation summary]\n${combined}`,
+            timestamp: new Date().toISOString(),
+          },
+        ],
+        summary: combined,
+        strategy: 'summarize',
+      };
+    }
+  } catch {
+    /* 부분 요약 실패 → 3단계로 */
+  }
+
+  // 3단계: Fallback — truncate-oldest (AI 호출 없이 안전하게 후퇴)
+  let removed = 0;
+  let removedTokens = 0;
+  const kept: TranscriptEntry[] = [];
+  for (let i = toCompact.length - 1; i >= 0; i--) {
+    if (removedTokens >= tokenCounter(toCompact.map((e) => e.content).join('')) - safeTarget) {
+      kept.unshift(toCompact[i]);
+    } else {
+      removedTokens += tokenCounter(toCompact[i].content);
+      removed++;
+    }
+  }
+  return { entries: kept, strategy: 'truncate-oldest' };
+}
+```
+
+**③ 적응형 청크 비율** — 이전 압축 비율에 따라 청크 수를 자동 결정
+
+```typescript
+// 압축 비율 = afterTokens / beforeTokens
+// 비율이 높으면(요약이 길면) 다음번에 더 많은 청크로 분할
+const chunkCount = Math.max(2, Math.ceil(1 / compressionRatio));
+```
+
 ---
 
 ## 6. 선행 조건
 
-| Phase                   | 구체적 산출물                                                      | 필요 이유                                     |
-| ----------------------- | ------------------------------------------------------------------ | --------------------------------------------- |
-| Phase 1 (타입 시스템)   | `ToolDefinition`, `TranscriptEntry`, `ChatType` 타입               | 도구/세션 인터페이스의 타입 기반              |
-| Phase 2 (인프라)        | `Logger`, `FinClawError`, `retry()` 유틸리티                       | 도구 실행 에러 처리, 잠금 재시도 로깅         |
-| Phase 3 (설정)          | `ToolPolicyConfig`, `SessionConfig`, `CompactionConfig`            | 정책 규칙, 세션 디렉토리 경로, 압축 임계값    |
-| Phase 5 (채널/플러그인) | `PluginRegistry` (tools 슬롯), Hook system (`tool:before-execute`) | 플러그인이 도구를 등록하는 경로, 도구 실행 훅 |
-| Phase 6 (모델 선택)     | `ModelEntry` (contextWindow, maxOutputTokens), `resolveModel()`    | 컨텍스트 윈도우 가드, 압축 시 모델 호출       |
+| Phase                   | 구체적 산출물                                                                                         | 필요 이유                                                                               |
+| ----------------------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Phase 1 (타입 시스템)   | `ToolDefinition`, `TranscriptEntry`, `ChatType` 타입                                                  | 도구/세션 인터페이스의 타입 기반                                                        |
+| Phase 2 (인프라)        | `Logger`, `FinClawError`, `retry()`, `CircuitBreaker`, `gateway-lock` PID 패턴, `fs-safe`, `EventBus` | 도구 실행 에러 처리, 잠금 재시도 로깅, 외부 API 보호, stale lock 즉시 감지, 이벤트 발행 |
+| Phase 3 (설정)          | `ToolPolicyConfig`, `SessionConfig`, `CompactionConfig`                                               | 정책 규칙, 세션 디렉토리 경로, 압축 임계값                                              |
+| Phase 5 (채널/플러그인) | `PluginRegistry` (tools 슬롯), Hook system (`tool:before-execute`)                                    | 플러그인이 도구를 등록하는 경로, 도구 실행 훅                                           |
+| Phase 6 (모델 선택)     | `ModelEntry` (contextWindow, maxOutputTokens), `resolveModel()`                                       | 컨텍스트 윈도우 가드, 압축 시 모델 호출                                                 |
 
 ---
 
@@ -985,9 +1287,9 @@ pnpm test:coverage -- --filter='src/agents/**'
 | **소스 파일**   | 12개 (`tools/` 5 + `session/` 3 + `context/` 2 + `system-prompt.ts` 1 + `skills/` 1) |
 | **테스트 파일** | 7개                                                                                  |
 | **총 파일 수**  | **~19개**                                                                            |
-| **예상 LOC**    | 소스 ~1,600 / 테스트 ~1,200 / 합계 ~2,800                                            |
-| **새 의존성**   | 없음 (Node.js 내장 모듈만 사용)                                                      |
-| **예상 소요**   | 2-3일                                                                                |
+| **예상 LOC**    | 소스 ~2,000 / 테스트 ~1,500 / 합계 ~3,500                                            |
+| **새 의존성**   | 없음 (Node.js 내장 모듈 + 기존 인프라만 사용)                                        |
+| **예상 소요**   | 3-4일                                                                                |
 
 ### 복잡도 근거 (L)
 
@@ -997,3 +1299,335 @@ pnpm test:coverage -- --filter='src/agents/**'
 - 적응형 압축은 4종 전략 + AI 요약 모킹 + 토큰 카운팅 로직 포함
 - 시스템 프롬프트 빌더는 15+ 섹션의 동적 조립 + 토큰 예산 내 피팅 로직
 - Phase 5(플러그인 훅), Phase 6(모델 정보)과의 통합 지점이 다수 존재
+
+---
+
+## 9. 이벤트 시스템 통합
+
+기존 `FinClawEventMap` (17종, `packages/infra/src/events.ts`)에 Phase 7 이벤트 ~15종을 추가한다. 기존 `EventBus` 인프라(`createTypedEmitter`, `getEventBus`)를 그대로 재사용한다.
+
+### 9.1 추가 이벤트 정의
+
+```typescript
+// packages/infra/src/events.ts — FinClawEventMap에 추가
+
+/** === Phase 7: 도구 시스템 이벤트 === */
+
+/** 도구 등록 */
+'tool:register': (name: string, group: string, source: string) => void;
+/** 도구 등록 해제 */
+'tool:unregister': (name: string) => void;
+/** 도구 실행 시작 */
+'tool:execute:start': (name: string, sessionId: string) => void;
+/** 도구 실행 완료 */
+'tool:execute:end': (name: string, sessionId: string, durationMs: number) => void;
+/** 도구 실행 에러 */
+'tool:execute:error': (name: string, sessionId: string, error: string) => void;
+/** 도구 실행 타임아웃 */
+'tool:execute:timeout': (name: string, sessionId: string, timeoutMs: number) => void;
+/** 정책 판정 */
+'tool:policy:verdict': (name: string, verdict: string, stage: string) => void;
+/** 정책 deny */
+'tool:policy:deny': (name: string, reason: string) => void;
+/** CircuitBreaker 상태 변경 */
+'tool:circuit:change': (name: string, from: string, to: string) => void;
+
+/** === Phase 7: 세션 이벤트 === */
+
+/** 세션 잠금 획득 */
+'session:lock:acquire': (sessionId: string, pid: number) => void;
+/** 세션 잠금 해제 */
+'session:lock:release': (sessionId: string) => void;
+/** Stale 잠금 감지 */
+'session:lock:stale': (sessionId: string, stalePid: number) => void;
+
+/** === Phase 7: 컨텍스트 이벤트 === */
+
+/** 컨텍스트 윈도우 상태 변경 */
+'context:window:status': (status: string, usageRatio: number) => void;
+/** 컨텍스트 압축 실행 */
+'context:compact': (strategy: string, beforeTokens: number, afterTokens: number) => void;
+/** 컨텍스트 압축 폴백 */
+'context:compact:fallback': (fromStrategy: string, toStrategy: string) => void;
+```
+
+### 9.2 발행 위치
+
+| 이벤트                                 | 발행 위치                                           |
+| -------------------------------------- | --------------------------------------------------- |
+| `tool:register` / `tool:unregister`    | `InMemoryToolRegistry.register()` / `.unregister()` |
+| `tool:execute:start` / `end` / `error` | `InMemoryToolRegistry.execute()`                    |
+| `tool:execute:timeout`                 | §5.1.1 타임아웃 핸들러                              |
+| `tool:policy:verdict` / `deny`         | `evaluateToolPolicy()` 반환 직후                    |
+| `tool:circuit:change`                  | CircuitBreaker 상태 전이 시                         |
+| `session:lock:*`                       | `acquireWriteLock()` / `release()`                  |
+| `context:window:status`                | `evaluateContextWindow()`                           |
+| `context:compact` / `compact:fallback` | `compactContext()` / `compactWithFallback()`        |
+
+---
+
+## 10. 플러그인 훅 확장
+
+기존 `PluginHookName` (9종, `packages/types/src/plugin.ts`)에 도구 실행 훅 2종을 추가한다. `createHookRunner` 3모드(`void`, `modifying`, `sync`)를 그대로 활용한다.
+
+### 10.1 추가 훅
+
+```typescript
+// packages/types/src/plugin.ts — PluginHookName에 추가
+| 'beforeToolExecute'   // modifying: 입력 변환, 실행 차단 가능
+| 'afterToolExecute';   // modifying: 결과 변환, 메트릭 수집 가능
+```
+
+### 10.2 페이로드 타입
+
+```typescript
+// src/agents/tools/registry.ts
+
+/** beforeToolExecute 훅 페이로드 */
+export interface BeforeToolExecutePayload {
+  readonly toolName: string;
+  readonly input: Record<string, unknown>;
+  readonly context: ToolExecutionContext;
+  /** false로 설정하면 실행을 차단 (deny와 유사) */
+  skip?: boolean;
+  /** skip=true일 때 반환할 대체 결과 */
+  skipResult?: ToolResult;
+}
+
+/** afterToolExecute 훅 페이로드 */
+export interface AfterToolExecutePayload {
+  readonly toolName: string;
+  readonly input: Record<string, unknown>;
+  readonly context: ToolExecutionContext;
+  result: GuardedToolResult;
+  readonly durationMs: number;
+}
+```
+
+### 10.3 적용 위치
+
+```typescript
+// InMemoryToolRegistry.execute() 내부
+
+// 정책 평가 후, 실행 전
+const beforePayload = await this.hooks.beforeToolExecute.fire({
+  toolName: name,
+  input,
+  context,
+});
+if (beforePayload.skip) {
+  return guardToolResult(
+    beforePayload.skipResult ?? { content: 'Skipped', isError: false },
+    this.resultGuardOptions,
+  );
+}
+
+// 실행 후, 반환 전
+const afterPayload = await this.hooks.afterToolExecute.fire({
+  toolName: name,
+  input,
+  context,
+  result: guardedResult,
+  durationMs,
+});
+return afterPayload.result;
+```
+
+---
+
+## 11. 모듈별 보강 사항
+
+기존 §4.5, §4.6, §4.7에 정의된 모듈의 누락 사항을 보강한다.
+
+### 11.1 Transcript Repair 보강
+
+- **도구 이름 검증**: `toolName`이 레지스트리에 존재하는지 확인. 미등록 도구 이름은 `"[unknown-tool]"`로 치환
+- **orphan tool_result 처리**: 대응하는 `tool_use`가 없는 `tool_result`에 합성 `tool_use` 삽입 시, `toolName`을 content에서 추출 시도
+- **abort 인식 복구**: `abortSignal`로 중단된 실행의 불완전 엔트리를 `"[Execution aborted]"` content로 교체
+
+```typescript
+// detectCorruption() 내부에 추가
+// abort로 인한 빈 content 감지
+if (entry.role === 'tool' && entry.content === '') {
+  corruptions.push({
+    type: 'missing-tool-result',
+    index: i,
+    description: 'Empty tool result (possibly aborted)',
+  });
+}
+```
+
+### 11.2 Result Guard 보강
+
+- **도구 이름 검증**: `toolName`이 유효하지 않으면 결과에 경고 메타데이터 추가
+- **JSON 제어 문자 제거**: `\u0000`~`\u001f` (탭/개행 제외) 자동 제거
+- **details 필드 제거**: `ToolResult.metadata.details`에 내부 스택 트레이스가 포함될 수 있으므로 외부 반환 전 제거
+
+```typescript
+// guardToolResult() 내부에 추가
+
+// JSON 제어 문자 제거 (탭 \t, 개행 \n, 캐리지리턴 \r 제외)
+content = content.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '');
+
+// 내부 details 필드 제거
+if (result?.metadata) {
+  const { details, ...safeMeta } = result.metadata as Record<string, unknown>;
+  // safeMeta만 반환
+}
+```
+
+### 11.3 Context Window Guard 보강
+
+- **소스 트래킹**: 토큰 소비량을 소스별(system prompt, tools, conversation, summary)로 분리 추적
+
+```typescript
+export interface TokenBreakdown {
+  readonly systemPrompt: number;
+  readonly toolResults: number;
+  readonly conversation: number;
+  readonly summary: number;
+}
+
+export interface ContextWindowState {
+  // ... 기존 필드
+  readonly breakdown: TokenBreakdown;
+}
+```
+
+- **절대 최소 임계치**: 모델 contextWindow와 무관하게 적용하는 하한값
+
+```typescript
+/** 절대 최소 임계치 — 이 이하로는 압축하지 않음 */
+const ABSOLUTE_MIN_TOKENS = {
+  small: 16_384, // 소형 모델 (contextWindow < 32K)
+  standard: 32_768, // 표준 모델 (contextWindow >= 32K)
+} as const;
+```
+
+---
+
+## 12. 구현 순서
+
+4-Part 의존 관계 기반. 각 Part는 이전 Part 완료를 전제한다.
+
+### Part 1: 기반 타입 & 레지스트리 (Day 1)
+
+| 순서 | 모듈                                    | 주요 작업                                    |
+| ---- | --------------------------------------- | -------------------------------------------- |
+| 1-1  | `RegisteredToolDefinition`              | §1.1 타입 정의, `toApiToolDefinition()` 유틸 |
+| 1-2  | `ToolGroupId`, `ToolGroup`              | §4.3 그룹 정의 + `BUILT_IN_GROUPS`           |
+| 1-3  | `InMemoryToolRegistry`                  | §5.1 register/get/list/unregister            |
+| 1-4  | `ToolPropertySchema`, `ToolInputSchema` | §4.1 스키마 타입                             |
+
+```bash
+# Part 1 검증
+pnpm typecheck
+pnpm test -- --filter='tool-registry'
+```
+
+### Part 2: 정책 & 실행 파이프라인 (Day 1-2)
+
+| 순서 | 모듈                      | 주요 작업                                   |
+| ---- | ------------------------- | ------------------------------------------- |
+| 2-1  | `evaluateToolPolicy()`    | §5.2 deny-first 하이브리드 파이프라인       |
+| 2-2  | `evaluateFinanceSafety()` | §5.2 Stage 8 금융 안전 정책                 |
+| 2-3  | `guardToolResult()`       | §4.6 + §11.2 결과 가드 + 보강               |
+| 2-4  | `execute()` 안전성        | §5.1.1 Zod 검증 + 타임아웃 + CircuitBreaker |
+| 2-5  | 플러그인 훅 통합          | §10 beforeToolExecute / afterToolExecute    |
+
+```bash
+# Part 2 검증
+pnpm test -- --filter='tool-policy' --filter='result-guard'
+```
+
+### Part 3: 세션 관리 (Day 2)
+
+| 순서 | 모듈                 | 주요 작업                                     |
+| ---- | -------------------- | --------------------------------------------- |
+| 3-1  | `acquireWriteLock()` | §5.3 + §5.3.1 PID 생존 확인 + 재진입 + 시그널 |
+| 3-2  | `detectCorruption()` | §4.5 + §11.1 손상 감지 + abort 인식           |
+| 3-3  | `repairTranscript()` | §4.5 + §11.1 복구 + 도구 이름 검증            |
+
+```bash
+# Part 3 검증
+pnpm test -- --filter='write-lock' --filter='transcript-repair'
+```
+
+### Part 4: 컨텍스트 관리 & 시스템 프롬프트 (Day 2-3)
+
+| 순서 | 모듈                      | 주요 작업                                        |
+| ---- | ------------------------- | ------------------------------------------------ |
+| 4-1  | `evaluateContextWindow()` | §4.7 + §11.3 상태 평가 + 소스 트래킹 + 절대 최소 |
+| 4-2  | `compactContext()`        | §5.4 + §5.4.1 적응형 압축 + 3단계 폴백           |
+| 4-3  | `buildSystemPrompt()`     | §4.8 15+ 섹션 동적 빌더                          |
+| 4-4  | 이벤트 통합               | §9 전체 이벤트 발행 연결                         |
+
+```bash
+# Part 4 검증
+pnpm test -- --filter='compaction' --filter='window-guard'
+pnpm typecheck
+```
+
+---
+
+## 13. 보충 참고 사항
+
+### 13.1 System Prompt Builder `mode` 파라미터
+
+```typescript
+/** 프롬프트 빌드 모드 */
+export type PromptBuildMode = 'full' | 'minimal' | 'none';
+
+// buildSystemPrompt()에 mode 파라미터 추가
+export function buildSystemPrompt(ctx: PromptBuildContext, mode?: PromptBuildMode): string;
+// - full: 15+ 섹션 전체 (기본값)
+// - minimal: identity + tools + constraints만
+// - none: 빈 문자열 반환 (테스트용)
+```
+
+### 13.2 도구 루프 감지
+
+동일 도구가 짧은 시간 내에 반복 호출되는 패턴을 감지한다. ~30 LOC.
+
+```typescript
+/** 도구 루프 감지기 */
+interface ToolCallTracker {
+  readonly name: string;
+  readonly timestamps: number[];
+}
+
+const LOOP_THRESHOLD = 5; // 동일 도구 연속 호출 횟수
+const LOOP_WINDOW_MS = 10_000; // 감지 윈도우 (10초)
+
+function isToolLoop(tracker: ToolCallTracker): boolean {
+  const recent = tracker.timestamps.filter((t) => Date.now() - t < LOOP_WINDOW_MS);
+  return recent.length >= LOOP_THRESHOLD;
+}
+// 감지 시 → 'require-approval' 강제 + 이벤트 발행
+```
+
+### 13.3 TypeScript 패턴
+
+구현 시 다음 패턴을 적극 활용할 것:
+
+- **`satisfies`**: 타입 추론을 유지하면서 타입 검증 (`BUILT_IN_GROUPS satisfies readonly ToolGroup[]`)
+- **exhaustive switch**: `default: never` 패턴으로 누락 분기 컴파일 타임 검출
+
+```typescript
+function handleVerdict(v: PolicyVerdict): string {
+  switch (v) {
+    case 'allow':
+      return 'allowed';
+    case 'deny':
+      return 'denied';
+    case 'require-approval':
+      return 'pending';
+    default:
+      return v satisfies never;
+  }
+}
+```
+
+### 13.4 OpenClaw 참조 경로 보정
+
+§2의 OpenClaw 참조 경로는 분석 시점의 스냅샷 기준이다. 실제 구현 시 경로가 존재하지 않으면 패턴만 참조하고 경로를 무시할 것. 핵심 패턴은 이미 본 plan에 추출되어 있다.
