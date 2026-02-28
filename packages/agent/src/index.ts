@@ -79,3 +79,85 @@ export type {
   ApiKeySource,
   AgentResolverConfig,
 } from './auth/resolver.js';
+
+// ── Phase 7: Tools ──
+export type {
+  ToolGroupId,
+  ToolGroup,
+  ToolInputSchema,
+  ToolPropertySchema,
+  RegisteredToolDefinition,
+  ToolExecutor,
+  ToolExecutionContext,
+  ToolResult,
+  RegisteredTool,
+  ToolRegistry,
+  BeforeToolExecutePayload,
+  AfterToolExecutePayload,
+  ToolRegistryHooks,
+  PolicyVerdict,
+  PolicyRule,
+  PolicyContext,
+  PolicyStage,
+  PolicyStageResult,
+  PolicyEvaluationResult,
+  GuardedToolResult,
+  ResultGuardOptions,
+} from './agents/tools/index.js';
+export {
+  BUILT_IN_GROUPS,
+  toApiToolDefinition,
+  InMemoryToolRegistry,
+  evaluateToolPolicy,
+  matchToolPattern,
+  guardToolResult,
+  FINANCIAL_REDACT_PATTERNS,
+} from './agents/tools/index.js';
+
+// ── Phase 7: Session ──
+export type {
+  LockResult,
+  LockOptions,
+  TranscriptEntry,
+  CorruptionType,
+  DetectedCorruption,
+  CorruptionReport,
+} from './agents/session/index.js';
+export {
+  acquireWriteLock,
+  resetHeldLocks,
+  detectCorruption,
+  repairTranscript,
+} from './agents/session/index.js';
+
+// ── Phase 7: Context ──
+export type {
+  TokenBreakdown,
+  ContextWindowState,
+  WindowGuardConfig,
+  CompactionStrategy,
+  CompactionOptions,
+  CompactionResult,
+} from './agents/context/index.js';
+export { evaluateContextWindow, compactContext } from './agents/context/index.js';
+
+// ── Phase 7: System Prompt ──
+export type {
+  PromptSection,
+  InvestmentProfile,
+  PromptModelCapabilities,
+  PromptBuildContext,
+  PromptBuildMode,
+} from './agents/system-prompt.js';
+export {
+  buildSystemPrompt,
+  buildIdentitySection,
+  buildToolsSection,
+  buildFinanceContextSection,
+  buildComplianceSection,
+  buildRiskDisclaimerSection,
+} from './agents/system-prompt.js';
+
+// ── Phase 7: Skills ──
+export type { SkillDefinition, SkillManager } from './agents/skills/manager.js';
+export { InMemorySkillManager } from './agents/skills/manager.js';

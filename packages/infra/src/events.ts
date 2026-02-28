@@ -77,6 +77,16 @@ export interface FinClawEventMap {
   'tool:policy:verdict': (name: string, verdict: string, stage: string) => void;
   'tool:policy:deny': (name: string, reason: string) => void;
   'tool:circuit:change': (name: string, from: string, to: string) => void;
+
+  // ── Phase 7: Session events ──
+  'session:lock:acquire': (sessionId: string, pid: number) => void;
+  'session:lock:release': (sessionId: string) => void;
+  'session:lock:stale': (sessionId: string, stalePid: number) => void;
+
+  // ── Phase 7: Context events ──
+  'context:window:status': (status: string, usageRatio: number) => void;
+  'context:compact': (strategy: string, beforeTokens: number, afterTokens: number) => void;
+  'context:compact:fallback': (fromStrategy: string, toStrategy: string) => void;
 }
 
 /** 전역 이벤트 버스 (싱글턴) */
