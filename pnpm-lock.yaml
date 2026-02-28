@@ -41,9 +41,6 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.78.0
         version: 0.78.0(zod@4.3.6)
-      '@finclaw/config':
-        specifier: workspace:*
-        version: link:../config
       '@finclaw/infra':
         specifier: workspace:*
         version: link:../infra
