@@ -89,6 +89,7 @@ export function guardToolResult(
   }
 
   // 5. 민감 정보 마스킹
+  // TODO: test를 제거하고 replace 결과 비교로 대체하면 RegExp 생성 3→1 가능 (review-1 이슈 1)
   // 5a. 사용자 정의 패턴
   for (const pattern of options.redactPatterns) {
     const re = new RegExp(pattern.source, pattern.flags);

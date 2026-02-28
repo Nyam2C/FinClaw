@@ -173,6 +173,8 @@ export async function compactContext(
     strategy = excessRatio < 0.2 ? 'truncate-tools' : 'summarize';
   }
 
+  // TODO: targetTokens ≤ ~4916이면 safeTarget이 음수 → summarize 불가, truncate-oldest 폴백.
+  // Math.max(0, ...) 클램핑 고려 (review-2 이슈 3)
   const safeTarget =
     Math.floor(options.targetTokens / SAFETY_MARGIN) - SUMMARIZATION_OVERHEAD_TOKENS;
 

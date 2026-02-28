@@ -248,6 +248,7 @@ export class InMemoryToolRegistry implements ToolRegistry {
         const schema = z.object(zodShape);
         const parsed = schema.safeParse(input);
         if (!parsed.success) {
+          bus.emit('tool:execute:end', name, context.sessionId, Date.now() - startTime);
           return guardToolResult(
             { content: `Invalid input: ${parsed.error.message}`, isError: true },
             this.guardOptions,
@@ -271,6 +272,7 @@ export class InMemoryToolRegistry implements ToolRegistry {
 
       if (policyResult.finalVerdict === 'deny') {
         bus.emit('tool:policy:deny', name, policyResult.reason);
+        bus.emit('tool:execute:end', name, context.sessionId, Date.now() - startTime);
         return guardToolResult(
           { content: `Tool "${name}" denied: ${policyResult.reason}`, isError: true },
           this.guardOptions,
@@ -355,6 +357,7 @@ export class InMemoryToolRegistry implements ToolRegistry {
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error);
       bus.emit('tool:execute:error', name, context.sessionId, errMsg);
+      bus.emit('tool:execute:end', name, context.sessionId, Date.now() - startTime);
       return guardToolResult(
         { content: `Tool execution failed: ${errMsg}`, isError: true },
         this.guardOptions,

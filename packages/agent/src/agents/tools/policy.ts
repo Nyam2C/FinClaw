@@ -275,6 +275,8 @@ export function evaluateToolPolicy(
     };
   }
 
+  // TODO: Stage 9 default-policy가 'allow'를 반환하지만 decidingStage가 'fallthrough'로 표시됨.
+  // 'default-policy'가 더 정확한 라벨 (review-1 이슈 3)
   return {
     finalVerdict: 'allow',
     stageResults,

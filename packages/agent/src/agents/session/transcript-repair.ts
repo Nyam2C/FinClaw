@@ -143,9 +143,6 @@ export function repairTranscript(
 ): TranscriptEntry[] {
   const result = [...entries] as TranscriptEntry[];
 
-  // 삽입/삭제를 위한 인덱스 오프셋 추적
-  let offset = 0;
-
   // 타입별로 분류
   const duplicateIndices = new Set<number>();
   const orphanIndices = new Set<number>();
@@ -182,12 +179,23 @@ export function repairTranscript(
     result.splice(idx, 1);
   }
 
-  // offset 조정 (중복 제거로 인한)
-  offset = -sortedDuplicates.length;
+  // 인덱스별 정확한 오프셋 계산 헬퍼 (대상 인덱스보다 앞에서 제거된 수만 차감)
+  const removedAsc = [...duplicateIndices].toSorted((a, b) => a - b);
+  function countRemovedBefore(idx: number): number {
+    let count = 0;
+    for (const r of removedAsc) {
+      if (r < idx) {
+        count++;
+      } else {
+        break;
+      }
+    }
+    return count;
+  }
 
   // 2. 빈 tool content → "[Execution aborted]"로 교체
   for (const idx of emptyToolIndices) {
-    const adjustedIdx = idx + offset;
+    const adjustedIdx = idx - countRemovedBefore(idx);
     if (adjustedIdx >= 0 && adjustedIdx < result.length) {
       result[adjustedIdx] = {
         ...result[adjustedIdx],
@@ -200,7 +208,7 @@ export function repairTranscript(
   const orphanList = [...orphanIndices].toSorted((a, b) => a - b);
   let insertOffset = 0;
   for (const idx of orphanList) {
-    const adjustedIdx = idx + offset + insertOffset;
+    const adjustedIdx = idx - countRemovedBefore(idx) + insertOffset;
     if (adjustedIdx >= 0 && adjustedIdx < result.length) {
       const orphan = result[adjustedIdx];
       const syntheticAssistant: TranscriptEntry = {
@@ -218,7 +226,7 @@ export function repairTranscript(
   // 4. missing tool result → 합성 tool result 삽입
   const missingList = [...missingToolResultIndices].toSorted((a, b) => a - b);
   for (const idx of missingList) {
-    const adjustedIdx = idx + offset + insertOffset + 1; // assistant 뒤에 삽입
+    const adjustedIdx = idx - countRemovedBefore(idx) + insertOffset + 1; // assistant 뒤에 삽입
     if (adjustedIdx >= 0 && adjustedIdx <= result.length) {
       const assistant = entries[idx];
       const syntheticTool: TranscriptEntry = {

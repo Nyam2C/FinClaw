@@ -43,6 +43,7 @@ interface HeldLock {
   lockPath: string;
   pid: number;
   count: number;
+  cleanupSignals?: () => void;
 }
 
 const heldLocks = new Map<string, HeldLock>();
@@ -88,9 +89,6 @@ export async function acquireWriteLock(options: LockOptions): Promise<LockResult
       await fd.writeFile(lockData);
       await fd.close();
 
-      // 재진입 추적 등록
-      heldLocks.set(lockPath, { lockPath, pid: process.pid, count: 1 });
-
       // 시그널 핸들러 등록
       const cleanup = async (): Promise<void> => {
         try {
@@ -108,6 +106,14 @@ export async function acquireWriteLock(options: LockOptions): Promise<LockResult
 
       process.once('SIGINT', onSignal);
       process.once('SIGTERM', onSignal);
+
+      const cleanupSignals = (): void => {
+        process.removeListener('SIGINT', onSignal);
+        process.removeListener('SIGTERM', onSignal);
+      };
+
+      // 재진입 추적 등록
+      heldLocks.set(lockPath, { lockPath, pid: process.pid, count: 1, cleanupSignals });
 
       bus.emit('session:lock:acquire', sessionId, process.pid);
 
@@ -157,6 +163,7 @@ export async function acquireWriteLock(options: LockOptions): Promise<LockResult
               release: async (): Promise<void> => {
                 held.count--;
                 if (held.count <= 0) {
+                  held.cleanupSignals?.();
                   await fs.unlink(lockPath).catch(() => {});
                   heldLocks.delete(lockPath);
                   bus.emit('session:lock:release', sessionId);
