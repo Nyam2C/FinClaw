@@ -1,5 +1,7 @@
+import type { MessageStreamEvent } from '@anthropic-ai/sdk/resources/messages/messages.js';
 // packages/agent/src/providers/anthropic.ts
 import Anthropic from '@anthropic-ai/sdk';
+import type { StreamChunk } from '../models/provider-normalize.js';
 import type { ProviderAdapter, ProviderRequestParams } from './adapter.js';
 import { FailoverError } from '../errors.js';
 
@@ -37,6 +39,109 @@ export class AnthropicAdapter implements ProviderAdapter {
       );
     } catch (error) {
       throw wrapAnthropicError(error);
+    }
+  }
+
+  async *streamCompletion(params: ProviderRequestParams): AsyncIterable<StreamChunk> {
+    const systemMessages = params.messages.filter((m) => m.role === 'system');
+    const nonSystemMessages = params.messages.filter((m) => m.role !== 'system');
+    const system = systemMessages
+      .map((m) => (typeof m.content === 'string' ? m.content : ''))
+      .join('\n');
+
+    const convertedTools = (params.tools ?? []).map((t) => ({
+      name: t.name,
+      description: t.description,
+      input_schema: t.inputSchema as Anthropic.Messages.Tool['input_schema'],
+    }));
+
+    // 마지막 도구에 cache_control 부착 (prompt caching)
+    const toolsWithCache = convertedTools.map((tool, i) => {
+      if (i === convertedTools.length - 1) {
+        return Object.assign(tool, { cache_control: { type: 'ephemeral' as const } });
+      }
+      return tool;
+    });
+
+    try {
+      const stream = this.client.messages.stream({
+        model: params.model,
+        max_tokens: params.maxTokens ?? 4096,
+        ...(system
+          ? {
+              system: [
+                {
+                  type: 'text' as const,
+                  text: system,
+                  cache_control: { type: 'ephemeral' as const },
+                },
+              ],
+            }
+          : {}),
+        messages: nonSystemMessages.map((m) => ({
+          role: m.role as 'user' | 'assistant',
+          content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+        })),
+        ...(toolsWithCache.length ? { tools: toolsWithCache } : {}),
+        ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
+      });
+
+      for await (const event of stream) {
+        yield* this.mapAnthropicStreamEvent(event);
+      }
+    } catch (error) {
+      throw wrapAnthropicError(error);
+    }
+  }
+
+  private *mapAnthropicStreamEvent(event: MessageStreamEvent): Iterable<StreamChunk> {
+    switch (event.type) {
+      case 'content_block_start':
+        if (event.content_block.type === 'tool_use') {
+          yield {
+            type: 'tool_use_start',
+            id: event.content_block.id,
+            name: event.content_block.name,
+          };
+        }
+        break;
+
+      case 'content_block_delta':
+        if (event.delta.type === 'text_delta') {
+          yield { type: 'text_delta', text: event.delta.text };
+        } else if (event.delta.type === 'input_json_delta') {
+          yield { type: 'tool_input_delta', delta: event.delta.partial_json };
+        }
+        break;
+
+      case 'content_block_stop':
+        yield { type: 'tool_use_end' };
+        break;
+
+      case 'message_delta':
+        if (event.usage) {
+          yield {
+            type: 'usage',
+            usage: { outputTokens: event.usage.output_tokens ?? undefined },
+          };
+        }
+        break;
+
+      case 'message_start':
+        if (event.message.usage) {
+          yield {
+            type: 'usage',
+            usage: {
+              inputTokens: event.message.usage.input_tokens,
+              outputTokens: event.message.usage.output_tokens,
+            },
+          };
+        }
+        break;
+
+      case 'message_stop':
+        yield { type: 'done' };
+        break;
     }
   }
 }

@@ -24,27 +24,34 @@ export interface NormalizedResponse {
   readonly raw: unknown;
 }
 
-/** 스트리밍 청크 (타입만 선언, 구현은 Phase 9) */
-export interface StreamChunk {
-  readonly type: 'text_delta' | 'tool_use_delta' | 'usage' | 'done';
-  readonly text?: string;
-  readonly usage?: Partial<NormalizedUsage>;
-}
+/** 스트리밍 청크 — discriminated union (6 variant) */
+export type StreamChunk =
+  | { readonly type: 'text_delta'; readonly text: string }
+  | { readonly type: 'tool_use_start'; readonly id: string; readonly name: string }
+  | { readonly type: 'tool_input_delta'; readonly delta: string }
+  | { readonly type: 'tool_use_end' }
+  | { readonly type: 'usage'; readonly usage: Partial<NormalizedUsage> }
+  | { readonly type: 'done' };
 
 /**
- * 비용 계산 헬퍼
+ * 비용 계산 헬퍼 (캐시 비용 포함)
  *
- * TODO(L1): cacheReadTokens/cacheWriteTokens 비용 미산정.
- * pricing.cacheReadPerMillion / cacheWritePerMillion 필드를 반영해야 함.
+ * cacheReadTokens는 캐시 히트된 입력 토큰 (할인 적용).
+ * cacheWriteTokens는 캐시에 쓰여진 입력 토큰 (할증 적용).
+ * pricing.cacheReadPerMillion / cacheWritePerMillion이 없으면 0으로 처리.
  */
 export function calculateEstimatedCost(
   inputTokens: number,
   outputTokens: number,
   pricing: ModelPricing,
+  cacheReadTokens = 0,
+  cacheWriteTokens = 0,
 ): number {
   return (
     (inputTokens / 1_000_000) * pricing.inputPerMillion +
-    (outputTokens / 1_000_000) * pricing.outputPerMillion
+    (outputTokens / 1_000_000) * pricing.outputPerMillion +
+    (cacheReadTokens / 1_000_000) * (pricing.cacheReadPerMillion ?? 0) +
+    (cacheWriteTokens / 1_000_000) * (pricing.cacheWritePerMillion ?? 0)
   );
 }
 
@@ -100,7 +107,13 @@ export function normalizeAnthropicResponse(
       cacheReadTokens,
       cacheWriteTokens,
       totalTokens: inputTokens + outputTokens,
-      estimatedCostUsd: calculateEstimatedCost(inputTokens, outputTokens, pricing),
+      estimatedCostUsd: calculateEstimatedCost(
+        inputTokens,
+        outputTokens,
+        pricing,
+        cacheReadTokens,
+        cacheWriteTokens,
+      ),
     },
     modelId: r.model ?? '',
     provider: 'anthropic',

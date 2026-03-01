@@ -1,5 +1,7 @@
+import type { ChatCompletionChunk } from 'openai/resources/chat/completions/completions.js';
 // packages/agent/src/providers/openai.ts
 import OpenAI from 'openai';
+import type { StreamChunk } from '../models/provider-normalize.js';
 import type { ProviderAdapter, ProviderRequestParams } from './adapter.js';
 import { FailoverError } from '../errors.js';
 
@@ -28,6 +30,84 @@ export class OpenAIAdapter implements ProviderAdapter {
       );
     } catch (error) {
       throw wrapOpenAIError(error);
+    }
+  }
+
+  async *streamCompletion(params: ProviderRequestParams): AsyncIterable<StreamChunk> {
+    try {
+      const stream = await this.client.chat.completions.create(
+        {
+          model: params.model,
+          messages: params.messages.map((m) => ({
+            role: m.role as 'system' | 'user' | 'assistant',
+            content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+          })),
+          ...(params.tools?.length
+            ? {
+                tools: params.tools.map((t) => ({
+                  type: 'function' as const,
+                  function: {
+                    name: t.name,
+                    description: t.description,
+                    parameters: t.inputSchema,
+                  },
+                })),
+              }
+            : {}),
+          ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
+          ...(params.maxTokens !== undefined ? { max_tokens: params.maxTokens } : {}),
+          stream: true,
+          stream_options: { include_usage: true },
+        },
+        { signal: params.abortSignal },
+      );
+
+      for await (const chunk of stream) {
+        yield* this.mapOpenAIStreamChunk(chunk as ChatCompletionChunk);
+      }
+    } catch (error) {
+      throw wrapOpenAIError(error);
+    }
+  }
+
+  private *mapOpenAIStreamChunk(chunk: ChatCompletionChunk): Iterable<StreamChunk> {
+    const choice = chunk.choices?.[0];
+
+    if (choice?.delta?.content) {
+      yield { type: 'text_delta', text: choice.delta.content };
+    }
+
+    if (choice?.delta?.tool_calls) {
+      for (const tc of choice.delta.tool_calls) {
+        if (tc.function?.name) {
+          yield {
+            type: 'tool_use_start',
+            id: tc.id ?? `tool_${tc.index}`,
+            name: tc.function.name,
+          };
+        }
+        if (tc.function?.arguments) {
+          yield { type: 'tool_input_delta', delta: tc.function.arguments };
+        }
+      }
+    }
+
+    if (choice?.finish_reason === 'tool_calls') {
+      yield { type: 'tool_use_end' };
+    }
+
+    if (chunk.usage) {
+      yield {
+        type: 'usage',
+        usage: {
+          inputTokens: chunk.usage.prompt_tokens,
+          outputTokens: chunk.usage.completion_tokens,
+        },
+      };
+    }
+
+    if (choice?.finish_reason === 'stop') {
+      yield { type: 'done' };
     }
   }
 }

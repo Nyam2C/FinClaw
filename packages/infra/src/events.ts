@@ -99,6 +99,22 @@ export interface FinClawEventMap {
     abortReason?: string;
   }) => void;
   'pipeline:error': (data: { sessionKey: unknown; error: Error }) => void;
+
+  // ── Phase 9: Execution events ──
+  'execution:start': (agentId: string, sessionKey: string) => void;
+  'execution:turn': (agentId: string, sessionKey: string, turn: number) => void;
+  'execution:tool_use': (agentId: string, toolName: string, durationMs: number) => void;
+  'execution:complete': (
+    agentId: string,
+    sessionKey: string,
+    result: {
+      status: string;
+      turns: number;
+      durationMs: number;
+      usage: { inputTokens: number; outputTokens: number };
+    },
+  ) => void;
+  'execution:context_threshold': (agentId: string, ratio: number, threshold: 0.8 | 0.95) => void;
 }
 
 /** 전역 이벤트 버스 (싱글턴) */
