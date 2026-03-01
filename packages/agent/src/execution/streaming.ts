@@ -10,6 +10,8 @@ export type StreamState =
   | 'executing' // 도구 실행 중
   | 'done'; // 실행 완료
 
+// TODO(L4): ToolResult와 tool-executor.ts의 ExecutionToolResult가 동일 shape.
+//  하나로 통합하여 중복 제거 가능.
 /** 도구 실행 결과 */
 export interface ToolResult {
   readonly toolUseId: string;

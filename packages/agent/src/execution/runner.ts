@@ -132,6 +132,8 @@ export class Runner {
     messages: ConversationMessage[],
     listener?: StreamEventListener,
   ): Promise<LLMCallResult> {
+    // TODO(L4): FSM이 LLM 호출마다 새로 생성되어 실행 루프 전체의 상태를 추적하지 않음.
+    //  현재 동작 문제 없으나, 루프 전체 상태 추적이 필요하면 execute() 레벨로 승격 필요.
     const sm = new StreamStateMachine();
     if (listener) {
       sm.on(listener);

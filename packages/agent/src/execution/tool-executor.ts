@@ -6,6 +6,8 @@ export interface ToolHandler {
   execute(input: unknown, signal?: AbortSignal): Promise<string>;
 }
 
+// TODO(L4): ExecutionToolResult와 streaming.ts의 ToolResult가 동일 shape.
+//  하나로 통합하여 중복 제거 가능.
 /** 도구 실행 결과 */
 export interface ExecutionToolResult {
   readonly toolUseId: string;

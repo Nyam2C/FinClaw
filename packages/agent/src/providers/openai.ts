@@ -8,6 +8,7 @@ import { FailoverError } from '../errors.js';
 export class OpenAIAdapter implements ProviderAdapter {
   readonly providerId = 'openai' as const;
   private readonly client: OpenAI;
+  private hasActiveTool = false;
 
   constructor(apiKey: string, baseUrl?: string) {
     this.client = new OpenAI({ apiKey, baseURL: baseUrl });
@@ -62,6 +63,7 @@ export class OpenAIAdapter implements ProviderAdapter {
         { signal: params.abortSignal },
       );
 
+      this.hasActiveTool = false;
       for await (const chunk of stream) {
         yield* this.mapOpenAIStreamChunk(chunk as ChatCompletionChunk);
       }
@@ -80,6 +82,10 @@ export class OpenAIAdapter implements ProviderAdapter {
     if (choice?.delta?.tool_calls) {
       for (const tc of choice.delta.tool_calls) {
         if (tc.function?.name) {
+          if (this.hasActiveTool) {
+            yield { type: 'tool_use_end' };
+          }
+          this.hasActiveTool = true;
           yield {
             type: 'tool_use_start',
             id: tc.id ?? `tool_${tc.index}`,
@@ -94,6 +100,7 @@ export class OpenAIAdapter implements ProviderAdapter {
 
     if (choice?.finish_reason === 'tool_calls') {
       yield { type: 'tool_use_end' };
+      this.hasActiveTool = false;
     }
 
     if (chunk.usage) {

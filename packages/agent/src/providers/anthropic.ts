@@ -114,6 +114,9 @@ export class AnthropicAdapter implements ProviderAdapter {
         }
         break;
 
+      // TODO(L3): content_block_stop은 텍스트 블록에도 발생하지만 무조건 tool_use_end를
+      //  발행한다. ToolInputBuffer가 pending 없으면 무시하므로 현재 기능 문제 없으나,
+      //  블록 타입을 체크하여 tool_use 블록에서만 발행하도록 개선 필요.
       case 'content_block_stop':
         yield { type: 'tool_use_end' };
         break;
@@ -129,11 +132,19 @@ export class AnthropicAdapter implements ProviderAdapter {
 
       case 'message_start':
         if (event.message.usage) {
+          const msgUsage = event.message.usage as {
+            input_tokens: number;
+            output_tokens: number;
+            cache_read_input_tokens?: number;
+            cache_creation_input_tokens?: number;
+          };
           yield {
             type: 'usage',
             usage: {
-              inputTokens: event.message.usage.input_tokens,
-              outputTokens: event.message.usage.output_tokens,
+              inputTokens: msgUsage.input_tokens,
+              outputTokens: msgUsage.output_tokens,
+              cacheReadTokens: msgUsage.cache_read_input_tokens ?? 0,
+              cacheWriteTokens: msgUsage.cache_creation_input_tokens ?? 0,
             },
           };
         }
