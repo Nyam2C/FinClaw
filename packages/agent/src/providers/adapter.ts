@@ -2,6 +2,7 @@ import type { ConversationMessage, ToolDefinition } from '@finclaw/types';
 // packages/agent/src/providers/adapter.ts
 import { createCircuitBreaker, type CircuitBreaker } from '@finclaw/infra';
 import type { ProviderId } from '../models/catalog.js';
+import type { StreamChunk } from '../models/provider-normalize.js';
 import { AnthropicAdapter } from './anthropic.js';
 import { OpenAIAdapter } from './openai.js';
 
@@ -19,6 +20,8 @@ export interface ProviderRequestParams {
 export interface ProviderAdapter {
   readonly providerId: ProviderId;
   chatCompletion(params: ProviderRequestParams): Promise<unknown>;
+  /** 스트리밍 LLM 호출 — Phase 9 실행 엔진용 */
+  streamCompletion(params: ProviderRequestParams): AsyncIterable<StreamChunk>;
 }
 
 /** 제공자 어댑터 생성 팩토리 */

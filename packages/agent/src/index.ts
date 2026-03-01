@@ -161,3 +161,21 @@ export {
 // ── Phase 7: Skills ──
 export type { SkillDefinition, SkillManager } from './agents/skills/manager.js';
 export { InMemorySkillManager } from './agents/skills/manager.js';
+
+// ── Phase 9: Execution ──
+export {
+  ToolInputBuffer,
+  StreamStateMachine,
+  ExecutionToolDispatcher,
+  TokenCounter,
+  Runner,
+} from './execution/index.js';
+export type {
+  StreamState,
+  StreamEvent,
+  StreamEventListener,
+  ExecutionResult,
+  ToolHandler,
+  ExecutionToolResult,
+  RunnerOptions,
+} from './execution/index.js';
