@@ -107,8 +107,10 @@ export function createGatewayServer(config: GatewayServerConfig): GatewayServer 
       // 3. broadcaster delta 버퍼 flush
       ctx.broadcaster.flushAll();
 
-      // 4. drain 대기 (최대 5초)
-      await new Promise((resolve) => setTimeout(resolve, 5_000));
+      // 4. drain 대기 (최대 5초) — 연결이 있을 때만
+      if (ctx.connections.size > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 5_000));
+      }
 
       // 5. WebSocket 연결 종료
       clearInterval(heartbeatInterval);

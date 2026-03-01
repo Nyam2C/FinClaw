@@ -4,6 +4,7 @@ import type { GatewayServerConfig } from './gateway/rpc/types.js';
 import { createGatewayServer } from './gateway/server.js';
 import { ProcessLifecycle } from './process/lifecycle.js';
 
+// TODO(review-3): PORT, HOST 등 기본 설정을 환경변수에서 읽도록 확장 필요
 /** 기본 게이트웨이 설정 */
 const defaultConfig: GatewayServerConfig = {
   host: '0.0.0.0',

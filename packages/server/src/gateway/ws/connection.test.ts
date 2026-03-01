@@ -2,7 +2,7 @@ import type { IncomingMessage } from 'node:http';
 import { resetEventBus } from '@finclaw/infra';
 import { EventEmitter } from 'node:events';
 // packages/server/src/gateway/ws/connection.test.ts
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { z } from 'zod/v4';
 import type { GatewayServerContext } from '../context.js';
 import type { GatewayServerConfig, WsConnection } from '../rpc/types.js';
@@ -87,6 +87,10 @@ describe('WebSocket Connection', () => {
   beforeEach(() => {
     clearMethods();
     resetEventBus();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('registers connection on successful auth (none level)', async () => {
@@ -184,6 +188,7 @@ describe('WebSocket Connection', () => {
     expect(response.error.code).toBe(-32700);
   });
 
+  // TODO(review-2): authenticate를 vi.mock으로 지연시켜 실제 4008 close 발생 검증 필요
   it('handshake timeout closes connection with 4008', async () => {
     vi.useFakeTimers();
 

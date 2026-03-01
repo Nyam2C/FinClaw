@@ -1,11 +1,15 @@
 import { resetEventBus } from '@finclaw/infra';
 // packages/server/src/gateway/auth/rate-limit.test.ts
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { AuthRateLimiter } from './rate-limit.js';
 
 describe('AuthRateLimiter', () => {
   beforeEach(() => {
     resetEventBus();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('allows requests from unknown IPs', () => {

@@ -40,6 +40,7 @@ export class ChatRegistry {
     };
 
     // TTL 기반 자동 타임아웃
+    // TODO(review-3): stopSession 시 TTL 타이머가 남아있음. AbortSignal.any 패턴으로 정리 권장
     const ttlSignal = AbortSignal.timeout(this.sessionTtlMs);
     ttlSignal.addEventListener('abort', () => {
       if (this.sessions.has(session.sessionId)) {

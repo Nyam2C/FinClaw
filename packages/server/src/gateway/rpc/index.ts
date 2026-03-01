@@ -11,6 +11,7 @@ import type {
 } from './types.js';
 import { RpcErrors, createError } from './errors.js';
 
+// TODO(review-3): 모듈 레벨 Map → GatewayServerContext 소속으로 이동하여 서버 인스턴스별 격리 권장
 const methods = new Map<string, RpcMethodHandler>();
 
 /** 메서드 등록 */
@@ -94,6 +95,7 @@ async function handleSingleRequest(
 
   // 6. 핸들러 실행
   try {
+    // TODO(review-3): serverCtx를 rpcCtx에 포함시켜 핸들러가 registry/broadcaster에 접근 가능하도록
     const rpcCtx: RpcContext = { ...ctx, requestId: request.id };
     const result = await handler.execute(parseResult.data, rpcCtx);
     return { jsonrpc: '2.0', id: request.id, result };

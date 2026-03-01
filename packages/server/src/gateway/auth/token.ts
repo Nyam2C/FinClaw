@@ -64,6 +64,7 @@ export function validateToken(token: string, secret: string): AuthResult {
       level: 'token',
       userId: payload.sub,
       clientId: payload.clientId,
+      // TODO(review-2): payload.permissions 각 요소의 유효성 검증 추가 권장 — 현재는 캐스트만 수행
       permissions: (payload.permissions ?? []) as Permission[],
     },
   };
