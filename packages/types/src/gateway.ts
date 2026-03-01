@@ -8,6 +8,7 @@ export type RpcMethod =
   | 'session.list'
   | 'config.get'
   | 'config.update'
+  | 'config.reload'
   | 'channel.list'
   | 'channel.status'
   | 'health.check'
@@ -16,7 +17,14 @@ export type RpcMethod =
   | 'finance.news'
   | 'finance.alert.create'
   | 'finance.alert.list'
-  | 'finance.portfolio.get';
+  | 'finance.portfolio.get'
+  | 'chat.start'
+  | 'chat.send'
+  | 'chat.stop'
+  | 'chat.history'
+  | 'system.health'
+  | 'system.info'
+  | 'system.ping';
 
 /** JSON-RPC 2.0 요청 */
 export interface RpcRequest<T = unknown> {
