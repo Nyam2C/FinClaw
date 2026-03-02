@@ -12,6 +12,10 @@
     "@finclaw/storage": "workspace:*",
     "@finclaw/types": "workspace:*",
     "jiti": "^2.6.0",
+    "ws": "^8.19.0",
     "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1"
   }
 }

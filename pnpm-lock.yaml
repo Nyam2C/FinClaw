@@ -49,7 +49,7 @@ importers:
         version: link:../types
       openai:
         specifier: ^6.25.0
-        version: 6.25.0(zod@4.3.6)
+        version: 6.25.0(ws@8.19.0)(zod@4.3.6)
       zod:
         specifier: ^4.0.0
         version: 4.3.6
@@ -110,9 +110,16 @@ importers:
       jiti:
         specifier: ^2.6.0
         version: 2.6.1
+      ws:
+        specifier: ^8.19.0
+        version: 8.19.0
       zod:
         specifier: ^4.0.0
         version: 4.3.6
+    devDependencies:
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
 
   packages/skills-finance:
     dependencies:
@@ -553,6 +560,9 @@ packages:
   '@types/node@25.2.2':
     resolution: {integrity: sha512-BkmoP5/FhRYek5izySdkOneRyXYN35I860MFAGupTdebyE66uZaR+bXLHq8k4DirE5DwQi3NuhvRU1jqTVwUrQ==}
 
+  '@types/ws@8.18.1':
+    resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
+
   '@typescript/native-preview-darwin-arm64@7.0.0-dev.20260209.1':
     resolution: {integrity: sha512-TyFP7dGMo/Xz37MI3QNfGl3J2i8AKurYwLLD+bG0EDLWnz213wwBwN6U9vMcyatBzfdxKEHHPgdNP0UYCVx3kQ==}
     cpu: [arm64]
@@ -969,6 +979,18 @@ packages:
     engines: {node: '>=8'}
     hasBin: true
 
+  ws@8.19.0:
+    resolution: {integrity: sha512-blAT2mjOEIi0ZzruJfIhb3nps74PRWTCz1IjglWEEpQl5XS/UNama6u2/rjFkDDouqr4L67ry+1aGIALViWjDg==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
   zod@4.3.6:
     resolution: {integrity: sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg==}
 
@@ -1222,6 +1244,10 @@ snapshots:
     dependencies:
       undici-types: 7.16.0
 
+  '@types/ws@8.18.1':
+    dependencies:
+      '@types/node': 25.2.2
+
   '@typescript/native-preview-darwin-arm64@7.0.0-dev.20260209.1':
     optional: true
 
@@ -1453,8 +1479,9 @@ snapshots:
 
   obug@2.1.1: {}
 
-  openai@6.25.0(zod@4.3.6):
+  openai@6.25.0(ws@8.19.0)(zod@4.3.6):
     optionalDependencies:
+      ws: 8.19.0
       zod: 4.3.6
 
   oxfmt@0.28.0:
@@ -1623,5 +1650,7 @@ snapshots:
     dependencies:
       siginfo: 2.0.0
       stackback: 0.0.2
+
+  ws@8.19.0: {}
 
   zod@4.3.6: {}

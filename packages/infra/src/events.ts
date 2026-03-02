@@ -115,6 +115,16 @@ export interface FinClawEventMap {
     },
   ) => void;
   'execution:context_threshold': (agentId: string, ratio: number, threshold: 0.8 | 0.95) => void;
+
+  // ── Phase 10: Gateway events ──
+  'gateway:start': (port: number) => void;
+  'gateway:stop': () => void;
+  'gateway:ws:connect': (connectionId: string, authLevel: string) => void;
+  'gateway:ws:disconnect': (connectionId: string, code: number) => void;
+  'gateway:rpc:request': (method: string, connectionId: string) => void;
+  'gateway:rpc:error': (method: string, errorCode: number) => void;
+  'gateway:auth:failure': (ip: string, reason: string) => void;
+  'gateway:auth:rate_limit': (ip: string, failures: number) => void;
 }
 
 /** 전역 이벤트 버스 (싱글턴) */
