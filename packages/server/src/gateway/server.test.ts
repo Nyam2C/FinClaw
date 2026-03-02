@@ -73,7 +73,7 @@ describe('createGatewayServer', { timeout: 15_000 }, () => {
     const addr = server.httpServer.address();
     if (typeof addr === 'object' && addr) {
       const res = await fetch(`http://127.0.0.1:${addr.port}/health`);
-      const body = await res.json();
+      const body = (await res.json()) as { status: string };
       expect(body.status).toBe('ok');
     }
   });
@@ -94,7 +94,7 @@ describe('createGatewayServer', { timeout: 15_000 }, () => {
           params: {},
         }),
       });
-      const body = await res.json();
+      const body = (await res.json()) as { result: { pong: boolean } };
       expect(body.result.pong).toBe(true);
     }
   });

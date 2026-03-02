@@ -3,7 +3,7 @@ import { resetEventBus } from '@finclaw/infra';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { z } from 'zod/v4';
 import type { GatewayServerContext } from '../context.js';
-import type { RpcMethodHandler, AuthInfo, GatewayServerConfig } from './types.js';
+import type { RpcMethodHandler, AuthInfo, GatewayServerConfig, RpcMethod } from './types.js';
 import { RpcErrors } from './errors.js';
 import {
   registerMethod,
@@ -92,7 +92,7 @@ describe('RPC Dispatcher', () => {
       });
 
       const result = await dispatchRpc(
-        { jsonrpc: '2.0', id: 1, method: 'test.add', params: { a: 2, b: 3 } },
+        { jsonrpc: '2.0', id: 1, method: 'test.add' as RpcMethod, params: { a: 2, b: 3 } },
         { auth: makeAuth(), remoteAddress: '127.0.0.1' },
         makeServerCtx(),
       );
@@ -106,7 +106,7 @@ describe('RPC Dispatcher', () => {
 
     it('returns INVALID_REQUEST for wrong jsonrpc version', async () => {
       const result = await dispatchRpc(
-        { jsonrpc: '1.0' as '2.0', id: 1, method: 'x' },
+        { jsonrpc: '1.0' as '2.0', id: 1, method: 'x' as RpcMethod },
         { auth: makeAuth(), remoteAddress: '127.0.0.1' },
         makeServerCtx(),
       );
@@ -115,7 +115,7 @@ describe('RPC Dispatcher', () => {
 
     it('returns METHOD_NOT_FOUND for unknown method', async () => {
       const result = await dispatchRpc(
-        { jsonrpc: '2.0', id: 1, method: 'no.such' },
+        { jsonrpc: '2.0', id: 1, method: 'no.such' as RpcMethod },
         { auth: makeAuth(), remoteAddress: '127.0.0.1' },
         makeServerCtx(),
       );
@@ -134,7 +134,7 @@ describe('RPC Dispatcher', () => {
       });
 
       const result = await dispatchRpc(
-        { jsonrpc: '2.0', id: 1, method: 'test.secret' },
+        { jsonrpc: '2.0', id: 1, method: 'test.secret' as RpcMethod },
         { auth: makeAuth('none'), remoteAddress: '127.0.0.1' },
         makeServerCtx(),
       );
@@ -153,7 +153,7 @@ describe('RPC Dispatcher', () => {
       });
 
       const result = await dispatchRpc(
-        { jsonrpc: '2.0', id: 1, method: 'test.typed', params: { name: 123 } },
+        { jsonrpc: '2.0', id: 1, method: 'test.typed' as RpcMethod, params: { name: 123 } },
         { auth: makeAuth(), remoteAddress: '127.0.0.1' },
         makeServerCtx(),
       );
@@ -172,7 +172,7 @@ describe('RPC Dispatcher', () => {
       });
 
       const result = await dispatchRpc(
-        { jsonrpc: '2.0', id: 1, method: 'test.fail' },
+        { jsonrpc: '2.0', id: 1, method: 'test.fail' as RpcMethod },
         { auth: makeAuth(), remoteAddress: '127.0.0.1' },
         makeServerCtx(),
       );
@@ -197,8 +197,8 @@ describe('RPC Dispatcher', () => {
 
       const result = await dispatchRpc(
         [
-          { jsonrpc: '2.0', id: 1, method: 'test.id', params: { v: 1 } },
-          { jsonrpc: '2.0', id: 2, method: 'test.id', params: { v: 2 } },
+          { jsonrpc: '2.0', id: 1, method: 'test.id' as RpcMethod, params: { v: 1 } },
+          { jsonrpc: '2.0', id: 2, method: 'test.id' as RpcMethod, params: { v: 2 } },
         ],
         { auth: makeAuth(), remoteAddress: '127.0.0.1' },
         makeServerCtx(),
@@ -222,7 +222,7 @@ describe('RPC Dispatcher', () => {
       const batch = Array.from({ length: 3 }, (_, i) => ({
         jsonrpc: '2.0' as const,
         id: i,
-        method: 'test.x',
+        method: 'test.x' as RpcMethod,
       }));
 
       const result = await dispatchRpc(

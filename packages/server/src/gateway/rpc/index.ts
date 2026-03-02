@@ -53,7 +53,7 @@ export async function dispatchRpc(
     return Promise.all(request.map((req) => handleSingleRequest(req, ctx, _serverCtx)));
   }
 
-  return handleSingleRequest(request, ctx, _serverCtx);
+  return handleSingleRequest(request as RpcRequest, ctx, _serverCtx);
 }
 
 /** 단일 RPC 요청 처리 */
