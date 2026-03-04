@@ -63,6 +63,7 @@ export function createGatewayServer(config: GatewayServerConfig): GatewayServer 
     connections: new Map(),
     registry: new ChatRegistry(config.auth.sessionTtlMs),
     broadcaster: new GatewayBroadcaster(),
+    isDraining: false,
   };
 
   // HTTP 요청 처리
@@ -98,6 +99,8 @@ export function createGatewayServer(config: GatewayServerConfig): GatewayServer 
     },
 
     async stop(): Promise<void> {
+      ctx.isDraining = true;
+
       // 1. 활성 세션 abort
       ctx.registry.abortAll();
 

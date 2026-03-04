@@ -2,6 +2,8 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { GatewayServerContext } from './context.js';
 import { handleCors } from './cors.js';
+import { checkLiveness, checkReadiness } from './health.js';
+import { handleChatCompletions } from './openai-compat/router.js';
 import { createError, RpcErrors } from './rpc/errors.js';
 import { dispatchRpc } from './rpc/index.js';
 
@@ -15,6 +17,8 @@ const routes: Route[] = [
   { method: 'POST', path: '/rpc', handler: handleRpcRequest },
   { method: 'GET', path: '/health', handler: handleHealthRequest },
   { method: 'GET', path: '/info', handler: handleInfoRequest },
+  { method: 'GET', path: '/healthz', handler: handleLivenessRequest },
+  { method: 'GET', path: '/readyz', handler: handleReadinessRequest },
 ];
 
 /** HTTP 요청을 적절한 핸들러로 라우팅 */
@@ -31,6 +35,23 @@ export async function handleHttpRequest(
 
   // CORS 헤더
   handleCors(req, res, ctx.config.cors);
+
+  // Drain 거부 (liveness는 제외)
+  if (ctx.isDraining && req.url !== '/healthz') {
+    res.writeHead(503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Service shutting down' }));
+    return;
+  }
+
+  // OpenAI compat 조건부 라우트
+  if (
+    ctx.config.openaiCompat?.enabled &&
+    req.method === 'POST' &&
+    req.url?.startsWith('/v1/chat/completions')
+  ) {
+    await handleChatCompletions(req, res, ctx);
+    return;
+  }
 
   // 라우트 매칭
   const route = routes.find((r) => r.method === req.method && req.url?.startsWith(r.path));
@@ -119,6 +140,28 @@ async function handleInfoRequest(
       capabilities: ['streaming', 'batch', 'subscriptions'],
     }),
   );
+}
+
+/** GET /healthz — liveness (프로세스 생존 확인, 항상 200) */
+async function handleLivenessRequest(
+  _req: IncomingMessage,
+  res: ServerResponse,
+  _ctx: GatewayServerContext,
+): Promise<void> {
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(checkLiveness()));
+}
+
+/** GET /readyz — readiness (전체 시스템 상태, 200 or 503) */
+async function handleReadinessRequest(
+  _req: IncomingMessage,
+  res: ServerResponse,
+  ctx: GatewayServerContext,
+): Promise<void> {
+  const health = await checkReadiness(ctx.registry.activeCount(), ctx.connections.size);
+  const status = health.status === 'ok' ? 200 : 503;
+  res.writeHead(status, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(health));
 }
 
 /** 요청 body 읽기 (스트리밍) */

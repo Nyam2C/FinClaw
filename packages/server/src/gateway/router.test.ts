@@ -32,6 +32,7 @@ function makeCtx(overrides?: Partial<GatewayServerConfig>): GatewayServerContext
     connections: new Map(),
     registry: { activeCount: () => 0 } as GatewayServerContext['registry'],
     broadcaster: {} as GatewayServerContext['broadcaster'],
+    isDraining: false,
   };
 }
 
@@ -152,6 +153,63 @@ describe('HTTP Router', () => {
     expect(res.writeHead).toHaveBeenCalledWith(400, expect.any(Object));
     const result = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0]);
     expect(result.error.code).toBe(-32700);
+  });
+
+  describe('Drain 거부', () => {
+    it('isDraining=true 시 503 응답', async () => {
+      const ctx = makeCtx();
+      ctx.isDraining = true;
+      const { req, res } = mockReqRes('POST', '/rpc');
+      await handleHttpRequest(req, res, ctx);
+
+      expect(res.writeHead).toHaveBeenCalledWith(503, expect.any(Object));
+      const body = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+      expect(body.error).toBe('Service shutting down');
+    });
+
+    it('isDraining=true 여도 /healthz는 200 응답', async () => {
+      const ctx = makeCtx();
+      ctx.isDraining = true;
+      const { req, res } = mockReqRes('GET', '/healthz');
+      await handleHttpRequest(req, res, ctx);
+
+      expect(res.writeHead).toHaveBeenCalledWith(200, expect.any(Object));
+    });
+
+    it('isDraining=false 시 정상 라우팅', async () => {
+      const ctx = makeCtx();
+      ctx.isDraining = false;
+      const { req, res } = mockReqRes('GET', '/health');
+      await handleHttpRequest(req, res, ctx);
+
+      expect(res.writeHead).toHaveBeenCalledWith(200, expect.any(Object));
+    });
+  });
+
+  describe('GET /healthz', () => {
+    it('liveness — status ok + uptime', async () => {
+      const ctx = makeCtx();
+      const { req, res } = mockReqRes('GET', '/healthz');
+      await handleHttpRequest(req, res, ctx);
+
+      const body = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+      expect(body.status).toBe('ok');
+      expect(typeof body.uptime).toBe('number');
+    });
+  });
+
+  describe('GET /readyz', () => {
+    it('readiness — 200 when healthy', async () => {
+      const ctx = makeCtx();
+      const { req, res } = mockReqRes('GET', '/readyz');
+      await handleHttpRequest(req, res, ctx);
+
+      expect(res.writeHead).toHaveBeenCalledWith(200, expect.any(Object));
+      const body = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+      expect(body.status).toBe('ok');
+      expect(body.memory).toBeDefined();
+      expect(body.components).toBeInstanceOf(Array);
+    });
   });
 
   it('OPTIONS returns CORS preflight with 204', async () => {

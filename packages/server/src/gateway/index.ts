@@ -36,3 +36,37 @@ export { AuthRateLimiter } from './auth/rate-limit.js';
 
 // RPC 디스패처
 export { dispatchRpc, registerMethod, hasRequiredAuth } from './rpc/index.js';
+
+// Phase 11: 고급 기능
+export { RequestRateLimiter } from './rate-limit.js';
+export { createAccessLogger, sanitizePath } from './access-log.js';
+export {
+  checkLiveness,
+  checkReadiness,
+  registerHealthChecker,
+  createProviderHealthChecker,
+  createDbHealthChecker,
+} from './health.js';
+export { createHotReloader, type HotReloadManager, type HotReloadConfig } from './hot-reload.js';
+export { handleChatCompletions } from './openai-compat/router.js';
+export {
+  mapModelId,
+  adaptRequest,
+  adaptResponse,
+  adaptStreamChunk,
+} from './openai-compat/adapter.js';
+
+// Phase 11 타입 추가 export
+export type {
+  ConfigChangeEvent,
+  BroadcastChannel,
+  RateLimitInfo,
+  ComponentHealth,
+  SystemHealth,
+  LivenessResponse,
+  AccessLogEntry,
+  OpenAIChatRequest,
+  OpenAIChatResponse,
+  OpenAIStreamChunk,
+  OpenAIErrorResponse,
+} from './rpc/types.js';
