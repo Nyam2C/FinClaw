@@ -170,6 +170,75 @@ describe('GatewayBroadcaster', () => {
     });
   });
 
+  describe('broadcastToChannel', () => {
+    it('구독자에게만 전송', () => {
+      const connections = new Map<string, WsConnection>();
+      const c1 = createMockConn('c1');
+      c1.subscriptions.add('config.updated');
+      const c2 = createMockConn('c2');
+      connections.set('c1', c1);
+      connections.set('c2', c2);
+
+      const sent = broadcaster.broadcastToChannel(connections, 'config.updated', { key: 'value' });
+
+      expect(sent).toBe(1);
+      expect(c1.ws.send).toHaveBeenCalledTimes(1);
+      expect(c2.ws.send).not.toHaveBeenCalled();
+
+      const payload = JSON.parse((c1.ws.send as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+      expect(payload.method).toBe('notification.config.updated');
+      expect(payload.params.data).toEqual({ key: 'value' });
+    });
+
+    it('OPEN 아닌 연결 skip', () => {
+      const connections = new Map<string, WsConnection>();
+      const c1 = createMockConn('c1');
+      c1.subscriptions.add('config.updated');
+      Object.defineProperty(c1.ws, 'readyState', { value: 3 });
+      connections.set('c1', c1);
+
+      const sent = broadcaster.broadcastToChannel(connections, 'config.updated', {});
+      expect(sent).toBe(0);
+    });
+
+    it('market.tick 채널은 256KB 임계값 적용', () => {
+      const connections = new Map<string, WsConnection>();
+      const c1 = createMockConn('c1');
+      c1.subscriptions.add('market.tick');
+      Object.defineProperty(c1.ws, 'bufferedAmount', { value: 300 * 1024 });
+      connections.set('c1', c1);
+
+      const sent = broadcaster.broadcastToChannel(connections, 'market.tick', {});
+      expect(sent).toBe(0);
+    });
+  });
+
+  describe('subscribe / unsubscribe', () => {
+    it('구독 추가 성공', () => {
+      const connections = new Map<string, WsConnection>();
+      connections.set('c1', createMockConn('c1'));
+
+      expect(broadcaster.subscribe('c1', 'config.updated', connections)).toBe(true);
+      expect(connections.get('c1')?.subscriptions.has('config.updated')).toBe(true);
+    });
+
+    it('존재하지 않는 연결 → false', () => {
+      const connections = new Map<string, WsConnection>();
+
+      expect(broadcaster.subscribe('nope', 'config.updated', connections)).toBe(false);
+    });
+
+    it('구독 해제 성공', () => {
+      const connections = new Map<string, WsConnection>();
+      const c1 = createMockConn('c1');
+      c1.subscriptions.add('config.updated');
+      connections.set('c1', c1);
+
+      expect(broadcaster.unsubscribe('c1', 'config.updated', connections)).toBe(true);
+      expect(connections.get('c1')?.subscriptions.has('config.updated')).toBe(false);
+    });
+  });
+
   describe('broadcastShutdown', () => {
     it('sends system.shutdown to all open connections', () => {
       const connections = new Map<string, WsConnection>();

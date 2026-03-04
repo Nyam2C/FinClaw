@@ -36,6 +36,7 @@ function makeServerCtx(overrides?: Partial<GatewayServerConfig>): GatewayServerC
     connections: new Map(),
     registry: { activeCount: () => 0 } as GatewayServerContext['registry'],
     broadcaster: {} as GatewayServerContext['broadcaster'],
+    isDraining: false,
   };
 }
 

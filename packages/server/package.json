@@ -11,6 +11,7 @@
     "@finclaw/skills-finance": "workspace:*",
     "@finclaw/storage": "workspace:*",
     "@finclaw/types": "workspace:*",
+    "chokidar": "^5.0.0",
     "jiti": "^2.6.0",
     "ws": "^8.19.0",
     "zod": "^4.0.0"

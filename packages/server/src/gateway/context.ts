@@ -16,4 +16,5 @@ export interface GatewayServerContext {
   readonly connections: Map<string, WsConnection>;
   readonly registry: ChatRegistry;
   readonly broadcaster: GatewayBroadcaster;
+  isDraining: boolean;
 }
