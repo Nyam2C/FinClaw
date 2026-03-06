@@ -13,6 +13,9 @@
     }
   },
   "dependencies": {
-    "@finclaw/types": "workspace:*"
+    "@finclaw/infra": "workspace:*",
+    "@finclaw/types": "workspace:*",
+    "discord.js": "^14.25.1",
+    "zod": "^3.25.0"
   }
 }

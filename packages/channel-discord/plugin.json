@@ -1,0 +1,7 @@
+{
+  "name": "@finclaw/channel-discord",
+  "version": "0.1.0",
+  "description": "Discord channel adapter for FinClaw",
+  "main": "./dist/index.js",
+  "type": "channel"
+}

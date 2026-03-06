@@ -57,6 +57,12 @@ const DiscordChannelSchema = z.strictObject({
   botToken: z.string(),
   applicationId: z.string(),
   guildIds: z.array(z.string()).optional(),
+  allowDMs: z.boolean().optional(),
+  typingIntervalMs: z.number().int().min(1000).optional(),
+  maxChunkLength: z.number().int().min(500).max(2000).optional(),
+  maxChunkLines: z.number().int().min(5).max(50).optional(),
+  approvalRequired: z.boolean().optional(),
+  approvalTimeoutMs: z.number().int().min(10_000).optional(),
 });
 
 /** 데이터 프로바이더 스키마 */
