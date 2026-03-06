@@ -37,6 +37,7 @@ export function waitForApproval(
   toolCallId: string,
   timeoutMs: number = APPROVAL_TIMEOUT_MS,
 ): Promise<boolean> {
+  // TODO: Promise.withResolvers()로 대체 (Node 22+ / ES2024)
   let resolve!: (value: boolean) => void;
   const promise = new Promise<boolean>((r) => {
     resolve = r;

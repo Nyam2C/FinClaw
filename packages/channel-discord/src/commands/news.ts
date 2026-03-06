@@ -30,6 +30,7 @@ export const newsCommand: SlashCommand = {
 
     await interaction.deferReply();
 
+    // TODO: searchNews 호출에 try-catch 추가 — 외부 API 실패 시 사용자에게 에러 메시지 표시
     const articles = await deps.financeService.searchNews(query, count);
     const embeds = articles.map((a) => buildNewsEmbed(a));
     await interaction.editReply({ embeds });

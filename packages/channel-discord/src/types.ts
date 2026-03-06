@@ -1,17 +1,7 @@
 import type { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
 
-/** Discord 어카운트 설정 (config.ts의 Zod 스키마에서 infer) */
-export type DiscordAccount = {
-  readonly botToken: string;
-  readonly applicationId: string;
-  readonly guildIds?: readonly string[];
-  readonly allowDMs: boolean;
-  readonly typingIntervalMs: number;
-  readonly maxChunkLength: number;
-  readonly maxChunkLines: number;
-  readonly approvalRequired: boolean;
-  readonly approvalTimeoutMs: number;
-};
+/** Discord 어카운트 설정 — config.ts의 Zod 스키마에서 infer한 단일 소스 */
+export type { DiscordAccount } from './config.js';
 
 /** 슬래시 커맨드 정의 */
 export interface SlashCommand {

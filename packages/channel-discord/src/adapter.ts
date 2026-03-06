@@ -10,8 +10,9 @@ import type { Client } from 'discord.js';
 import { createLogger } from '@finclaw/infra';
 import { createChannelId } from '@finclaw/types';
 import type { DiscordAccount } from './types.js';
+import { setupApprovalHandler } from './buttons.js';
 import { createDiscordClient } from './client.js';
-import { registerGuildCommands } from './commands/index.js';
+import { registerGuildCommands, setupCommandRouter } from './commands/index.js';
 import { setupMessageHandler } from './handler.js';
 import { sendOutboundMessage } from './sender.js';
 
@@ -52,6 +53,10 @@ export class DiscordAdapter implements ChannelPlugin<DiscordAccount> {
     if (config.guildIds?.length) {
       await registerGuildCommands(client, config);
     }
+
+    // 슬래시 커맨드 라우터 + 승인 버튼 핸들러 등록
+    setupCommandRouter(client, {});
+    setupApprovalHandler(client);
 
     log.info('Discord adapter started');
 
