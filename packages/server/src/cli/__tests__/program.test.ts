@@ -48,6 +48,16 @@ describe('buildProgram', () => {
     expect(opts).toContain('--gateway-url');
   });
 
+  it('has global --json option', () => {
+    const opts = program.options.map((o) => o.long);
+    expect(opts).toContain('--json');
+  });
+
+  it('has global --no-color option', () => {
+    const opts = program.options.map((o) => o.long);
+    expect(opts).toContain('--no-color');
+  });
+
   it('outputs help without error', () => {
     const help = program.helpInformation();
     expect(help).toContain('finclaw');

@@ -8,4 +8,4 @@ export const theme = {
   info: pc.cyan,
   dim: pc.dim,
   bold: pc.bold,
-};
+} as const;

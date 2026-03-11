@@ -2,6 +2,14 @@ import { Command } from 'commander';
 // packages/server/src/cli/program.ts
 import { readFileSync } from 'node:fs';
 import type { CliDeps } from './deps.js';
+import * as agentCmd from './commands/agent.js';
+import * as alertCmd from './commands/alert.js';
+import * as channelCmd from './commands/channel.js';
+import * as configCmd from './commands/config.js';
+import * as marketCmd from './commands/market.js';
+import * as newsCmd from './commands/news.js';
+import * as startCmd from './commands/start.js';
+import * as stopCmd from './commands/stop.js';
 import { EXIT } from './exit-codes.js';
 import { registerPreActionHooks } from './preaction.js';
 import { theme } from './terminal/theme.js';
@@ -22,75 +30,30 @@ export function buildProgram(deps: CliDeps): Command {
     .version(ctx.version)
     .description('FinClaw — AI-powered financial assistant CLI')
     .option('-v, --verbose', 'enable verbose output')
-    .option('--gateway-url <url>', 'gateway server URL', 'http://127.0.0.1:3000');
+    .option('--gateway-url <url>', 'gateway server URL', 'http://127.0.0.1:3000')
+    .option('--json', 'output as JSON')
+    .option('--no-color', 'disable color output');
 
   registerPreActionHooks(program, deps);
 
-  // ── Placeholder commands ──
+  // ── Commands ──
+  startCmd.register(program, deps);
+  stopCmd.register(program, deps);
+  configCmd.register(program, deps);
+  agentCmd.register(program, deps);
+  channelCmd.register(program, deps);
+  marketCmd.register(program, deps);
+  newsCmd.register(program, deps);
+  alertCmd.register(program, deps);
 
-  program
-    .command('start')
-    .description('start the gateway server')
-    .action(() => {
-      deps.output(theme.info('start: not yet implemented'));
-    });
-
-  program
-    .command('stop')
-    .description('stop the gateway server')
-    .action(() => {
-      deps.output(theme.info('stop: not yet implemented'));
-    });
-
-  program
-    .command('config')
-    .description('manage configuration')
-    .action(() => {
-      deps.output(theme.info('config: not yet implemented'));
-    });
-
-  program
-    .command('agent')
-    .description('manage agents')
-    .action(() => {
-      deps.output(theme.info('agent: not yet implemented'));
-    });
-
-  program
-    .command('channel')
-    .description('manage channels')
-    .action(() => {
-      deps.output(theme.info('channel: not yet implemented'));
-    });
-
-  program
-    .command('market')
-    .description('query market data')
-    .action(() => {
-      deps.output(theme.info('market: not yet implemented'));
-    });
-
-  program
-    .command('news')
-    .description('query financial news')
-    .action(() => {
-      deps.output(theme.info('news: not yet implemented'));
-    });
-
-  program
-    .command('alert')
-    .description('manage alerts')
-    .action(() => {
-      deps.output(theme.info('alert: not yet implemented'));
-    });
-
+  // TODO: health/status를 commands/로 추출하면 일관성 향상
   program
     .command('health')
     .description('check gateway health')
     .action(async () => {
       const result = await deps.getGatewayHealth();
       if (!result.ok) {
-        deps.error(theme.error(`Gateway unreachable: ${result.error}`));
+        deps.error(theme.error(`Gateway unreachable: ${result.error?.message}`));
         deps.exit(EXIT.GATEWAY_ERROR);
         return;
       }
@@ -104,7 +67,7 @@ export function buildProgram(deps: CliDeps): Command {
     .action(async () => {
       const result = await deps.callGateway('system.info');
       if (!result.ok) {
-        deps.error(theme.error(`Failed to get status: ${result.error}`));
+        deps.error(theme.error(`Failed to get status: ${result.error?.message}`));
         deps.exit(EXIT.GATEWAY_ERROR);
         return;
       }

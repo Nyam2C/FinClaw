@@ -1,14 +1,14 @@
 // packages/server/src/cli/gateway-client.ts
 
 export interface RpcResult<T> {
-  ok: boolean;
-  data?: T;
-  error?: string;
+  readonly ok: boolean;
+  readonly data?: T;
+  readonly error?: { code: number; message: string };
 }
 
 export interface GatewayClientOptions {
-  baseUrl?: string;
-  timeoutMs?: number;
+  readonly baseUrl?: string;
+  readonly timeoutMs?: number;
 }
 
 const DEFAULT_BASE_URL = 'http://127.0.0.1:3000';
@@ -24,12 +24,15 @@ export async function getGatewayHealth(
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) {
-      return { ok: false, error: `HTTP ${res.status}: ${res.statusText}` };
+      return {
+        ok: false,
+        error: { code: res.status, message: `HTTP ${res.status}: ${res.statusText}` },
+      };
     }
     const data = (await res.json()) as Record<string, unknown>;
     return { ok: true, data };
   } catch (err) {
-    return { ok: false, error: (err as Error).message };
+    return { ok: false, error: { code: -1, message: (err as Error).message } };
   }
 }
 
@@ -54,14 +57,17 @@ export async function callGateway<T = unknown>(
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) {
-      return { ok: false, error: `HTTP ${res.status}: ${res.statusText}` };
+      return {
+        ok: false,
+        error: { code: res.status, message: `HTTP ${res.status}: ${res.statusText}` },
+      };
     }
-    const body = (await res.json()) as { result?: T; error?: { message: string } };
+    const body = (await res.json()) as { result?: T; error?: { code?: number; message: string } };
     if (body.error) {
-      return { ok: false, error: body.error.message };
+      return { ok: false, error: { code: body.error.code ?? -32603, message: body.error.message } };
     }
     return { ok: true, data: body.result };
   } catch (err) {
-    return { ok: false, error: (err as Error).message };
+    return { ok: false, error: { code: -1, message: (err as Error).message } };
   }
 }

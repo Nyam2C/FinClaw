@@ -4,7 +4,7 @@ import type { CliDeps } from '../deps.js';
 
 export function createTestDeps(overrides?: Partial<CliDeps>): CliDeps {
   return {
-    loadConfig: vi.fn().mockReturnValue({
+    loadConfig: vi.fn().mockResolvedValue({
       providers: {},
       storage: { database: { path: ':memory:' } },
     }),

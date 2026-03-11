@@ -9,7 +9,7 @@ export function formatTable(
   columns?: readonly string[],
 ): string {
   if (rows.length === 0) {
-    return '';
+    return '(no data)';
   }
 
   const firstRow = rows[0];

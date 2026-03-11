@@ -1,8 +1,9 @@
-import type { FinClawLogger } from '@finclaw/infra';
 // packages/server/src/cli/deps.ts
+import type { FinClawLogger } from '@finclaw/infra';
 import type { FinClawConfig } from '@finclaw/types';
 import { loadConfig as loadConfigImpl } from '@finclaw/config';
 import { createLogger } from '@finclaw/infra';
+import type { ExitCode } from './exit-codes.js';
 import type { RpcResult, GatewayClientOptions } from './gateway-client.js';
 import {
   callGateway as callGatewayImpl,
@@ -10,7 +11,7 @@ import {
 } from './gateway-client.js';
 
 export interface CliDeps {
-  loadConfig(): FinClawConfig;
+  loadConfig(): Promise<FinClawConfig>;
   log: FinClawLogger;
   callGateway<T = unknown>(
     method: string,
@@ -18,7 +19,7 @@ export interface CliDeps {
     opts?: GatewayClientOptions,
   ): Promise<RpcResult<T>>;
   getGatewayHealth(opts?: GatewayClientOptions): Promise<RpcResult<Record<string, unknown>>>;
-  exit(code: number): void;
+  exit(code: ExitCode): never;
   output(msg: string): void;
   error(msg: string): void;
 }
@@ -27,12 +28,12 @@ export function createDefaultDeps(overrides?: Partial<CliDeps>): CliDeps {
   const log = createLogger({ name: 'cli' });
 
   const defaults: CliDeps = {
-    loadConfig: loadConfigImpl,
+    loadConfig: async () => loadConfigImpl(),
     log,
     callGateway: callGatewayImpl,
     getGatewayHealth: getGatewayHealthImpl,
-    exit(code) {
-      process.exit(code);
+    exit(code): never {
+      return process.exit(code);
     },
     output(msg) {
       console.log(msg);

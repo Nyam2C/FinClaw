@@ -15,7 +15,7 @@ const routes: readonly RouteSpec[] = [
     async handle(deps) {
       const result = await deps.getGatewayHealth();
       if (!result.ok) {
-        deps.error(theme.error(`Gateway health check failed: ${result.error}`));
+        deps.error(theme.error(`Gateway health check failed: ${result.error?.message}`));
         return EXIT.GATEWAY_ERROR;
       }
       deps.output(formatKeyValue(result.data as Record<string, unknown>));
@@ -27,7 +27,7 @@ const routes: readonly RouteSpec[] = [
     async handle(deps) {
       const result = await deps.callGateway('system.info');
       if (!result.ok) {
-        deps.error(theme.error(`Failed to get system info: ${result.error}`));
+        deps.error(theme.error(`Failed to get system info: ${result.error?.message}`));
         return EXIT.GATEWAY_ERROR;
       }
       deps.output(formatKeyValue(result.data as Record<string, unknown>));

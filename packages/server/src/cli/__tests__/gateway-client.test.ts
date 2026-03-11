@@ -26,13 +26,14 @@ describe('getGatewayHealth', () => {
     );
     const result = await getGatewayHealth();
     expect(result.ok).toBe(false);
-    expect(result.error).toContain('503');
+    expect(result.error?.code).toBe(503);
+    expect(result.error?.message).toContain('503');
   });
 
   it('returns error on network failure', async () => {
     mockFetch.mockRejectedValue(new Error('Connection refused'));
     const result = await getGatewayHealth();
-    expect(result).toEqual({ ok: false, error: 'Connection refused' });
+    expect(result).toEqual({ ok: false, error: { code: -1, message: 'Connection refused' } });
   });
 });
 
@@ -51,12 +52,12 @@ describe('callGateway', () => {
     );
     const result = await callGateway('unknown.method');
     expect(result.ok).toBe(false);
-    expect(result.error).toBe('Method not found');
+    expect(result.error?.message).toBe('Method not found');
   });
 
   it('returns error on network failure', async () => {
     mockFetch.mockRejectedValue(new Error('timeout'));
     const result = await callGateway('system.info');
-    expect(result).toEqual({ ok: false, error: 'timeout' });
+    expect(result).toEqual({ ok: false, error: { code: -1, message: 'timeout' } });
   });
 });

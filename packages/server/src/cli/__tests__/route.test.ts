@@ -23,7 +23,9 @@ describe('tryFastPath', () => {
 
   it('handles health command on failure', async () => {
     const deps = createTestDeps({
-      getGatewayHealth: vi.fn().mockResolvedValue({ ok: false, error: 'Connection refused' }),
+      getGatewayHealth: vi
+        .fn()
+        .mockResolvedValue({ ok: false, error: { code: -1, message: 'Connection refused' } }),
     });
     const code = await tryFastPath(['health'], deps);
     expect(code).toBe(3); // EXIT.GATEWAY_ERROR

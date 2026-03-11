@@ -3,8 +3,8 @@ import { describe, it, expect } from 'vitest';
 import { formatTable, formatKeyValue } from '../table.js';
 
 describe('formatTable', () => {
-  it('returns empty string for empty array', () => {
-    expect(formatTable([])).toBe('');
+  it('returns "(no data)" for empty array', () => {
+    expect(formatTable([])).toBe('(no data)');
   });
 
   it('formats a single row', () => {
