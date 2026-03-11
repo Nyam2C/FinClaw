@@ -2,6 +2,9 @@
   "name": "@finclaw/server",
   "version": "0.1.0",
   "private": true,
+  "bin": {
+    "finclaw": "./bin/finclaw.js"
+  },
   "type": "module",
   "dependencies": {
     "@finclaw/agent": "workspace:*",
@@ -12,7 +15,9 @@
     "@finclaw/storage": "workspace:*",
     "@finclaw/types": "workspace:*",
     "chokidar": "^5.0.0",
+    "commander": "^14",
     "jiti": "^2.6.0",
+    "picocolors": "^1.1.1",
     "ws": "^8.19.0",
     "zod": "^4.0.0"
   },
