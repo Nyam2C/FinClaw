@@ -1,3 +1,4 @@
+import type { ExitCode } from './exit-codes.js';
 // packages/server/src/cli/entry.ts
 import { createDefaultDeps } from './deps.js';
 import { buildProgram } from './program.js';
@@ -10,7 +11,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
   const userArgs = argv.slice(2);
   const fastResult = await tryFastPath(userArgs, deps);
   if (fastResult !== null) {
-    deps.exit(fastResult);
+    deps.exit(fastResult as ExitCode);
     return;
   }
 

@@ -1,5 +1,6 @@
 // packages/server/src/cli/__tests__/deps.test.ts
 import { describe, it, expect, vi } from 'vitest';
+import type { CliDeps } from '../deps.js';
 import { createDefaultDeps } from '../deps.js';
 import { createTestDeps } from './test-helpers.js';
 
@@ -16,7 +17,7 @@ describe('createDefaultDeps', () => {
   });
 
   it('applies overrides', () => {
-    const customExit = vi.fn();
+    const customExit = vi.fn() as unknown as CliDeps['exit'];
     const deps = createDefaultDeps({ exit: customExit });
     expect(deps.exit).toBe(customExit);
   });
@@ -30,7 +31,7 @@ describe('createTestDeps', () => {
   });
 
   it('accepts overrides', () => {
-    const customExit = vi.fn();
+    const customExit = vi.fn() as unknown as CliDeps['exit'];
     const deps = createTestDeps({ exit: customExit });
     expect(deps.exit).toBe(customExit);
   });

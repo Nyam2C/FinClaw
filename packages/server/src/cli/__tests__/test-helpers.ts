@@ -20,7 +20,7 @@ export function createTestDeps(overrides?: Partial<CliDeps>): CliDeps {
     },
     callGateway: vi.fn().mockResolvedValue({ ok: true, data: {} }),
     getGatewayHealth: vi.fn().mockResolvedValue({ ok: true, data: { status: 'ok' } }),
-    exit: vi.fn(),
+    exit: vi.fn() as unknown as CliDeps['exit'],
     output: vi.fn(),
     error: vi.fn(),
     ...overrides,
