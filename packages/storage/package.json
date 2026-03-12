@@ -13,6 +13,7 @@
     }
   },
   "dependencies": {
-    "@finclaw/types": "workspace:*"
+    "@finclaw/types": "workspace:*",
+    "sqlite-vec": "0.1.7-alpha.2"
   }
 }
