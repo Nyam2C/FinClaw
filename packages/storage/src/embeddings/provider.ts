@@ -10,6 +10,7 @@ export interface EmbeddingProvider {
 
 export type EmbeddingMode = 'auto' | 'anthropic' | 'openai';
 
+// NOTE(review-2 I-3): single apiKey — providers fall back to env vars (VOYAGE_API_KEY / OPENAI_API_KEY)
 export interface EmbeddingConfig {
   readonly apiKey?: string;
 }
@@ -29,9 +30,13 @@ export async function createEmbeddingProvider(
     try {
       const { AnthropicEmbeddingProvider } = await import('./anthropic.js');
       return new AnthropicEmbeddingProvider(config?.apiKey);
-    } catch {
+    } catch (err) {
       if (mode === 'anthropic') {
-        throw new Error('Failed to create Anthropic embedding provider');
+        throw new Error('Failed to create Anthropic embedding provider', { cause: err });
+      }
+      const msg = err instanceof Error ? err.message : '';
+      if (!msg.includes('API_KEY')) {
+        throw err;
       }
     }
   }

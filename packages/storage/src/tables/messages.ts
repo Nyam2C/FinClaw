@@ -43,6 +43,7 @@ function rowToMessage(row: MessageRow): Message {
   };
 }
 
+// NOTE(review-1 R-3): duplicated in conversations.ts
 function tryParseContent(s: string): string | ContentBlock[] {
   if (s.startsWith('[')) {
     try {

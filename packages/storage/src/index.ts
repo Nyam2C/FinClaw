@@ -50,6 +50,7 @@ export interface StorageOptions {
   embeddingProvider?: EmbeddingProvider;
 }
 
+// NOTE(review-1 R-2): duplicates conversations.ts type — will be removed with LIKE fallback
 interface ConversationRow {
   id: string;
   agent_id: string;
@@ -58,6 +59,7 @@ interface ConversationRow {
   metadata: string;
 }
 
+// NOTE(review-1 R-2): duplicates memories.ts type — same as above
 interface MemoryRow {
   id: string;
   session_key: string;
@@ -162,6 +164,7 @@ export function createStorage(options: StorageOptions): StorageAdapter {
         // Deduplicate by memoryId and resolve full entries
         const seen = new Set<string>();
         const entries: MemoryEntry[] = [];
+        // NOTE(review-2 I-14): N+1 getMemory — acceptable, limit defaults to 10
         for (const result of merged) {
           if (seen.has(result.memoryId)) {
             continue;

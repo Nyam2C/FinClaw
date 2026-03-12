@@ -57,6 +57,7 @@ function messageRowToMessage(row: MessageRow): ConversationMessage {
   return msg;
 }
 
+// NOTE(review-1 R-3): duplicated in messages.ts
 function tryParseContent(s: string): string | ContentBlock[] {
   if (s.startsWith('[')) {
     try {
@@ -199,10 +200,5 @@ export function listConversations(
 
   const rows = db.prepare(sql).all(...params) as unknown as ConversationRow[];
 
-  return rows.map((row) => {
-    const msgRows = db
-      .prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC')
-      .all(row.id) as unknown as MessageRow[];
-    return rowToRecord(row, msgRows.map(messageRowToMessage));
-  });
+  return rows.map((row) => rowToRecord(row, []));
 }

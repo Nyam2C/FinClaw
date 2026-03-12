@@ -48,6 +48,7 @@ export async function searchVector(
       `SELECT v.chunk_id, c.memory_id, c.text, v.distance
        FROM memory_chunks_vec v
        JOIN memory_chunks c ON c.id = v.chunk_id
+       -- NOTE(review-2 I-5): MATCH + k = ? is correct sqlite-vec KNN syntax (plan's vec_distance_cosine was wrong)
        WHERE v.embedding MATCH ? AND k = ?
        ORDER BY v.distance`,
     )

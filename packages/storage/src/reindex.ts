@@ -23,7 +23,7 @@ export async function atomicReindex(dbPath: string, provider: EmbeddingProvider)
   const tmpPath = dbPath + '.reindex.tmp';
 
   try {
-    // Open original DB (read-only source)
+    // NOTE(review-2 I-10): no sqlite-vec — safe, only memories table queried (no vec0 access)
     const origDb = new DatabaseSync(dbPath, { readOnly: true });
     const rows = origDb
       .prepare('SELECT * FROM memories ORDER BY created_at ASC')
@@ -47,10 +47,7 @@ export async function atomicReindex(dbPath: string, provider: EmbeddingProvider)
 
     tmpDatabase.close();
 
-    // Atomic swap
-    renameSync(tmpPath, dbPath);
-
-    // Clean up WAL/SHM from original if they exist
+    // Clean up WAL/SHM from original before rename to avoid stale files
     for (const ext of ['-wal', '-shm']) {
       try {
         unlinkSync(dbPath + ext);
@@ -58,6 +55,9 @@ export async function atomicReindex(dbPath: string, provider: EmbeddingProvider)
         // may not exist
       }
     }
+
+    // Atomic swap
+    renameSync(tmpPath, dbPath);
   } catch (err) {
     // Cleanup tmp on failure
     try {

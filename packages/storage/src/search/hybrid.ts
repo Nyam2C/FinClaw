@@ -1,6 +1,7 @@
 // ─── Hybrid search types & merge ───
 
 export interface ChunkSearchResult {
+  // NOTE(review-2 I-1): plan uses 'id' — 'chunkId' is clearer, intentional
   readonly chunkId: string;
   readonly memoryId: string;
   readonly text: string;
@@ -8,6 +9,7 @@ export interface ChunkSearchResult {
   readonly source: 'vector' | 'fts' | 'hybrid';
 }
 
+// NOTE(review-2 I-2): 'query' omitted — mergeHybridResults is a pure merge, doesn't need it
 export interface HybridSearchOptions {
   readonly vectorWeight?: number;
   readonly textWeight?: number;

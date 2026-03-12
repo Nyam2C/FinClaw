@@ -4,6 +4,7 @@ import type { EmbeddingProvider } from '../embeddings/provider.js';
 
 // ─── Internal utilities ───
 
+// NOTE(review-2 I-12): duplicated in memories.ts, vector.ts
 function float32ToBuffer(arr: Float32Array): Buffer {
   return Buffer.from(arr.buffer, arr.byteOffset, arr.byteLength);
 }

@@ -229,6 +229,7 @@ export function getMemoryChunks(db: DatabaseSync, memoryId: string): MemoryChunk
 
 // ─── Embedding-aware insert ───
 
+// NOTE(review-2 I-12): duplicated in embeddings.ts, vector.ts — 2-line utility, not worth extracting
 function float32ToBuffer(arr: Float32Array): Buffer {
   return Buffer.from(arr.buffer, arr.byteOffset, arr.byteLength);
 }

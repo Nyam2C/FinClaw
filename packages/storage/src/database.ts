@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS memory_chunks (
   start_line INTEGER NOT NULL,
   end_line   INTEGER NOT NULL,
   model      TEXT NOT NULL DEFAULT 'pending',
-  hash       TEXT,
+  hash       TEXT, -- NOTE(review-1 I-3): nullable — addMemory에서 chunk hash 미설정. 향후 NOT NULL 마이그레이션 예정
   created_at INTEGER NOT NULL,
   FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
 );
@@ -99,7 +99,7 @@ CREATE TABLE IF NOT EXISTS alerts (
   id                TEXT PRIMARY KEY,
   name              TEXT,
   symbol            TEXT NOT NULL,
-  condition_type    TEXT NOT NULL,
+  condition_type    TEXT NOT NULL CHECK(condition_type IN ('above','below','crosses_above','crosses_below','change_percent')),
   condition_value   REAL NOT NULL,
   condition_field   TEXT,
   enabled           INTEGER NOT NULL DEFAULT 1,
@@ -110,7 +110,7 @@ CREATE TABLE IF NOT EXISTS alerts (
   created_at        INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_alerts_symbol ON alerts(symbol);
-CREATE INDEX IF NOT EXISTS idx_alerts_enabled ON alerts(enabled);
+CREATE INDEX IF NOT EXISTS idx_alerts_active ON alerts(enabled) WHERE enabled = 1;
 
 CREATE TABLE IF NOT EXISTS market_cache (
   key        TEXT PRIMARY KEY,
@@ -152,6 +152,7 @@ function runMigrations(db: DatabaseSync, from: number, to: number): void {
 export function openDatabase(options: DatabaseOptions): Database {
   const { path, enableWAL = true, enableForeignKeys = true } = options;
 
+  // allowExtension: true handles enableLoadExtension(true) — explicit call unnecessary
   const db = new DatabaseSync(path, { allowExtension: true });
 
   // Load sqlite-vec extension
