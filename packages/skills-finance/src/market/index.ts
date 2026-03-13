@@ -56,7 +56,7 @@ async function getQuoteFromState(
       rateLimit: provider.rateLimit,
       getQuote: (s) => provider.getQuote(createTickerSymbol(s)),
     },
-    (raw) => normalizeQuote(raw as { raw: unknown; symbol: typeof symbol; provider: string }),
+    (raw) => normalizeQuote(raw),
   );
 }
 
@@ -95,8 +95,12 @@ function registerStockPriceTool(registry: ToolRegistry, state: MarketSkillState)
     timeoutMs: 15_000,
   };
   const executor: ToolExecutor = async (input) => {
-    const quote = await getQuoteFromState(state, input.symbol as string);
-    return { content: formatQuote(quote), isError: false };
+    try {
+      const quote = await getQuoteFromState(state, input.symbol as string);
+      return { content: formatQuote(quote), isError: false };
+    } catch (error) {
+      return { content: error instanceof Error ? error.message : String(error), isError: true };
+    }
   };
   registry.register(def, executor, 'skill');
 }
@@ -120,8 +124,12 @@ function registerCryptoPriceTool(registry: ToolRegistry, state: MarketSkillState
     timeoutMs: 15_000,
   };
   const executor: ToolExecutor = async (input) => {
-    const quote = await getQuoteFromState(state, input.symbol as string);
-    return { content: formatQuote(quote), isError: false };
+    try {
+      const quote = await getQuoteFromState(state, input.symbol as string);
+      return { content: formatQuote(quote), isError: false };
+    } catch (error) {
+      return { content: error instanceof Error ? error.message : String(error), isError: true };
+    }
   };
   registry.register(def, executor, 'skill');
 }
@@ -146,10 +154,14 @@ function registerForexRateTool(registry: ToolRegistry, state: MarketSkillState):
     timeoutMs: 15_000,
   };
   const executor: ToolExecutor = async (input) => {
-    const from = input.from as string;
-    const to = input.to as string;
-    const quote = await getQuoteFromState(state, `${from}/${to}`);
-    return { content: formatForexRate(quote), isError: false };
+    try {
+      const from = input.from as string;
+      const to = input.to as string;
+      const quote = await getQuoteFromState(state, `${from}/${to}`);
+      return { content: formatForexRate(quote), isError: false };
+    } catch (error) {
+      return { content: error instanceof Error ? error.message : String(error), isError: true };
+    }
   };
   registry.register(def, executor, 'skill');
 }
@@ -180,10 +192,14 @@ function registerMarketChartTool(registry: ToolRegistry, state: MarketSkillState
     timeoutMs: 15_000,
   };
   const executor: ToolExecutor = async (input) => {
-    const symbol = input.symbol as string;
-    const period = (input.period as string) ?? '1m';
-    const sparkline = await getChartFromState(state, symbol, period);
-    return { content: formatChart(symbol, sparkline, period), isError: false };
+    try {
+      const symbol = input.symbol as string;
+      const period = (input.period as string) ?? '1m';
+      const sparkline = await getChartFromState(state, symbol, period);
+      return { content: formatChart(symbol, sparkline, period), isError: false };
+    } catch (error) {
+      return { content: error instanceof Error ? error.message : String(error), isError: true };
+    }
   };
   registry.register(def, executor, 'skill');
 }

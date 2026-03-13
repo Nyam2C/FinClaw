@@ -41,6 +41,23 @@ const CoinGeckoDataShape = z.object({
   last_updated: z.string(),
 });
 
+/** Alpha Vantage Time Series 엔트리 스키마 */
+const AVTimeSeriesEntrySchema = z
+  .object({
+    '1. open': z.string(),
+    '2. high': z.string(),
+    '3. low': z.string(),
+    '4. close': z.string(),
+  })
+  .catchall(z.string());
+
+/** CoinGecko market_chart 응답 스키마 */
+const CoinGeckoMarketChartSchema = z.object({
+  prices: z.array(z.tuple([z.number(), z.number()])),
+  market_caps: z.array(z.tuple([z.number(), z.number()])),
+  total_volumes: z.array(z.tuple([z.number(), z.number()])),
+});
+
 /** Frankfurter 응답 스키마 */
 const FrankfurterQuoteSchema = z.object({
   base: z.string(),
@@ -160,24 +177,39 @@ export function normalizeHistorical(response: ProviderHistoricalResponse): Marke
 }
 
 function normalizeAlphaVantageHistorical(response: ProviderHistoricalResponse): MarketHistorical {
-  const data = response.raw as Record<string, Record<string, Record<string, string>>>;
+  const raw = response.raw;
+  if (typeof raw !== 'object' || raw === null) {
+    throw new Error('Invalid Alpha Vantage historical response: expected object');
+  }
 
   // "Time Series (Daily)" 또는 "Time Series (5min)" 키를 찾는다
+  const data = raw as Record<string, unknown>;
   const timeSeriesKey = Object.keys(data).find((k) => k.startsWith('Time Series'));
   if (!timeSeriesKey) {
     throw new Error('No time series data in response');
   }
 
-  const series = data[timeSeriesKey];
-  const candles: OHLCVCandle[] = Object.entries(series)
-    .map(([date, values]) => ({
-      timestamp: new Date(date).getTime() as Timestamp,
-      open: parseFloat(values['1. open']),
-      high: parseFloat(values['2. high']),
-      low: parseFloat(values['3. low']),
-      close: parseFloat(values['4. close']),
-      volume: parseInt(values['5. volume'] ?? values['6. volume'] ?? '0', 10),
-    }))
+  const rawSeries = data[timeSeriesKey];
+  if (typeof rawSeries !== 'object' || rawSeries === null) {
+    throw new Error('Invalid time series data');
+  }
+
+  const candles: OHLCVCandle[] = Object.entries(rawSeries as Record<string, unknown>)
+    .map(([date, rawEntry]) => {
+      const parsed = AVTimeSeriesEntrySchema.safeParse(rawEntry);
+      if (!parsed.success) {
+        throw new Error(`Invalid time series entry for ${date}: ${parsed.error.message}`);
+      }
+      const values = parsed.data;
+      return {
+        timestamp: new Date(date).getTime() as Timestamp,
+        open: parseFloat(values['1. open']),
+        high: parseFloat(values['2. high']),
+        low: parseFloat(values['3. low']),
+        close: parseFloat(values['4. close']),
+        volume: parseInt(values['5. volume'] ?? values['6. volume'] ?? '0', 10),
+      };
+    })
     .toSorted((a, b) => a.timestamp - b.timestamp);
 
   return {
@@ -190,12 +222,12 @@ function normalizeAlphaVantageHistorical(response: ProviderHistoricalResponse): 
 }
 
 function normalizeCoinGeckoHistorical(response: ProviderHistoricalResponse): MarketHistorical {
-  const data = response.raw as {
-    prices: Array<[number, number]>;
-    market_caps: Array<[number, number]>;
-    total_volumes: Array<[number, number]>;
-  };
+  const parsed = CoinGeckoMarketChartSchema.safeParse(response.raw);
+  if (!parsed.success) {
+    throw new Error(`Invalid CoinGecko market_chart response: ${parsed.error.message}`);
+  }
 
+  const data = parsed.data;
   const candles: OHLCVCandle[] = data.prices.map(([timestamp, price]) => ({
     timestamp: timestamp as Timestamp,
     open: price,

@@ -1,6 +1,7 @@
 // packages/skills-finance/src/market/charts.ts
 import type { OHLCVCandle } from '@finclaw/types';
 import type { ChartOptions } from './types.js';
+import { formatPrice } from './formatters.js';
 
 /** 스파크라인 블록 문자 (하단→상단, 8레벨) */
 const SPARK_CHARS = [' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
@@ -48,12 +49,14 @@ export function generateSparkline(candles: OHLCVCandle[], options: ChartOptions 
   const lines: string[] = [];
 
   if (showPrice) {
-    lines.push(`${formatCurrency(latest.close, currency as string)}`);
+    // branded CurrencyCode → string: formatPrice는 string을 요구하므로 명시적 캐스트
+    lines.push(`${formatPrice(latest.close, currency as string)}`);
   }
 
   lines.push(sparkline);
   lines.push(
-    `H: ${formatCurrency(max, currency as string)}  L: ${formatCurrency(min, currency as string)}  Δ: ${changeSign}${change.toFixed(1)}%`,
+    // branded CurrencyCode → string
+    `H: ${formatPrice(max, currency as string)}  L: ${formatPrice(min, currency as string)}  Δ: ${changeSign}${change.toFixed(1)}%`,
   );
 
   return lines.join('\n');
@@ -80,27 +83,4 @@ function resample(data: number[], targetLength: number): number[] {
   }
 
   return result;
-}
-
-function formatCurrency(value: number, currency: string): string {
-  const symbols: Record<string, string> = {
-    USD: '$',
-    KRW: '₩',
-    EUR: '€',
-    GBP: '£',
-    JPY: '¥',
-    BTC: '₿',
-  };
-  const symbol = symbols[currency] ?? currency;
-
-  if (value >= 1_000_000) {
-    return `${symbol}${(value / 1_000_000).toFixed(2)}M`;
-  }
-  if (value >= 1_000) {
-    return `${symbol}${(value / 1_000).toFixed(2)}K`;
-  }
-  if (value < 1) {
-    return `${symbol}${value.toFixed(6)}`;
-  }
-  return `${symbol}${value.toFixed(2)}`;
 }

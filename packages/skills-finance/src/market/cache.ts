@@ -1,7 +1,7 @@
 // packages/skills-finance/src/market/cache.ts
 import type { DatabaseSync } from 'node:sqlite';
 import { getCachedData, setCachedData, getStaleCachedData, CACHE_TTL } from '@finclaw/storage';
-import type { ProviderMarketQuote, RateLimitConfig } from './types.js';
+import type { ProviderMarketQuote, ProviderQuoteResponse, RateLimitConfig } from './types.js';
 
 /**
  * 일별 한도 초과 에러.
@@ -29,9 +29,9 @@ export class MarketCache {
     provider: {
       id: string;
       rateLimit: RateLimitConfig;
-      getQuote: (s: string) => Promise<unknown>;
+      getQuote: (s: string) => Promise<ProviderQuoteResponse>;
     },
-    normalize: (raw: unknown) => ProviderMarketQuote,
+    normalize: (raw: ProviderQuoteResponse) => ProviderMarketQuote,
   ): Promise<ProviderMarketQuote> {
     const cacheKey = `quote:${symbol}:${provider.id}`;
 
@@ -55,12 +55,13 @@ export class MarketCache {
       const raw = await provider.getQuote(symbol);
       const normalized = normalize(raw);
 
-      // 5. 캐시 저장
-      const ttl = symbol.includes('/')
-        ? CACHE_TTL.FOREX
-        : /^[A-Z]{1,5}$/.test(symbol)
-          ? CACHE_TTL.QUOTE
-          : CACHE_TTL.CRYPTO;
+      // 5. 캐시 저장 — provider.id 기반 TTL 매핑
+      const ttlMap: Record<string, number> = {
+        'alpha-vantage': CACHE_TTL.QUOTE,
+        coingecko: CACHE_TTL.CRYPTO,
+        frankfurter: CACHE_TTL.FOREX,
+      };
+      const ttl = ttlMap[provider.id] ?? CACHE_TTL.QUOTE;
       setCachedData(this.db, cacheKey, normalized, provider.id, ttl);
 
       // 6. 일별 카운터 증가
@@ -134,6 +135,7 @@ export class RateLimiter {
 
       // 제한 초과 시 대기 (최소 50ms 보장)
       const oldestInWindow = this.timestamps[0];
+      // +100ms: 클록 정밀도 보정 및 윈도우 경계 조건 방지용 여유값
       const waitMs = Math.max(50, oldestInWindow + this.config.windowMs - now + 100);
       await new Promise((resolve) => setTimeout(resolve, waitMs));
     }

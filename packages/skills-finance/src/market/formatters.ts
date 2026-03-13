@@ -7,6 +7,7 @@ import type { ProviderMarketQuote } from './types.js';
  */
 export function formatQuote(quote: ProviderMarketQuote): string {
   const changeSign = quote.change >= 0 ? '+' : '';
+  // branded CurrencyCode → string: formatPrice는 string을 요구하므로 명시적 캐스트
   const price = formatPrice(quote.price, quote.currency as string);
   const change = `${changeSign}${quote.change.toFixed(2)}`;
   const changePct = `${changeSign}${quote.changePercent.toFixed(2)}%`;
@@ -14,6 +15,7 @@ export function formatQuote(quote: ProviderMarketQuote): string {
   const lines = [
     `${quote.symbol} ${price}`,
     `변동: ${change} (${changePct})`,
+    // branded CurrencyCode → string
     `고가: ${formatPrice(quote.high, quote.currency as string)}  저가: ${formatPrice(quote.low, quote.currency as string)}`,
   ];
 
@@ -32,6 +34,7 @@ export function formatQuote(quote: ProviderMarketQuote): string {
 
 /** 환율을 포맷한다 */
 export function formatForexRate(quote: ProviderMarketQuote): string {
+  // branded TickerSymbol → string: split()은 string에 정의되므로 명시적 캐스트
   const [from, to] = (quote.symbol as string).split('/');
   return `${from}/${to}: ${formatPrice(quote.price, to)}`;
 }
@@ -41,7 +44,7 @@ export function formatChart(symbol: string, sparkline: string, period: string): 
   return `${symbol} (${period})\n\`\`\`\n${sparkline}\n\`\`\``;
 }
 
-function formatPrice(value: number, currency: string): string {
+export function formatPrice(value: number, currency: string): string {
   const symbols: Record<string, string> = {
     USD: '$',
     KRW: '₩',
