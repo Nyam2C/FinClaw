@@ -2,5 +2,10 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "outDir": "dist", "rootDir": "src" },
   "include": ["src"],
-  "references": [{ "path": "../types" }, { "path": "../storage" }]
+  "references": [
+    { "path": "../types" },
+    { "path": "../storage" },
+    { "path": "../infra" },
+    { "path": "../agent" }
+  ]
 }

@@ -13,7 +13,10 @@
     }
   },
   "dependencies": {
+    "@finclaw/agent": "workspace:*",
+    "@finclaw/infra": "workspace:*",
     "@finclaw/storage": "workspace:*",
-    "@finclaw/types": "workspace:*"
+    "@finclaw/types": "workspace:*",
+    "zod": "^4.0.0"
   }
 }
