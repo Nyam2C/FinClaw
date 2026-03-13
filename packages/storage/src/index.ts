@@ -41,6 +41,8 @@ export {
 export { searchFts } from './search/fts.js';
 export { searchVector } from './search/vector.js';
 export { atomicReindex } from './reindex.js';
+export { purgeExpiredCache } from './tables/market-cache.js';
+export { updateAlertTrigger } from './tables/alerts.js';
 
 // ─── StorageAdapter factory ───
 

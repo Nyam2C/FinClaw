@@ -122,6 +122,9 @@ importers:
       commander:
         specifier: ^14
         version: 14.0.3
+      croner:
+        specifier: ^9
+        version: 9.1.0
       jiti:
         specifier: ^2.6.0
         version: 2.6.1
@@ -723,6 +726,10 @@ packages:
   commander@14.0.3:
     resolution: {integrity: sha512-H+y0Jo/T1RZ9qPP4Eh1pkcQcLRglraJaSLoyOtHxu6AapkjWVCy2Sit1QQ4x3Dng8qDlSsZEet7g5Pq06MvTgw==}
     engines: {node: '>=20'}
+
+  croner@9.1.0:
+    resolution: {integrity: sha512-p9nwwR4qyT5W996vBZhdvBCnMhicY5ytZkR4D1Xj0wuTDEiMnjwR57Q3RXYY/s0EpX6Ay3vgIcfaR+ewGHsi+g==}
+    engines: {node: '>=18.0'}
 
   discord-api-types@0.38.40:
     resolution: {integrity: sha512-P/His8cotqZgQqrt+hzrocp9L8RhQQz1GkrCnC9TMJ8Uw2q0tg8YyqJyGULxhXn/8kxHETN4IppmOv+P2m82lQ==}
@@ -1544,6 +1551,8 @@ snapshots:
       readdirp: 5.0.0
 
   commander@14.0.3: {}
+
+  croner@9.1.0: {}
 
   discord-api-types@0.38.40: {}
 
