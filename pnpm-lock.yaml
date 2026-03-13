@@ -144,12 +144,21 @@ importers:
 
   packages/skills-finance:
     dependencies:
+      '@finclaw/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@finclaw/infra':
+        specifier: workspace:*
+        version: link:../infra
       '@finclaw/storage':
         specifier: workspace:*
         version: link:../storage
       '@finclaw/types':
         specifier: workspace:*
         version: link:../types
+      zod:
+        specifier: ^4.0.0
+        version: 4.3.6
 
   packages/storage:
     dependencies:
