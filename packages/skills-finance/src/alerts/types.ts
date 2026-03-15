@@ -43,6 +43,7 @@ export interface AlertDefinition {
   readonly channels: readonly DeliveryChannel[];
   readonly cooldownMs: number;
   readonly enabled: boolean;
+  readonly triggerCount: number;
   readonly expiresAt?: number;
   readonly createdAt: number;
   readonly updatedAt: number;
@@ -51,7 +52,7 @@ export interface AlertDefinition {
 // R1: Omit에 enabled, cooldownMs 포함하여 intersection 충돌 방지
 export type CreateAlertInput = Omit<
   AlertDefinition,
-  'id' | 'createdAt' | 'updatedAt' | 'enabled' | 'cooldownMs'
+  'id' | 'createdAt' | 'updatedAt' | 'enabled' | 'cooldownMs' | 'triggerCount'
 > & {
   readonly enabled?: boolean;
   readonly cooldownMs?: number;

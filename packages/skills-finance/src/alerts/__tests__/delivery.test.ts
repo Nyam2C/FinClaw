@@ -18,6 +18,7 @@ function mockAlert(overrides?: Partial<AlertDefinition>): AlertDefinition {
     channels: ['log'],
     cooldownMs: 900_000,
     enabled: true,
+    triggerCount: 0,
     createdAt: Date.now(),
     updatedAt: Date.now(),
     ...overrides,

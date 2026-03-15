@@ -51,6 +51,7 @@ export const alertCommand: SlashCommand = {
         const condition = interaction.options.getString('condition', true);
         const value = interaction.options.getNumber('value', true);
 
+        // TODO(R10): v2 alertStorage → v3 AlertStore 마이그레이션 필요
         const alert = await deps.alertStorage.createAlert({
           name: `${ticker} ${condition} ${value}`,
           symbol: ticker as import('@finclaw/types').TickerSymbol,

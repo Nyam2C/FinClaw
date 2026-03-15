@@ -70,8 +70,9 @@ export function registerSetAlertTool(registry: ToolRegistry, deps: { store: Aler
         userId: context.userId,
         name: input.name as string,
         condition,
+        // TODO(R15): channels가 하드코딩됨 — 향후 inputSchema에 channels 파라미터 추가
         channels: ['discord', 'websocket'],
-        cooldownMs: (input.cooldownMs as number | undefined) ?? undefined,
+        cooldownMs: input.cooldownMs as number | undefined,
         enabled: true,
         expiresAt: input.expiresAt as number | undefined,
       });

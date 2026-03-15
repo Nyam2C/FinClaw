@@ -45,6 +45,7 @@ function rowToAlertDefinition(row: AlertRow): AlertDefinition {
     channels: JSON.parse(row.channels_json) as DeliveryChannel[],
     cooldownMs: row.cooldown_ms,
     enabled: Boolean(row.enabled),
+    triggerCount: row.trigger_count,
     expiresAt: row.expires_at ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

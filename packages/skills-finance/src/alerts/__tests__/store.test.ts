@@ -165,11 +165,9 @@ describe('AlertStore', () => {
       const allHistory = store.getHistory(alert.id);
       expect(allHistory).toHaveLength(1);
 
-      // trigger_count가 증가했는지 확인 (AlertDefinition에 없으므로 DB 직접 조회)
-      const row = db
-        .prepare('SELECT trigger_count FROM alerts WHERE id = ?')
-        .get(alert.id) as unknown as { trigger_count: number };
-      expect(row.trigger_count).toBe(1);
+      // trigger_count가 증가했는지 확인
+      const updated = store.getById(alert.id);
+      expect(updated?.triggerCount).toBe(1);
     });
   });
 });
