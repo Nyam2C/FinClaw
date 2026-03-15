@@ -13,10 +13,12 @@
     }
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
     "@finclaw/agent": "workspace:*",
     "@finclaw/infra": "workspace:*",
     "@finclaw/storage": "workspace:*",
     "@finclaw/types": "workspace:*",
+    "feedsmith": "^2.9.0",
     "zod": "^4.0.0"
   }
 }
