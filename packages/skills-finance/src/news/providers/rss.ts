@@ -30,6 +30,7 @@ export function createRssProvider(config?: { feedUrls?: string[] }): NewsProvide
         }
       }
 
+      // TODO(I-7): Timestamp branded type에 대한 비교 유틸 도입 검토
       // 날짜순 정렬 + limit 적용 (Timestamp는 branded number — 직접 비교)
       results.sort((a, b) => (b.publishedAt as number) - (a.publishedAt as number));
 
@@ -91,6 +92,7 @@ function filterByQuery(items: NewsItem[], query: NewsQuery): NewsItem[] {
   });
 }
 
+// TODO(R-1): news/utils.ts로 추출하여 hashUrl() 중복 제거
 function hashUrl(url: string): string {
   return createHash('sha256').update(url).digest('hex').slice(0, 12);
 }

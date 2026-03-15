@@ -3,7 +3,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { RegisteredToolDefinition, ToolExecutor, ToolRegistry } from '@finclaw/agent';
 import type { TickerSymbol } from '@finclaw/types';
 import type { PortfolioStore } from './portfolio/store.js';
-import type { NewsAggregator, AnalysisOptions } from './types.js';
+import type { NewsAggregator, AnalysisOptions, NewsCategory } from './types.js';
 import { analyzeMarket } from './analysis/market-analysis.js';
 import { createPortfolioTracker, type QuoteService } from './portfolio/tracker.js';
 
@@ -60,7 +60,7 @@ export function registerGetFinancialNewsTool(
       const news = await deps.newsAggregator.fetchNews({
         symbols: input.symbols as TickerSymbol[] | undefined,
         keywords: input.keywords as string[] | undefined,
-        category: input.category as import('./types.js').NewsCategory | undefined,
+        category: input.category as NewsCategory | undefined,
         limit: Math.min((input.limit as number) ?? 10, 50),
       });
       return { content: JSON.stringify(news), isError: false };

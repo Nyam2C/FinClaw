@@ -12,7 +12,9 @@ export function createPortfolioTracker(deps: {
   quoteService: QuoteService;
   newsAggregator: NewsAggregator;
 }) {
+  // TODO: _newsAggregator는 향후 포트폴리오 뉴스 필터링에 활용 예정
   const { quoteService, newsAggregator: _newsAggregator } = deps;
+  const quoteChangeMap = new Map<string, number>();
 
   return {
     /** 포트폴리오 보유 종목에 현재가 반영 */
@@ -23,6 +25,7 @@ export function createPortfolioTracker(deps: {
       const holdings: PortfolioHolding[] = await Promise.all(
         portfolio.holdings.map(async (h) => {
           const quote = await quoteService.getQuote(h.symbol as string);
+          quoteChangeMap.set(h.symbol as string, quote.change);
           const marketValue = h.quantity * quote.price;
           const cost = h.quantity * h.averageCost;
           const pnl = marketValue - cost;
@@ -67,11 +70,10 @@ export function createPortfolioTracker(deps: {
       const topGainers = sorted.slice(0, 3);
       const topLosers = sorted.slice(-3).toReversed();
 
-      // dailyChange 집계
+      // dailyChange 집계 (valuate()에서 캐시된 quoteChangeMap 사용)
       let dailyChange = 0;
       for (const h of valuated.holdings) {
-        const quote = await quoteService.getQuote(h.symbol as string);
-        dailyChange += h.quantity * quote.change;
+        dailyChange += h.quantity * (quoteChangeMap.get(h.symbol as string) ?? 0);
       }
       const dailyChangePercent =
         (valuated.totalValue ?? 0) > 0 ? (dailyChange / (valuated.totalValue ?? 0)) * 100 : 0;

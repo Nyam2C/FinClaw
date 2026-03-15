@@ -136,10 +136,12 @@ function scoreToLabel(score: number): NewsSentiment['label'] {
   return 'neutral';
 }
 
+// TODO(R-1): news/utils.ts로 추출하여 hashUrl() 중복 제거
 function hashUrl(url: string): string {
   return createHash('sha256').update(url).digest('hex').slice(0, 12);
 }
 
+// TODO(R-1): news/utils.ts로 추출하여 isTransientError() 중복 제거
 function isTransientError(error: unknown): boolean {
   if (error instanceof Error && 'statusCode' in error) {
     const code = (error as { statusCode: number }).statusCode;

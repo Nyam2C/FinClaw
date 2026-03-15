@@ -85,6 +85,7 @@ function normalizeNewsApiArticle(article: NewsApiArticle): NewsItem {
   };
 }
 
+// TODO(R-1): news/utils.ts로 추출하여 hashUrl() 중복 제거
 function hashUrl(url: string): string {
   return createHash('sha256').update(url).digest('hex').slice(0, 12);
 }
@@ -125,6 +126,7 @@ export function inferCategory(title: string, description: string | null): NewsCa
   return 'general';
 }
 
+// TODO(R-1): news/utils.ts로 추출하여 isTransientError() 중복 제거
 function isTransientError(error: unknown): boolean {
   if (error instanceof Error && 'statusCode' in error) {
     const code = (error as { statusCode: number }).statusCode;
