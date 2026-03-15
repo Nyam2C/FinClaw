@@ -50,9 +50,22 @@ export const alertCommand: SlashCommand = {
         const ticker = interaction.options.getString('ticker', true);
         const condition = interaction.options.getString('condition', true);
         const value = interaction.options.getNumber('value', true);
-        // TODO: createAlert 호출
+
+        const alert = await deps.alertStorage.createAlert({
+          name: `${ticker} ${condition} ${value}`,
+          symbol: ticker as import('@finclaw/types').TickerSymbol,
+          condition: {
+            type: condition as import('@finclaw/types').AlertConditionType,
+            value,
+          },
+          enabled: true,
+          triggerCount: 0,
+          cooldownMs: 900_000,
+          createdAt: Date.now() as import('@finclaw/types').Timestamp,
+        });
+
         await interaction.reply({
-          content: `알림 설정 완료: ${ticker} ${condition} ${value}`,
+          content: `알림 설정 완료: ${alert.name} (ID: ${alert.id})`,
           flags: MessageFlags.Ephemeral,
         });
         break;

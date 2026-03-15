@@ -2,710 +2,534 @@
 
 ## 1. 목표
 
-금융 이벤트에 대한 조건부 알림(Alert) 시스템을 구현한다. 구체적으로:
+금융 이벤트에 대한 조건부 알림(Alert) 시스템을 구현한다.
 
-1. **다양한 알림 조건**: 가격 임계값(price threshold), 퍼센트 변동(% change), 거래량 급증(volume spike), 뉴스 키워드 매칭(news alert) 4가지 조건 타입을 지원한다.
-2. **영속적 알림 저장**: SQLite 기반으로 알림 정의를 CRUD 관리하며, 서버 재시작 후에도 알림이 유지된다.
-3. **주기적 조건 모니터링**: 크론 기반 주기적 체크(기본 30초 간격, 설정 가능)로 알림 조건을 평가하고, 조건 충족 시 알림을 트리거한다.
-4. **멀티 채널 알림 전달**: Discord DM/채널 메시지, Gateway WebSocket 인앱 알림, 로그 기반 폴백의 3단계 전달 체계를 구현한다.
-5. **알림 이력 및 쿨다운**: 트리거된 알림 이력을 추적하고, 동일 알림의 반복 발송을 방지하는 쿨다운 메커니즘(기본 15분)을 적용한다.
-6. **에이전트 도구 등록**: `set_alert`, `list_alerts`, `remove_alert`, `get_alert_history` 4가지 도구를 에이전트에 등록한다.
+1. **다양한 알림 조건**: 가격 임계값(price threshold), 퍼센트 변동(% change), 거래량 급증(volume spike), 뉴스 키워드 매칭(news alert) 4가지 조건 타입 지원.
+2. **영속적 알림 저장**: 기존 `database.ts`의 마이그레이션 시스템(MIGRATIONS[3])으로 `alerts` 테이블 재생성 + `alert_history` 테이블 신규 생성. `packages/storage` 패키지 CRUD 확장.
+3. **주기적 조건 모니터링**: `setInterval` + `isChecking` 가드 기반 주기적 체크(기본 30초). `ConcurrencyLane`(infra 패키지)으로 동시성 제어.
+4. **멀티 채널 알림 전달**: Discord DM(`user.createDM()`), Gateway WebSocket(`broadcaster.broadcastToChannel(connections, 'alerts', data)`), 로그 폴백 3단계.
+5. **알림 이력 및 쿨다운**: `alert_history` 테이블 기반 이력 추적, `cooldownMs`(밀리초) 단위 반복 발송 방지 (기본 900,000ms = 15분).
+6. **에이전트 도구 등록**: `registerSetAlertTool`, `registerListAlertsTool`, `registerRemoveAlertTool`, `registerGetAlertHistoryTool` — 개별 함수 4개.
 
 ---
 
 ## 2. OpenClaw 참조
 
-| 참조 문서       | 경로                                                    | 적용할 패턴                                                       |
-| --------------- | ------------------------------------------------------- | ----------------------------------------------------------------- |
-| 크론/훅 시스템  | `openclaw_review/docs/13.데몬-크론-훅-프로세스-보안.md` | 크론 스케줄러의 interval 기반 작업 실행, 크론 작업 등록/해제 패턴 |
-| 크론 Deep Dive  | `openclaw_review/deep-dive/13-daemon-cron-hooks.md`     | `CronJob` 인터페이스, 크론 작업의 에러 격리 및 재시도 패턴        |
-| 스킬 시스템     | `openclaw_review/docs/20.스킬-빌드-배포-인프라.md`      | 스킬 메타데이터 스키마, 도구 정의 패턴                            |
-| 메모리/스토리지 | `openclaw_review/deep-dive/14-memory-media-utils.md`    | SQLite 테이블 설계, 마이그레이션 패턴, CRUD 래퍼                  |
-| 디스코드 어댑터 | `openclaw_review/deep-dive/10-discord-slack-signal.md`  | Discord DM 전송, 임베드 메시지 구성, 채널 메시지 패턴             |
+| 참조 문서       | 경로                                                    | 적용 패턴                                                   |
+| --------------- | ------------------------------------------------------- | ----------------------------------------------------------- |
+| 크론/훅 시스템  | `openclaw_review/docs/13.데몬-크론-훅-프로세스-보안.md` | interval 기반 작업 실행, `state.running` 가드 (중복 방지)   |
+| 크론 Deep Dive  | `openclaw_review/deep-dive/13-daemon-cron-hooks.md`     | 에러 격리 (핸들러별 try-catch), `MAX_TIMEOUT_MS` 클램핑     |
+| 스킬 시스템     | `openclaw_review/docs/20.스킬-빌드-배포-인프라.md`      | 스킬 메타데이터 스키마, `group`/`source: 'skill'` 도구 등록 |
+| 메모리/스토리지 | `openclaw_review/deep-dive/14-memory-media-utils.md`    | SQLite 테이블 설계, `rowToX()` 변환 헬퍼, CRUD 래퍼         |
+| 디스코드 어댑터 | `openclaw_review/deep-dive/10-discord-slack-signal.md`  | Discord DM: `user.createDM()` → `dmChannel.send()`          |
 
 **핵심 적용 패턴:**
 
-1. **Condition Strategy 패턴**: 각 알림 조건 타입(price, change, volume, news)을 독립적인 `AlertConditionEvaluator` 전략 객체로 구현. 새로운 조건 타입 추가 시 기존 코드 변경 없이 확장 가능.
-2. **Event-Driven Delivery**: 조건 충족 시 이벤트를 발행하고, 각 전달 채널(Discord, WebSocket, Log)이 독립적으로 구독하여 처리.
-3. **Idempotent Trigger**: 쿨다운 + 이력 기반 중복 방지로 동일 조건에 대한 반복 알림 방지.
+1. **Condition Strategy 패턴**: 각 조건 타입을 독립 `AlertConditionEvaluator` 전략 객체로 구현. `satisfies Record<ExtendedConditionType, ...>`로 컴파일 타임 완전성 보장.
+2. **Delivery Dispatcher**: 각 전달 채널(Discord, WebSocket, Log)이 `DeliveryHandler` 인터페이스를 구현. `Promise.allSettled` 기반 부분 실패 격리.
+3. **Idempotent Trigger**: `cooldownMs` + `lastTriggeredAt`(Unix ms) 기반 중복 방지.
 
 ---
 
-## 3. 생성할 파일
+## 3. 코드베이스 제약 (선행 분석)
 
-### 소스 파일 (8개)
+### 3.1 스키마 충돌 — MIGRATIONS[3] 필수
 
-| #   | 파일 경로                                | 설명                                                                         | 예상 LOC |
-| --- | ---------------------------------------- | ---------------------------------------------------------------------------- | -------- |
-| 1   | `src/skills/alerts/index.ts`             | 알림 스킬 등록 진입점, 모니터 시작/정지 생명주기                             | ~70      |
-| 2   | `src/skills/alerts/types.ts`             | 알림 도메인 타입 (AlertDefinition, AlertCondition, AlertHistory 등)          | ~130     |
-| 3   | `src/skills/alerts/store.ts`             | SQLite 기반 알림 CRUD (테이블 생성, 마이그레이션, 쿼리)                      | ~180     |
-| 4   | `src/skills/alerts/monitor.ts`           | 크론 기반 조건 모니터링 엔진 (주기적 체크, 조건 평가, 트리거)                | ~160     |
-| 5   | `src/skills/alerts/conditions/price.ts`  | 가격 임계값 조건 평가 (above/below threshold)                                | ~60      |
-| 6   | `src/skills/alerts/conditions/change.ts` | 퍼센트 변동 조건 평가 (daily/hourly % change)                                | ~70      |
-| 7   | `src/skills/alerts/conditions/volume.ts` | 거래량 급증 조건 평가 (평균 대비 배수 초과)                                  | ~60      |
-| 8   | `src/skills/alerts/conditions/news.ts`   | 뉴스 키워드 매칭 조건 평가                                                   | ~70      |
-| 9   | `src/skills/alerts/delivery.ts`          | 멀티 채널 알림 전달 디스패처 (Discord, WebSocket, Log)                       | ~130     |
-| 10  | `src/skills/alerts/tools.ts`             | 에이전트 도구 정의 (set_alert, list_alerts, remove_alert, get_alert_history) | ~150     |
+**기존 `SCHEMA_DDL`** (`packages/storage/src/database.ts` L98-113, SCHEMA_VERSION=2):
 
-### 테스트 파일 (4개)
+```sql
+CREATE TABLE IF NOT EXISTS alerts (
+  id                TEXT PRIMARY KEY,
+  name              TEXT,
+  symbol            TEXT NOT NULL,
+  condition_type    TEXT NOT NULL CHECK(condition_type IN
+    ('above','below','crosses_above','crosses_below','change_percent')),
+  condition_value   REAL NOT NULL,
+  condition_field   TEXT,
+  enabled           INTEGER NOT NULL DEFAULT 1,
+  channel_id        TEXT,
+  trigger_count     INTEGER NOT NULL DEFAULT 0,
+  cooldown_ms       INTEGER NOT NULL DEFAULT 0,
+  last_triggered_at INTEGER,
+  created_at        INTEGER NOT NULL
+);
+```
 
-| #   | 파일 경로                                           | 테스트 대상                                  | 예상 LOC |
-| --- | --------------------------------------------------- | -------------------------------------------- | -------- |
-| 1   | `src/skills/alerts/__tests__/store.storage.test.ts` | SQLite CRUD (storage tier: 실제 SQLite 사용) | ~150     |
-| 2   | `src/skills/alerts/__tests__/monitor.test.ts`       | 모니터링 엔진 (mock 조건 평가기, 타이머)     | ~130     |
-| 3   | `src/skills/alerts/__tests__/conditions.test.ts`    | 4가지 조건 평가기 통합 테스트                | ~120     |
-| 4   | `src/skills/alerts/__tests__/delivery.test.ts`      | 멀티 채널 전달 (mock Discord, WebSocket)     | ~100     |
+**문제**: 독립 `CREATE TABLE IF NOT EXISTS alerts`는 기존 테이블이 존재하므로 DDL이 **무시**됨. 이후 새 컬럼 참조 시 런타임 에러.
 
-**합계: 소스 10개 + 테스트 4개 = 14개 파일, 예상 ~1,580 LOC**
+**해결**: `SCHEMA_VERSION = 3`, `MIGRATIONS[3]`에서 `DROP TABLE IF EXISTS alerts` + 새 구조로 재생성 + `alert_history` 신규 생성.
+
+### 3.2 기존 타입/CRUD 이중화
+
+- `@finclaw/types`의 `Alert`, `AlertCondition`, `AlertConditionType`은 기존 5종 조건(`above`, `below`, `crosses_above`, `crosses_below`, `change_percent`).
+- `packages/storage/src/tables/alerts.ts`에 7개 CRUD 함수 존재.
+- **결정**: `@finclaw/types` **미수정**. Phase 18 타입은 `packages/skills-finance/src/alerts/types.ts`에 독립 정의. storage 패키지에 새 CRUD 함수 추가.
+
+### 3.3 MarketDataService 미존재
+
+- 실제 API: `MarketCache.getQuote(symbol, provider, normalize)` + `ProviderRegistry.resolve(symbol)`.
+- `ProviderMarketQuote` 필드: `symbol, price, change, changePercent, volume, high, low, open, previousClose, marketCap, timestamp` — **`avgVolume` 없음**.
+- **해결**: `AlertMarketService` 어댑터를 Phase 18에서 신규 생성. Phase 16 코드 미수정.
+
+### 3.4 도구 등록 패턴
+
+- 기존 패턴: `registerStockPriceTool(registry, state)`, `registerGetFinancialNewsTool(registry, deps)` — 개별 함수.
+- `ToolExecutor = (input: Record<string, unknown>, context: ToolExecutionContext) => Promise<ToolResult>`.
+- `ToolExecutionContext.userId`로 사용자 식별 — `params._userId` 해킹 불필요.
+- `ToolResult = { content: string, isError: boolean }`.
+- `RegisteredToolDefinition`: `group`, `requiresApproval`, `isTransactional`, `accessesSensitiveData`, `isExternal?`, `timeoutMs?` 필수.
+
+### 3.5 WebSocket/Discord 전달
+
+- **WebSocket**: `GatewayBroadcaster.broadcastToChannel(connections, channel, data)` — 채널 구독 기반, userId 기반이 **아님**.
+- **Discord DM**: `client.users.fetch(userId)` → `user.createDM()` → `dmChannel.send(content)`.
+
+### 3.6 타임스탬프/쿨다운 단위
+
+- 코드베이스 전체: `INTEGER` (Unix ms). `Timestamp = Brand<number, 'Timestamp'>`.
+- 쿨다운: 기존 `cooldown_ms INTEGER` (밀리초). `cooldownMinutes` 아님.
+
+### 3.7 뉴스 쿼리 필드명
+
+- `NewsQuery.symbols?: readonly TickerSymbol[]` — `tickers`가 아닌 `symbols`.
+
+### 3.8 기존 인프라 활용
+
+- `ConcurrencyLane` (`packages/infra/src/concurrency-lane.ts`): per-key 동시성 제어, 큐, 타임아웃.
+- `CircuitBreaker` (`packages/infra/src/circuit-breaker.ts`): closed→open→half-open, 5-fail threshold, 30s reset.
+- `InMemoryToolRegistry`가 `isExternal: true` 도구에 CircuitBreaker 자동 적용 (조건 평가기는 도구가 아니므로 수동 적용 필요).
+- Zod: 코드베이스 전체 `from 'zod/v4'`.
 
 ---
 
-## 4. 핵심 인터페이스/타입
+## 4. 생성/수정할 파일
+
+### 수정 파일 (3개)
+
+| #   | 파일 경로                                        | 수정 내용                                                                         |
+| --- | ------------------------------------------------ | --------------------------------------------------------------------------------- |
+| M1  | `packages/storage/src/database.ts`               | SCHEMA_VERSION=3, MIGRATIONS[3] 추가, SCHEMA_DDL의 alerts 테이블도 v3 구조로 갱신 |
+| M2  | `packages/storage/src/tables/alerts.ts`          | 새 스키마용 CRUD 함수 추가 (기존 함수 유지)                                       |
+| M3  | `packages/channel-discord/src/commands/alert.ts` | TODO 스텁 완성 — alertStorage CRUD 호출 연결                                      |
+
+### 신규 소스 파일 (12개)
+
+| #   | 파일 경로                                                 | 설명                                                                 | 예상 LOC |
+| --- | --------------------------------------------------------- | -------------------------------------------------------------------- | -------- |
+| 1   | `packages/skills-finance/src/alerts/types.ts`             | 스킬 로컬 도메인 타입 (조건 유니온, 평가 결과, 설정)                 | ~120     |
+| 2   | `packages/skills-finance/src/alerts/store.ts`             | storage facade — DB 직접 접근, CRUD + alert_history                  | ~150     |
+| 3   | `packages/skills-finance/src/alerts/market-service.ts`    | AlertMarketService 어댑터 (MarketCache + ProviderRegistry 래핑)      | ~40      |
+| 4   | `packages/skills-finance/src/alerts/monitor.ts`           | 모니터링 엔진 (setInterval + isChecking + ConcurrencyLane)           | ~140     |
+| 5   | `packages/skills-finance/src/alerts/conditions/price.ts`  | 가격 임계값 조건 평가 (above/below)                                  | ~50      |
+| 6   | `packages/skills-finance/src/alerts/conditions/change.ts` | 퍼센트 변동 조건 평가 (up/down/both)                                 | ~60      |
+| 7   | `packages/skills-finance/src/alerts/conditions/volume.ts` | 거래량 급증 조건 평가 (avgVolume 미제공 시 triggered:false)          | ~55      |
+| 8   | `packages/skills-finance/src/alerts/conditions/news.ts`   | 뉴스 키워드 매칭 조건 평가 (symbols 필드)                            | ~60      |
+| 9   | `packages/skills-finance/src/alerts/delivery.ts`          | 멀티 채널 알림 전달 디스패처                                         | ~140     |
+| 10  | `packages/skills-finance/src/alerts/tools.ts`             | 에이전트 도구 4개 개별 등록 + buildConditionFromParams + Zod v4 검증 | ~200     |
+| 11  | `packages/skills-finance/src/alerts/index.ts`             | 알림 스킬 등록 진입점, registerAlertTools, 모니터 생명주기           | ~70      |
+| 12  | `packages/storage/src/tables/alert-history.ts`            | alert_history CRUD (insert, getByAlert, getLast)                     | ~80      |
+
+### 테스트 파일 (5개)
+
+| #   | 파일 경로                                                            | 테스트 대상                                                 | 예상 LOC |
+| --- | -------------------------------------------------------------------- | ----------------------------------------------------------- | -------- |
+| 1   | `packages/skills-finance/src/alerts/__tests__/store.storage.test.ts` | SQLite CRUD + MIGRATIONS[3] + alert_history                 | ~160     |
+| 2   | `packages/skills-finance/src/alerts/__tests__/monitor.test.ts`       | 모니터 엔진 (vi.useFakeTimers, ConcurrencyLane mock)        | ~140     |
+| 3   | `packages/skills-finance/src/alerts/__tests__/conditions.test.ts`    | 4가지 조건 평가기 + 경계값 (avgVolume null, threshold 동등) | ~140     |
+| 4   | `packages/skills-finance/src/alerts/__tests__/delivery.test.ts`      | 멀티 채널 전달 (mock GatewayBroadcaster, Discord DM)        | ~110     |
+| 5   | `packages/skills-finance/src/alerts/__tests__/tools.test.ts`         | registerXxxTool + buildConditionFromParams + Zod 검증       | ~100     |
+
+**합계: 신규 12 + 수정 3 + 테스트 5 = 20개 파일, 예상 ~1,815 LOC**
+
+---
+
+## 5. 핵심 인터페이스/타입
 
 ```typescript
-// src/skills/alerts/types.ts
+// packages/skills-finance/src/alerts/types.ts
+// 스킬 로컬 타입 — @finclaw/types 미수정
 
-// ─── 알림 조건 타입 ───
+// ─── 조건 타입 ───
 
-/** 알림 조건 종류 */
 export type AlertConditionType = 'price' | 'change' | 'volume' | 'news';
-
-/** 가격 비교 방향 */
 export type PriceDirection = 'above' | 'below';
+export type ChangeDirection = 'up' | 'down' | 'both';
 
-/** 변동 기간 */
-export type ChangePeriod = 'hourly' | 'daily' | 'weekly';
-
-/** 가격 임계값 조건 */
 export interface PriceCondition {
   readonly type: 'price';
   readonly ticker: string;
   readonly direction: PriceDirection;
-  readonly threshold: number; // 목표 가격 (USD)
+  readonly threshold: number;
 }
 
-/** 퍼센트 변동 조건 */
 export interface ChangeCondition {
   readonly type: 'change';
   readonly ticker: string;
-  readonly period: ChangePeriod;
-  readonly thresholdPercent: number; // 변동 임계값 (예: 5.0 = 5%)
-  readonly direction: 'up' | 'down' | 'both'; // 상승만, 하락만, 양방향
+  readonly thresholdPercent: number;
+  readonly direction: ChangeDirection;
 }
 
-/** 거래량 급증 조건 */
 export interface VolumeCondition {
   readonly type: 'volume';
   readonly ticker: string;
-  readonly multiplier: number; // 평균 대비 배수 (예: 2.0 = 2배 이상)
-  readonly avgPeriodDays: number; // 평균 산출 기간 (기본 20일)
+  readonly multiplier: number;
 }
 
-/** 뉴스 키워드 매칭 조건 */
 export interface NewsCondition {
   readonly type: 'news';
-  readonly keywords: readonly string[]; // 매칭 키워드 (OR 연산)
-  readonly tickers?: readonly string[]; // 특정 종목 한정 (선택)
-  readonly excludeKeywords?: readonly string[]; // 제외 키워드
+  readonly keywords: readonly string[];
+  readonly symbols?: readonly string[]; // NewsQuery.symbols 필드명 일치
+  readonly excludeKeywords?: readonly string[];
 }
 
-/** 모든 조건의 유니온 타입 */
 export type AlertCondition = PriceCondition | ChangeCondition | VolumeCondition | NewsCondition;
 
 // ─── 알림 정의 ───
 
-/** 알림 전달 채널 */
 export type DeliveryChannel = 'discord' | 'websocket' | 'log';
 
-/** 알림 정의 (사용자가 생성하는 단위) */
 export interface AlertDefinition {
-  readonly id: string; // UUID
-  readonly userId: string; // 생성자 식별
-  readonly name: string; // 알림 이름 (예: "AAPL 200달러 돌파")
+  readonly id: string;
+  readonly userId: string;
+  readonly name: string;
   readonly condition: AlertCondition;
-  readonly channels: readonly DeliveryChannel[]; // 전달 채널 목록
-  readonly cooldownMinutes: number; // 쿨다운 시간 (분, 기본 15)
-  readonly enabled: boolean; // 활성화 여부
-  readonly expiresAt?: Date; // 만료 시각 (선택)
-  readonly createdAt: Date;
-  readonly updatedAt: Date;
+  readonly channels: readonly DeliveryChannel[];
+  readonly cooldownMs: number; // 밀리초 (기본 900_000)
+  readonly enabled: boolean;
+  readonly expiresAt?: number; // Unix ms
+  readonly createdAt: number; // Unix ms
+  readonly updatedAt: number; // Unix ms
 }
 
-/** 알림 생성 요청 (id, createdAt 등 자동 생성 필드 제외) */
 export type CreateAlertInput = Omit<AlertDefinition, 'id' | 'createdAt' | 'updatedAt'> & {
-  readonly enabled?: boolean; // 기본 true
-  readonly cooldownMinutes?: number; // 기본 15
+  readonly enabled?: boolean;
+  readonly cooldownMs?: number;
 };
 
-// ─── 알림 이력 ───
+// ─── 조건 평가 ───
 
-/** 트리거된 알림 이력 */
-export interface AlertHistory {
-  readonly id: string;
-  readonly alertId: string; // 원본 AlertDefinition ID
-  readonly triggeredAt: Date;
-  readonly conditionSnapshot: string; // 트리거 시점의 조건 상태 (JSON)
-  readonly deliveryResults: readonly DeliveryResult[];
-  readonly currentValue: string; // 트리거 시점의 현재값 (가격, 변동률 등)
-}
-
-/** 개별 전달 결과 */
-export interface DeliveryResult {
-  readonly channel: DeliveryChannel;
-  readonly success: boolean;
-  readonly error?: string;
-  readonly deliveredAt: Date;
-}
-
-// ─── 조건 평가기 인터페이스 ───
-
-/** 조건 평가 결과 */
 export interface ConditionEvaluation {
-  readonly triggered: boolean; // 조건 충족 여부
-  readonly currentValue: string; // 현재값 (표시용)
-  readonly message: string; // 알림 메시지 본문
+  readonly triggered: boolean;
+  readonly currentValue: string;
+  readonly message: string;
 }
 
-/** 조건 평가기 인터페이스 (Strategy 패턴) */
 export interface AlertConditionEvaluator<T extends AlertCondition = AlertCondition> {
   readonly type: T['type'];
   evaluate(condition: T): Promise<ConditionEvaluation>;
 }
 
-// ─── 모니터 설정 ───
+// ─── 이력 ───
 
-/** 모니터 설정 */
-export interface AlertMonitorConfig {
-  readonly checkIntervalMs: number; // 체크 주기 (기본 30_000 = 30초)
-  readonly maxConcurrentChecks: number; // 최대 동시 체크 수 (기본 10)
-  readonly defaultCooldownMinutes: number; // 기본 쿨다운 (기본 15)
+export interface AlertHistory {
+  readonly id: string;
+  readonly alertId: string;
+  readonly triggeredAt: number; // Unix ms
+  readonly conditionSnapshot: string;
+  readonly deliveryResults: readonly DeliveryResult[];
+  readonly currentValue: string;
 }
 
-// ─── 알림 스토어 인터페이스 ───
+export interface DeliveryResult {
+  readonly channel: DeliveryChannel;
+  readonly success: boolean;
+  readonly error?: string;
+  readonly deliveredAt: number; // Unix ms
+}
 
-/** 알림 저장소 인터페이스 */
+// ─── 모니터 설정 ───
+
+export interface AlertMonitorConfig {
+  readonly checkIntervalMs: number; // 기본 30_000
+  readonly maxConcurrentChecks: number; // 기본 10
+  readonly defaultCooldownMs: number; // 기본 900_000
+}
+
+// ─── AlertMarketService ───
+
+export interface AlertMarketService {
+  getQuote(ticker: string): Promise<{
+    price: number;
+    changePercent: number;
+    volume: number;
+  }>;
+}
+
+// ─── AlertStore ───
+
 export interface AlertStore {
-  // AlertDefinition CRUD
-  create(input: CreateAlertInput): Promise<AlertDefinition>;
-  getById(id: string): Promise<AlertDefinition | null>;
-  listByUser(userId: string): Promise<AlertDefinition[]>;
-  listEnabled(): Promise<AlertDefinition[]>;
-  update(id: string, updates: Partial<CreateAlertInput>): Promise<AlertDefinition>;
-  delete(id: string): Promise<boolean>;
-  setEnabled(id: string, enabled: boolean): Promise<void>;
-
-  // AlertHistory
+  create(input: CreateAlertInput): AlertDefinition;
+  getById(id: string): AlertDefinition | null;
+  listByUser(userId: string): AlertDefinition[];
+  listEnabled(): AlertDefinition[];
+  update(id: string, updates: Partial<CreateAlertInput>): AlertDefinition | null;
+  delete(id: string): boolean;
+  setEnabled(id: string, enabled: boolean): void;
   recordTrigger(
     alertId: string,
     evaluation: ConditionEvaluation,
     results: DeliveryResult[],
-  ): Promise<AlertHistory>;
-  getHistory(alertId: string, limit?: number): Promise<AlertHistory[]>;
-  getLastTrigger(alertId: string): Promise<AlertHistory | null>;
+  ): AlertHistory;
+  getHistory(alertId: string, limit?: number): AlertHistory[];
+  getLastTrigger(alertId: string): AlertHistory | null;
 }
 ```
 
 ---
 
-## 5. 구현 상세
+## 6. 구현 상세
 
-### 5.1 전체 아키텍처
+### 6.1 전체 아키텍처
 
 ```
-┌─────────────────────────────────────────────────────┐
-│  AlertMonitor (크론 기반 주기적 체크)                   │
-│  ┌──────────────────────────────────────────────┐    │
-│  │  매 checkIntervalMs (30초) 마다:              │    │
-│  │  1. store.listEnabled() → 활성 알림 목록       │    │
-│  │  2. 각 알림에 대해 조건 평가기 호출             │    │
-│  │  3. 쿨다운 체크 (lastTrigger + cooldown > now?) │   │
-│  │  4. 조건 충족 + 쿨다운 통과 → 트리거            │    │
-│  └──────────────────────────────────────────────┘    │
-│                      │ 트리거                        │
-│                      ▼                              │
-│  ┌─────────────────────────────────────┐            │
-│  │  DeliveryDispatcher                  │            │
-│  │  ├── DiscordDelivery (DM/채널 메시지) │            │
-│  │  ├── WebSocketDelivery (인앱 알림)    │            │
-│  │  └── LogDelivery (폴백 로깅)          │            │
-│  └─────────────────────────────────────┘            │
-│                      │                              │
-│                      ▼                              │
-│  store.recordTrigger() → AlertHistory 기록           │
-└─────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────┐
+│  AlertMonitor (setInterval + isChecking 가드)            │
+│  ┌──────────────────────────────────────────────────┐   │
+│  │  매 checkIntervalMs (30초) 마다:                  │   │
+│  │  1. store.listEnabled() → 활성 알림 목록           │   │
+│  │  2. ConcurrencyLane.acquire(alertId) — 동시성 제어 │   │
+│  │  3. 조건 평가기 호출 (CircuitBreaker 보호)         │   │
+│  │  4. 쿨다운 체크 (lastTriggeredAt + cooldownMs)     │   │
+│  │  5. 조건 충족 + 쿨다운 통과 → 트리거               │   │
+│  └──────────────────────────────────────────────────┘   │
+│                       │ 트리거                          │
+│                       ▼                                │
+│  ┌──────────────────────────────────────────┐           │
+│  │  DeliveryDispatcher                       │           │
+│  │  ├── DiscordDelivery (user.createDM→send) │           │
+│  │  ├── WebSocketDelivery                    │           │
+│  │  │   (broadcastToChannel(conns,'alerts')) │           │
+│  │  └── LogDelivery (logger 폴백)            │           │
+│  └──────────────────────────────────────────┘           │
+│                       │                                │
+│                       ▼                                │
+│  store.recordTrigger() → alert_history INSERT          │
+└────────────────────────────────────────────────────────┘
 ```
 
-### 5.2 SQLite 스키마 및 CRUD
+### 6.2 MIGRATIONS[3] 스키마 마이그레이션
+
+`packages/storage/src/database.ts` 수정:
 
 ```typescript
-// store.ts
+const SCHEMA_VERSION = 3; // 2 → 3
 
-import type { DatabaseSync } from 'node:sqlite';
-import type {
-  AlertStore,
-  AlertDefinition,
-  CreateAlertInput,
-  AlertHistory,
-  ConditionEvaluation,
-  DeliveryResult,
-} from './types.js';
+const MIGRATIONS: Record<number, string> = {
+  2: `/* 기존 portfolios 마이그레이션 (유지) */`,
+  3: `
+    -- Phase 18: alerts 테이블 재생성 (CHECK 제약 변경 불가)
+    DROP TABLE IF EXISTS alerts;
 
-const SCHEMA_SQL = `
-  CREATE TABLE IF NOT EXISTS alerts (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    condition_type TEXT NOT NULL,
-    condition_json TEXT NOT NULL,
-    channels_json TEXT NOT NULL,
-    cooldown_minutes INTEGER NOT NULL DEFAULT 15,
-    enabled INTEGER NOT NULL DEFAULT 1,
-    expires_at TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  );
+    CREATE TABLE IF NOT EXISTS alerts (
+      id                TEXT PRIMARY KEY,
+      user_id           TEXT NOT NULL,
+      name              TEXT NOT NULL,
+      condition_type    TEXT NOT NULL CHECK(
+        condition_type IN ('price', 'change', 'volume', 'news')
+      ),
+      condition_json    TEXT NOT NULL,
+      channels_json     TEXT NOT NULL DEFAULT '["discord","websocket"]',
+      cooldown_ms       INTEGER NOT NULL DEFAULT 900000,
+      enabled           INTEGER NOT NULL DEFAULT 1,
+      trigger_count     INTEGER NOT NULL DEFAULT 0,
+      last_triggered_at INTEGER,
+      expires_at        INTEGER,
+      created_at        INTEGER NOT NULL,
+      updated_at        INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_alerts_user_id ON alerts(user_id);
+    CREATE INDEX IF NOT EXISTS idx_alerts_enabled ON alerts(enabled) WHERE enabled = 1;
 
-  CREATE INDEX IF NOT EXISTS idx_alerts_user_id ON alerts(user_id);
-  CREATE INDEX IF NOT EXISTS idx_alerts_enabled ON alerts(enabled);
+    CREATE TABLE IF NOT EXISTS alert_history (
+      id                    TEXT PRIMARY KEY,
+      alert_id              TEXT NOT NULL REFERENCES alerts(id) ON DELETE CASCADE,
+      triggered_at          INTEGER NOT NULL,
+      condition_snapshot    TEXT NOT NULL,
+      delivery_results_json TEXT NOT NULL DEFAULT '[]',
+      current_value         TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_alert_history_alert_id ON alert_history(alert_id);
+    CREATE INDEX IF NOT EXISTS idx_alert_history_triggered ON alert_history(triggered_at DESC);
+  `,
+};
+```
 
-  CREATE TABLE IF NOT EXISTS alert_history (
-    id TEXT PRIMARY KEY,
-    alert_id TEXT NOT NULL REFERENCES alerts(id) ON DELETE CASCADE,
-    triggered_at TEXT NOT NULL DEFAULT (datetime('now')),
-    condition_snapshot TEXT NOT NULL,
-    delivery_results_json TEXT NOT NULL,
-    current_value TEXT NOT NULL
-  );
+**SCHEMA_DDL도 갱신**: 신규 DB에서 v3 구조로 바로 생성되도록 `SCHEMA_DDL`의 `alerts` 정의도 위 구조로 변경.
 
-  CREATE INDEX IF NOT EXISTS idx_alert_history_alert_id ON alert_history(alert_id);
-  CREATE INDEX IF NOT EXISTS idx_alert_history_triggered_at ON alert_history(triggered_at);
-`;
+### 6.3 store.ts — AlertStore 구현
 
+`packages/skills-finance/src/alerts/store.ts`:
+
+- `DatabaseSync` 직접 사용 (`db.prepare().run/get/all`)
+- 모든 타임스탬프: `Date.now()` (Unix ms `number`)
+- `condition_json`: `JSON.stringify(condition)` / `JSON.parse(row.condition_json)`
+- `channels_json`: `JSON.stringify(channels)` / `JSON.parse(row.channels_json)`
+- `delivery_results_json`: 동일 패턴
+- `rowToAlertDefinition()` 헬퍼: DB row → `AlertDefinition` 변환
+
+```typescript
+// 핵심 구조
 export function createAlertStore(db: DatabaseSync): AlertStore {
-  // 스키마 초기화
-  db.exec(SCHEMA_SQL);
-
   return {
-    async create(input: CreateAlertInput): Promise<AlertDefinition> {
+    create(input) {
       const id = crypto.randomUUID();
-      const now = new Date().toISOString();
-
-      db.prepare(
-        `
-        INSERT INTO alerts (id, user_id, name, condition_type, condition_json,
-          channels_json, cooldown_minutes, enabled, expires_at, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      ).run(
+      const now = Date.now();
+      db.prepare(`INSERT INTO alerts (...) VALUES (...)`).run(
         id,
         input.userId,
         input.name,
         input.condition.type,
         JSON.stringify(input.condition),
         JSON.stringify(input.channels),
-        input.cooldownMinutes ?? 15,
+        input.cooldownMs ?? 900_000,
         (input.enabled ?? true) ? 1 : 0,
-        input.expiresAt?.toISOString() ?? null,
+        0,
+        null,
+        input.expiresAt ?? null,
         now,
         now,
       );
-
-      return this.getById(id) as Promise<AlertDefinition>;
+      return this.getById(id)!;
     },
-
-    async getById(id: string): Promise<AlertDefinition | null> {
-      const row = db.prepare('SELECT * FROM alerts WHERE id = ?').get(id) as AlertRow | undefined;
-      return row ? rowToAlertDefinition(row) : null;
-    },
-
-    async listByUser(userId: string): Promise<AlertDefinition[]> {
-      const rows = db
-        .prepare('SELECT * FROM alerts WHERE user_id = ? ORDER BY created_at DESC')
-        .all(userId) as AlertRow[];
-      return rows.map(rowToAlertDefinition);
-    },
-
-    async listEnabled(): Promise<AlertDefinition[]> {
-      const now = new Date().toISOString();
-      const rows = db
-        .prepare(
-          `
-        SELECT * FROM alerts
-        WHERE enabled = 1
-        AND (expires_at IS NULL OR expires_at > ?)
-      `,
-        )
-        .all(now) as AlertRow[];
-      return rows.map(rowToAlertDefinition);
-    },
-
-    async delete(id: string): Promise<boolean> {
-      const result = db.prepare('DELETE FROM alerts WHERE id = ?').run(id);
-      return result.changes > 0;
-    },
-
-    async setEnabled(id: string, enabled: boolean): Promise<void> {
-      db.prepare('UPDATE alerts SET enabled = ?, updated_at = datetime("now") WHERE id = ?').run(
-        enabled ? 1 : 0,
-        id,
-      );
-    },
-
-    async recordTrigger(
-      alertId: string,
-      evaluation: ConditionEvaluation,
-      results: DeliveryResult[],
-    ): Promise<AlertHistory> {
-      const id = crypto.randomUUID();
-      const now = new Date().toISOString();
-
-      db.prepare(
-        `
-        INSERT INTO alert_history (id, alert_id, triggered_at, condition_snapshot,
-          delivery_results_json, current_value)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `,
-      ).run(id, alertId, now, evaluation.message, JSON.stringify(results), evaluation.currentValue);
-
-      return {
-        id,
-        alertId,
-        triggeredAt: new Date(now),
-        conditionSnapshot: evaluation.message,
-        deliveryResults: results,
-        currentValue: evaluation.currentValue,
-      };
-    },
-
-    async getLastTrigger(alertId: string): Promise<AlertHistory | null> {
-      const row = db
-        .prepare(
-          `
-        SELECT * FROM alert_history
-        WHERE alert_id = ?
-        ORDER BY triggered_at DESC
-        LIMIT 1
-      `,
-        )
-        .get(alertId) as HistoryRow | undefined;
-      return row ? rowToAlertHistory(row) : null;
-    },
-  };
-}
-
-/** DB row -> AlertDefinition 변환 헬퍼 */
-function rowToAlertDefinition(row: AlertRow): AlertDefinition {
-  return {
-    id: row.id,
-    userId: row.user_id,
-    name: row.name,
-    condition: JSON.parse(row.condition_json),
-    channels: JSON.parse(row.channels_json),
-    cooldownMinutes: row.cooldown_minutes,
-    enabled: row.enabled === 1,
-    expiresAt: row.expires_at ? new Date(row.expires_at) : undefined,
-    createdAt: new Date(row.created_at),
-    updatedAt: new Date(row.updated_at),
+    // update, listEnabled (expires_at 체크), getHistory, getLastTrigger 등 전부 구현
   };
 }
 ```
 
-### 5.3 조건 평가기 구현
-
-**가격 임계값 조건 (`conditions/price.ts`)**:
+### 6.4 market-service.ts — AlertMarketService 어댑터
 
 ```typescript
-import type { MarketDataService } from '../../../skills/market/types.js';
-import type { PriceCondition, AlertConditionEvaluator, ConditionEvaluation } from '../types.js';
+// packages/skills-finance/src/alerts/market-service.ts
+import type { MarketCache } from '../market/cache.js';
+import type { ProviderRegistry } from '../market/provider-registry.js';
+import { normalizeQuote } from '../market/normalizer.js';
 
-export function createPriceConditionEvaluator(
-  marketData: MarketDataService,
-): AlertConditionEvaluator<PriceCondition> {
+export function createAlertMarketService(deps: {
+  cache: MarketCache;
+  registry: ProviderRegistry;
+}): AlertMarketService {
   return {
-    type: 'price',
-
-    async evaluate(condition: PriceCondition): Promise<ConditionEvaluation> {
-      const quote = await marketData.getQuote(condition.ticker);
-      const currentPrice = quote.price;
-
-      const triggered =
-        condition.direction === 'above'
-          ? currentPrice >= condition.threshold
-          : currentPrice <= condition.threshold;
-
-      const dirLabel = condition.direction === 'above' ? '이상' : '이하';
-
-      return {
-        triggered,
-        currentValue: `$${currentPrice.toFixed(2)}`,
-        message: triggered
-          ? `${condition.ticker} 현재가 $${currentPrice.toFixed(2)} -- 목표가 $${condition.threshold.toFixed(2)} ${dirLabel} 도달`
-          : `${condition.ticker} 현재가 $${currentPrice.toFixed(2)} (목표: $${condition.threshold.toFixed(2)} ${dirLabel})`,
-      };
+    async getQuote(ticker) {
+      const provider = deps.registry.resolve(ticker);
+      const quote = await deps.cache.getQuote(ticker, provider, normalizeQuote);
+      return { price: quote.price, changePercent: quote.changePercent, volume: quote.volume };
     },
   };
 }
 ```
 
-**퍼센트 변동 조건 (`conditions/change.ts`)**:
+### 6.5 조건 평가기
+
+**price.ts**: `AlertMarketService.getQuote(condition.ticker)` → `above: price >= threshold`, `below: price <= threshold`.
+
+**change.ts**: `quote.changePercent` → `up: changePercent >= thresholdPercent`, `down: changePercent <= -thresholdPercent`, `both: |changePercent| >= thresholdPercent`.
+
+**volume.ts**: `ProviderMarketQuote`에 `avgVolume` 필드 **없음**. 현 단계에서는 평균 거래량 데이터를 구할 수 없으므로:
 
 ```typescript
-import type { MarketDataService } from '../../../skills/market/types.js';
-import type { ChangeCondition, AlertConditionEvaluator, ConditionEvaluation } from '../types.js';
-
-export function createChangeConditionEvaluator(
-  marketData: MarketDataService,
-): AlertConditionEvaluator<ChangeCondition> {
-  return {
-    type: 'change',
-
-    async evaluate(condition: ChangeCondition): Promise<ConditionEvaluation> {
-      const quote = await marketData.getQuote(condition.ticker);
-      const changePercent = quote.changePercent ?? 0;
-
-      let triggered = false;
-      if (condition.direction === 'up') {
-        triggered = changePercent >= condition.thresholdPercent;
-      } else if (condition.direction === 'down') {
-        triggered = changePercent <= -condition.thresholdPercent;
-      } else {
-        // 'both': 절대값 비교
-        triggered = Math.abs(changePercent) >= condition.thresholdPercent;
-      }
-
-      const sign = changePercent >= 0 ? '+' : '';
-
-      return {
-        triggered,
-        currentValue: `${sign}${changePercent.toFixed(2)}%`,
-        message: triggered
-          ? `${condition.ticker} ${condition.period} 변동 ${sign}${changePercent.toFixed(2)}% -- 임계값 ${condition.thresholdPercent}% 초과`
-          : `${condition.ticker} ${condition.period} 변동 ${sign}${changePercent.toFixed(2)}% (임계값: ${condition.thresholdPercent}%)`,
-      };
-    },
-  };
-}
+// avgVolume 미제공 → 조건 평가 불가
+return {
+  triggered: false,
+  currentValue: formatVolume(currentVolume),
+  message: `${condition.ticker} 평균 거래량 데이터 미지원 — 조건 평가 불가`,
+};
 ```
 
-**거래량 급증 조건 (`conditions/volume.ts`)**:
+향후 히스토리컬 데이터 기반 평균 산출로 확장 가능.
+
+**news.ts**: `symbols` 필드 사용 (기존 plan.md의 `tickers` 수정):
 
 ```typescript
-export function createVolumeConditionEvaluator(
-  marketData: MarketDataService,
-): AlertConditionEvaluator<VolumeCondition> {
-  return {
-    type: 'volume',
-
-    async evaluate(condition: VolumeCondition): Promise<ConditionEvaluation> {
-      const quote = await marketData.getQuote(condition.ticker);
-      const currentVolume = quote.volume ?? 0;
-
-      // 평균 거래량은 Phase 16의 기술 분석 데이터에서 제공
-      const avgVolume = quote.avgVolume ?? currentVolume;
-      const ratio = avgVolume > 0 ? currentVolume / avgVolume : 0;
-
-      const triggered = ratio >= condition.multiplier;
-
-      return {
-        triggered,
-        currentValue: `${ratio.toFixed(1)}x avg`,
-        message: triggered
-          ? `${condition.ticker} 거래량 ${formatVolume(currentVolume)} (평균 대비 ${ratio.toFixed(1)}배) -- ${condition.multiplier}배 초과`
-          : `${condition.ticker} 거래량 ${formatVolume(currentVolume)} (평균 대비 ${ratio.toFixed(1)}배)`,
-      };
-    },
-  };
-}
-
-function formatVolume(volume: number): string {
-  if (volume >= 1_000_000) return `${(volume / 1_000_000).toFixed(1)}M`;
-  if (volume >= 1_000) return `${(volume / 1_000).toFixed(1)}K`;
-  return String(volume);
-}
+const news = await newsAggregator.fetchNews({
+  symbols: condition.symbols, // ✅ NewsQuery.symbols 일치
+  keywords: condition.keywords as string[],
+  limit: 10,
+  fromDate: new Date(Date.now() - 3_600_000),
+});
 ```
 
-**뉴스 키워드 매칭 조건 (`conditions/news.ts`)**:
+**평가기 레지스트리 타입 안전성**:
 
 ```typescript
-import type { NewsAggregator } from '../../news/types.js';
-
-export function createNewsConditionEvaluator(
-  newsAggregator: NewsAggregator,
-): AlertConditionEvaluator<NewsCondition> {
-  return {
-    type: 'news',
-
-    async evaluate(condition: NewsCondition): Promise<ConditionEvaluation> {
-      const news = await newsAggregator.fetchNews({
-        tickers: condition.tickers,
-        keywords: condition.keywords as string[],
-        limit: 10,
-        fromDate: new Date(Date.now() - 60 * 60 * 1000), // 최근 1시간
-      });
-
-      // 제외 키워드 필터링
-      const filtered = condition.excludeKeywords?.length
-        ? news.filter((item) => {
-            const text = (item.title + ' ' + item.description).toLowerCase();
-            return !condition.excludeKeywords!.some((kw) => text.includes(kw.toLowerCase()));
-          })
-        : news;
-
-      const triggered = filtered.length > 0;
-
-      return {
-        triggered,
-        currentValue: `${filtered.length} articles`,
-        message: triggered
-          ? `키워드 [${condition.keywords.join(', ')}] 관련 뉴스 ${filtered.length}건 발견: "${filtered[0].title}"`
-          : `키워드 [${condition.keywords.join(', ')}] 관련 최근 뉴스 없음`,
-      };
-    },
-  };
-}
+const EVALUATORS = {
+  price: createPriceConditionEvaluator(marketService, priceCB),
+  change: createChangeConditionEvaluator(marketService, changeCB),
+  volume: createVolumeConditionEvaluator(marketService),
+  news: createNewsConditionEvaluator(newsAggregator, newsCB),
+} satisfies Record<AlertConditionType, AlertConditionEvaluator>;
 ```
 
-### 5.4 모니터링 엔진
+### 6.6 모니터링 엔진
 
 ```typescript
-// monitor.ts
-
-import type { Logger } from '../../infra/logger/types.js';
-import type {
-  AlertStore,
-  AlertDefinition,
-  AlertCondition,
-  AlertConditionEvaluator,
-  AlertMonitorConfig,
-  ConditionEvaluation,
-} from './types.js';
+// monitor.ts — 핵심 변경점
+import type { ConcurrencyLane } from '@finclaw/infra';
 
 export function createAlertMonitor(deps: {
   store: AlertStore;
-  evaluators: Map<string, AlertConditionEvaluator>;
+  evaluators: Record<AlertConditionType, AlertConditionEvaluator>;
   deliveryDispatcher: DeliveryDispatcher;
   logger: Logger;
   config: AlertMonitorConfig;
+  lane: ConcurrencyLane; // infra 패키지 — chunkArray 대체
 }) {
-  const { store, evaluators, deliveryDispatcher, logger, config } = deps;
-
   let timer: ReturnType<typeof setInterval> | null = null;
   let isChecking = false;
 
-  /** 모니터링 시작 */
-  function start(): void {
-    if (timer) return;
-    logger.info('Alert monitor started', { intervalMs: config.checkIntervalMs });
-
-    timer = setInterval(() => {
-      checkAlerts().catch((err) => {
-        logger.error('Alert check cycle failed', { error: err });
-      });
-    }, config.checkIntervalMs);
-
-    // 즉시 첫 체크 실행
-    checkAlerts().catch((err) => {
-      logger.error('Initial alert check failed', { error: err });
-    });
-  }
-
-  /** 모니터링 정지 */
-  function stop(): void {
-    if (timer) {
-      clearInterval(timer);
-      timer = null;
-      logger.info('Alert monitor stopped');
-    }
-  }
-
-  /** 전체 알림 체크 사이클 */
   async function checkAlerts(): Promise<void> {
-    if (isChecking) {
-      logger.debug('Alert check already in progress, skipping');
-      return;
-    }
-
+    if (isChecking) return;
     isChecking = true;
     try {
-      const enabledAlerts = await store.listEnabled();
-      logger.debug('Checking alerts', { count: enabledAlerts.length });
-
-      // 동시 실행 수 제한 (semaphore 패턴)
-      const chunks = chunkArray(enabledAlerts, config.maxConcurrentChecks);
-      for (const chunk of chunks) {
-        await Promise.allSettled(chunk.map((alert) => checkSingleAlert(alert)));
-      }
+      const alerts = await deps.store.listEnabled();
+      await Promise.allSettled(alerts.map(checkSingleAlert));
     } finally {
       isChecking = false;
     }
   }
 
-  /** 단일 알림 체크 */
   async function checkSingleAlert(alert: AlertDefinition): Promise<void> {
+    const handle = await deps.lane.acquire(alert.id).catch(() => null);
+    if (!handle) return; // 큐 포화 시 스킵
     try {
-      // 1. 쿨다운 체크
-      const lastTrigger = await store.getLastTrigger(alert.id);
-      if (lastTrigger && isInCooldown(lastTrigger.triggeredAt, alert.cooldownMinutes)) {
-        return; // 쿨다운 중 -- 스킵
-      }
+      // 쿨다운: Unix ms 직접 비교
+      const last = await deps.store.getLastTrigger(alert.id);
+      if (last && Date.now() - last.triggeredAt < alert.cooldownMs) return;
 
-      // 2. 조건 평가
-      const evaluator = evaluators.get(alert.condition.type);
-      if (!evaluator) {
-        logger.warn('No evaluator for condition type', { type: alert.condition.type });
-        return;
-      }
-
+      const evaluator = deps.evaluators[alert.condition.type];
       const evaluation = await evaluator.evaluate(alert.condition);
 
-      // 3. 조건 충족 시 알림 전달
       if (evaluation.triggered) {
-        logger.info('Alert triggered', { alertId: alert.id, name: alert.name });
-
-        const results = await deliveryDispatcher.dispatch(alert, evaluation);
-        await store.recordTrigger(alert.id, evaluation, results);
+        const results = await deps.deliveryDispatcher.dispatch(alert, evaluation);
+        await deps.store.recordTrigger(alert.id, evaluation, results);
       }
     } catch (error) {
-      // 개별 알림 실패가 전체 사이클을 중단하지 않음 (에러 격리)
-      logger.error('Failed to check alert', {
-        alertId: alert.id,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      deps.logger.error('Alert check failed', { alertId: alert.id, error });
+    } finally {
+      handle.release();
     }
   }
 
-  return { start, stop, checkAlerts };
-}
-
-/** 쿨다운 체크 */
-function isInCooldown(lastTriggeredAt: Date, cooldownMinutes: number): boolean {
-  const cooldownMs = cooldownMinutes * 60 * 1000;
-  return Date.now() - lastTriggeredAt.getTime() < cooldownMs;
-}
-
-/** 배열을 청크로 분할 */
-function chunkArray<T>(array: readonly T[], size: number): T[][] {
-  const chunks: T[][] = [];
-  for (let i = 0; i < array.length; i += size) {
-    chunks.push(array.slice(i, i + size) as T[]);
-  }
-  return chunks;
+  return {
+    start() {
+      if (timer) return;
+      timer = setInterval(() => checkAlerts().catch(() => {}), deps.config.checkIntervalMs);
+      checkAlerts().catch(() => {});
+    },
+    stop() {
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+    },
+    checkAlerts,
+  };
 }
 ```
 
-### 5.5 멀티 채널 알림 전달
+### 6.7 멀티 채널 알림 전달
 
 ```typescript
 // delivery.ts
-
-import type { Logger } from '../../infra/logger/types.js';
-import type {
-  AlertDefinition,
-  ConditionEvaluation,
-  DeliveryChannel,
-  DeliveryResult,
-} from './types.js';
 
 export interface DeliveryHandler {
   readonly channel: DeliveryChannel;
@@ -716,85 +540,39 @@ export interface DeliveryDispatcher {
   dispatch(alert: AlertDefinition, evaluation: ConditionEvaluation): Promise<DeliveryResult[]>;
 }
 
-export function createDeliveryDispatcher(deps: {
-  handlers: DeliveryHandler[];
-  logger: Logger;
-}): DeliveryDispatcher {
-  const { handlers, logger } = deps;
-  const handlerMap = new Map(handlers.map((h) => [h.channel, h]));
-
-  return {
-    async dispatch(
-      alert: AlertDefinition,
-      evaluation: ConditionEvaluation,
-    ): Promise<DeliveryResult[]> {
-      const results: DeliveryResult[] = [];
-
-      for (const channel of alert.channels) {
-        const handler = handlerMap.get(channel);
-        if (!handler) {
-          results.push({
-            channel,
-            success: false,
-            error: `No handler for channel: ${channel}`,
-            deliveredAt: new Date(),
-          });
-          continue;
-        }
-
-        try {
-          await handler.deliver(alert, evaluation);
-          results.push({ channel, success: true, deliveredAt: new Date() });
-        } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : String(error);
-          logger.error('Delivery failed', { channel, alertId: alert.id, error: errorMsg });
-          results.push({
-            channel,
-            success: false,
-            error: errorMsg,
-            deliveredAt: new Date(),
-          });
-        }
-      }
-
-      return results;
-    },
-  };
-}
-
-/** Discord 전달 핸들러 */
-export function createDiscordDeliveryHandler(deps: {
-  sendDiscordMessage: (userId: string, content: string) => Promise<void>;
-}): DeliveryHandler {
+// Discord: DM 채널 resolve 필수
+export function createDiscordDeliveryHandler(deps: { client: DiscordClient }): DeliveryHandler {
   return {
     channel: 'discord',
     async deliver(alert, evaluation) {
-      const content = formatAlertMessage(alert, evaluation);
-      await deps.sendDiscordMessage(alert.userId, content);
+      const user = await deps.client.users.fetch(alert.userId);
+      const dmChannel = await user.createDM();
+      await dmChannel.send(formatAlertMessage(alert, evaluation));
     },
   };
 }
 
-/** WebSocket 전달 핸들러 (Gateway 인앱 알림) */
+// WebSocket: broadcastToChannel (채널 구독 기반)
 export function createWebSocketDeliveryHandler(deps: {
-  broadcastEvent: (userId: string, event: unknown) => void;
+  broadcaster: GatewayBroadcaster;
+  connections: Map<string, WsConnection>;
 }): DeliveryHandler {
   return {
     channel: 'websocket',
     async deliver(alert, evaluation) {
-      deps.broadcastEvent(alert.userId, {
+      deps.broadcaster.broadcastToChannel(deps.connections, 'alerts', {
         type: 'alert.triggered',
         alertId: alert.id,
         name: alert.name,
         message: evaluation.message,
         currentValue: evaluation.currentValue,
-        triggeredAt: new Date().toISOString(),
+        triggeredAt: Date.now(),
       });
     },
   };
 }
 
-/** 로그 전달 핸들러 (폴백) */
+// Log: 폴백
 export function createLogDeliveryHandler(deps: { logger: Logger }): DeliveryHandler {
   return {
     channel: 'log',
@@ -809,199 +587,281 @@ export function createLogDeliveryHandler(deps: { logger: Logger }): DeliveryHand
   };
 }
 
-/** 알림 메시지 포맷 */
-function formatAlertMessage(alert: AlertDefinition, evaluation: ConditionEvaluation): string {
-  return [
-    `**[FinClaw Alert]** ${alert.name}`,
-    '',
-    evaluation.message,
-    '',
-    `현재값: ${evaluation.currentValue}`,
-    `시각: ${new Date().toLocaleString('ko-KR')}`,
-  ].join('\n');
+// DeliveryDispatcher: Promise.allSettled 기반 부분 실패 격리
+export function createDeliveryDispatcher(deps: {
+  handlers: DeliveryHandler[];
+  logger: Logger;
+}): DeliveryDispatcher {
+  const handlerMap = new Map(deps.handlers.map((h) => [h.channel, h]));
+  return {
+    async dispatch(alert, evaluation) {
+      const results: DeliveryResult[] = [];
+      for (const channel of alert.channels) {
+        const handler = handlerMap.get(channel);
+        if (!handler) {
+          results.push({
+            channel,
+            success: false,
+            error: `No handler: ${channel}`,
+            deliveredAt: Date.now(),
+          });
+          continue;
+        }
+        try {
+          await handler.deliver(alert, evaluation);
+          results.push({ channel, success: true, deliveredAt: Date.now() });
+        } catch (error) {
+          results.push({ channel, success: false, error: String(error), deliveredAt: Date.now() });
+        }
+      }
+      return results;
+    },
+  };
 }
 ```
 
-### 5.6 에이전트 도구 정의
+### 6.8 에이전트 도구 등록
 
 ```typescript
-// tools.ts
+// tools.ts — 기존 registerXxxTool 패턴 준수
 
-export function createAlertTools(deps: {
-  store: AlertStore;
-  monitor: AlertMonitor;
-}): ToolDefinition[] {
-  return [
+export function registerSetAlertTool(registry: ToolRegistry, deps: { store: AlertStore }): void {
+  registry.register(
     {
       name: 'set_alert',
       description: '금융 알림을 설정합니다. 가격, 변동률, 거래량, 뉴스 키워드 조건을 지원합니다.',
-      parameters: {
-        type: 'object',
-        properties: {
-          name: { type: 'string', description: '알림 이름 (예: "AAPL 200달러 돌파")' },
-          conditionType: {
-            type: 'string',
-            enum: ['price', 'change', 'volume', 'news'],
-            description: '조건 유형',
-          },
-          ticker: { type: 'string', description: '종목 코드 (price/change/volume 조건 시)' },
-          direction: {
-            type: 'string',
-            description: 'above/below (price) 또는 up/down/both (change)',
-          },
-          threshold: { type: 'number', description: '임계값 (가격 또는 퍼센트)' },
-          keywords: {
-            type: 'array',
-            items: { type: 'string' },
-            description: '뉴스 키워드 (news 조건 시)',
-          },
-          cooldownMinutes: { type: 'number', description: '쿨다운 시간(분), 기본 15' },
-        },
-        required: ['name', 'conditionType'],
+      inputSchema: {
+        /* JSON Schema */
       },
-      execute: async (params): Promise<ToolResult> => {
-        const condition = buildConditionFromParams(params);
-        const alert = await deps.store.create({
-          userId: params._userId, // 컨텍스트에서 주입
-          name: params.name,
-          condition,
-          channels: ['discord', 'websocket'],
-          cooldownMinutes: params.cooldownMinutes ?? 15,
-          enabled: true,
-        });
-        return { success: true, data: { alertId: alert.id, name: alert.name, condition } };
-      },
+      group: 'finance',
+      requiresApproval: false,
+      isTransactional: true,
+      accessesSensitiveData: false,
+      isExternal: false,
+      timeoutMs: 5_000,
     },
-    {
-      name: 'list_alerts',
-      description: '설정된 알림 목록을 조회합니다.',
-      parameters: {
-        type: 'object',
-        properties: {
-          includeDisabled: { type: 'boolean', description: '비활성 알림 포함 여부' },
-        },
-      },
-      execute: async (params): Promise<ToolResult> => {
-        const alerts = await deps.store.listByUser(params._userId);
-        const filtered = params.includeDisabled ? alerts : alerts.filter((a) => a.enabled);
-        return { success: true, data: filtered };
-      },
+    async (input, context) => {
+      // context.userId — ToolExecutionContext 제공
+      const condition = buildConditionFromParams(input);
+      const alert = deps.store.create({
+        userId: context.userId,
+        name: input.name as string,
+        condition,
+        channels: ['discord', 'websocket'],
+        cooldownMs: (input.cooldownMs as number) ?? 900_000,
+        enabled: true,
+      });
+      return { content: JSON.stringify({ alertId: alert.id, name: alert.name }), isError: false };
     },
-    {
-      name: 'remove_alert',
-      description: '알림을 삭제합니다.',
-      parameters: {
-        type: 'object',
-        properties: {
-          alertId: { type: 'string', description: '삭제할 알림 ID' },
-        },
-        required: ['alertId'],
-      },
-      execute: async (params): Promise<ToolResult> => {
-        const deleted = await deps.store.delete(params.alertId);
-        return { success: deleted, data: { deleted } };
-      },
-    },
-    {
-      name: 'get_alert_history',
-      description: '알림 발동 이력을 조회합니다.',
-      parameters: {
-        type: 'object',
-        properties: {
-          alertId: { type: 'string', description: '알림 ID' },
-          limit: { type: 'number', description: '조회 건수 (기본 10)' },
-        },
-        required: ['alertId'],
-      },
-      execute: async (params): Promise<ToolResult> => {
-        const history = await deps.store.getHistory(params.alertId, params.limit ?? 10);
-        return { success: true, data: history };
-      },
-    },
-  ];
+    'skill',
+  );
+}
+
+// buildConditionFromParams: Zod v4 검증 + 조건 빌드
+import { z } from 'zod/v4';
+
+const PriceConditionSchema = z.object({
+  type: z.literal('price'),
+  ticker: z.string().min(1).max(10),
+  direction: z.enum(['above', 'below']),
+  threshold: z.number().positive(),
+});
+const ChangeConditionSchema = z.object({
+  type: z.literal('change'),
+  ticker: z.string().min(1).max(10),
+  thresholdPercent: z.number().positive(),
+  direction: z.enum(['up', 'down', 'both']).default('both'),
+});
+const VolumeConditionSchema = z.object({
+  type: z.literal('volume'),
+  ticker: z.string().min(1).max(10),
+  multiplier: z.number().positive(),
+});
+const NewsConditionSchema = z.object({
+  type: z.literal('news'),
+  keywords: z.array(z.string()).min(1),
+  symbols: z.array(z.string()).optional(),
+  excludeKeywords: z.array(z.string()).optional(),
+});
+const AlertConditionSchema = z.discriminatedUnion('type', [
+  PriceConditionSchema,
+  ChangeConditionSchema,
+  VolumeConditionSchema,
+  NewsConditionSchema,
+]);
+
+function buildConditionFromParams(input: Record<string, unknown>): AlertCondition {
+  const result = AlertConditionSchema.safeParse(input.condition);
+  if (!result.success) throw new Error(`조건 파라미터 오류: ${result.error.message}`);
+  return result.data;
+}
+
+// 나머지 도구:
+export function registerListAlertsTool(registry: ToolRegistry, deps: { store: AlertStore }): void {
+  /* ... */
+}
+export function registerRemoveAlertTool(registry: ToolRegistry, deps: { store: AlertStore }): void {
+  /* ... */
+}
+export function registerGetAlertHistoryTool(
+  registry: ToolRegistry,
+  deps: { store: AlertStore },
+): void {
+  /* ... */
+}
+
+// index.ts에서 일괄 호출
+export function registerAlertTools(registry: ToolRegistry, deps: { store: AlertStore }): void {
+  registerSetAlertTool(registry, deps);
+  registerListAlertsTool(registry, deps);
+  registerRemoveAlertTool(registry, deps);
+  registerGetAlertHistoryTool(registry, deps);
 }
 ```
 
+**도구별 메타데이터:**
+| 도구 | isExternal | isTransactional | 근거 |
+|------|-----------|-----------------|------|
+| set_alert | false | true | DB 쓰기, 외부 API 없음 |
+| list_alerts | false | false | DB 읽기만 |
+| remove_alert | false | true | DB 삭제 |
+| get_alert_history | false | false | DB 읽기만 |
+
 ---
 
-## 6. 선행 조건
+## 7. 선행 조건
 
-| 선행 Phase                 | 산출물                                                     | 사용 목적                                                |
-| -------------------------- | ---------------------------------------------------------- | -------------------------------------------------------- |
-| **Phase 2** (인프라)       | 로거, 에러 클래스                                          | 모니터링 로깅, 에러 격리                                 |
-| **Phase 3** (설정)         | 환경변수, Zod 스키마                                       | `ALERT_CHECK_INTERVAL_MS`, `ALERT_DEFAULT_COOLDOWN` 설정 |
-| **Phase 7** (도구 시스템)  | `ToolDefinition`, `ToolRegistry`                           | 에이전트 도구 등록                                       |
-| **Phase 12** (Discord)     | Discord DM/채널 메시지 전송 API                            | Discord 알림 전달                                        |
-| **Phase 14** (스토리지)    | `node:sqlite` `DatabaseSync` 래퍼, 마이그레이션            | 알림 정의 및 이력 영속화                                 |
-| **Phase 15** (크론)        | 크론 스케줄러, 인터벌 기반 작업 실행                       | 주기적 조건 체크                                         |
-| **Phase 16** (시장 데이터) | `MarketDataService.getQuote()`, quote.volume/changePercent | 가격/변동/거래량 조건 평가                               |
-| **Phase 17** (뉴스)        | `NewsAggregator.fetchNews()`                               | 뉴스 키워드 매칭 조건 평가                               |
+| 선행 요소                  | 산출물                                                                     | Phase 18 사용 목적                        |
+| -------------------------- | -------------------------------------------------------------------------- | ----------------------------------------- |
+| **Phase 2** (인프라)       | `ConcurrencyLane`, `CircuitBreaker`, 로거                                  | 동시성 제어, 외부 API 보호, 모니터링 로깅 |
+| **Phase 3** (설정)         | 환경변수, Zod 스키마                                                       | 알림 설정 환경변수                        |
+| **Phase 7** (도구)         | `RegisteredToolDefinition`, `ToolRegistry`, `ToolExecutionContext`         | 에이전트 도구 등록, `context.userId` 접근 |
+| **Phase 12** (Discord)     | Discord Client                                                             | DM 전달 (`user.createDM()`)               |
+| **Phase 14** (스토리지)    | `database.ts` (SCHEMA_VERSION, MIGRATIONS), `tables/alerts.ts` (기존 CRUD) | MIGRATIONS[3] 확장, CRUD 추가             |
+| **Phase 16** (시장 데이터) | `MarketCache`, `ProviderRegistry`, `normalizeQuote`                        | AlertMarketService 어댑터 구성            |
+| **Phase 17** (뉴스)        | `NewsAggregator`, `NewsQuery` (`symbols` 필드)                             | 뉴스 조건 평가                            |
+| **Gateway** (서버)         | `GatewayBroadcaster`, `WsConnection`                                       | WebSocket 전달 (`broadcastToChannel`)     |
 
 ### 직접 의존 관계
 
 ```
-Phase 14 (스토리지) ─────┐
-Phase 15 (크론)    ─────┤
-Phase 16 (시장 데이터) ──┼──→ Phase 18 (알림 시스템)
-Phase 17 (뉴스)    ─────┤
-Phase 12 (Discord) ─────┘
+packages/storage (database.ts, tables/alerts.ts) ──┐
+packages/infra (ConcurrencyLane, CircuitBreaker)   ──┤
+packages/skills-finance/market (Cache, Registry)   ──┼──→ packages/skills-finance/alerts
+packages/skills-finance/news (Aggregator)          ──┤
+packages/agent/tools (Registry, Context)            ──┤
+packages/server/gateway (Broadcaster)              ──┤
+packages/channel-discord (Client, commands/alert)  ──┘
 ```
 
 ---
 
-## 7. 산출물 및 검증
+## 8. 산출물 및 검증
 
 ### 기능 검증 체크리스트
 
-| #   | 검증 항목                                                | 테스트 방법                         | 테스트 tier |
-| --- | -------------------------------------------------------- | ----------------------------------- | ----------- |
-| 1   | alerts 테이블 생성 및 CRUD 정상 동작                     | storage test: 실제 SQLite 인스턴스  | storage     |
-| 2   | 가격 조건: above/below 방향에 따라 정확한 triggered 판정 | unit test: mock quote               | unit        |
-| 3   | 변동 조건: up/down/both 방향 + 임계값 비교               | unit test: mock changePercent       | unit        |
-| 4   | 거래량 조건: 평균 대비 배수 계산 정확성                  | unit test: mock volume/avgVolume    | unit        |
-| 5   | 뉴스 조건: 키워드 매칭 + 제외 키워드 필터링              | unit test: mock news items          | unit        |
-| 6   | 쿨다운: lastTrigger + cooldownMinutes 이내 시 스킵       | unit test: 시간 비교                | unit        |
-| 7   | 모니터: 활성 알림만 체크, 비활성/만료 알림 제외          | unit test: mock store               | unit        |
-| 8   | 모니터: 개별 알림 실패가 전체 사이클을 중단하지 않음     | unit test: 하나 reject, 나머지 정상 | unit        |
-| 9   | 전달: Discord/WebSocket/Log 핸들러 각각 정상 호출        | unit test: mock handlers            | unit        |
-| 10  | 전달: 하나의 채널 실패 시 다른 채널은 정상 전달          | unit test: 하나 throw               | unit        |
-| 11  | 이력: recordTrigger 후 getLastTrigger 일관성             | storage test: SQLite                | storage     |
-| 12  | 도구: set_alert가 올바른 AlertDefinition 생성            | unit test: 파라미터 매핑            | unit        |
-| 13  | 만료: expiresAt 지난 알림은 listEnabled에서 제외         | storage test                        | storage     |
+| #   | 검증 항목                                                                 | 테스트 방법                                 | tier    |
+| --- | ------------------------------------------------------------------------- | ------------------------------------------- | ------- |
+| 1   | MIGRATIONS[3]: DROP+CREATE alerts, CREATE alert_history                   | storage test: openDatabase() 후 스키마 확인 | storage |
+| 2   | 확장 CRUD: create/getById/listByUser/listEnabled/update/delete/setEnabled | storage test: 실제 SQLite                   | storage |
+| 3   | 가격 조건: above/below 방향별 triggered 판정                              | unit: mock AlertMarketService               | unit    |
+| 4   | 가격 조건: threshold 동등값 경계 (currentPrice === threshold)             | unit: 경계값                                | unit    |
+| 5   | 변동 조건: up/down/both 방향 + thresholdPercent 비교                      | unit: mock changePercent                    | unit    |
+| 6   | 거래량 조건: avgVolume 미제공 시 triggered:false + 메시지                 | unit: mock volume only                      | unit    |
+| 7   | 뉴스 조건: symbols 필드 + excludeKeywords 필터링                          | unit: mock NewsAggregator                   | unit    |
+| 8   | 쿨다운: lastTriggeredAt + cooldownMs 이내 시 스킵                         | unit: Unix ms 비교                          | unit    |
+| 9   | 쿨다운 0: cooldownMs=0이면 항상 통과                                      | unit: 경계값                                | unit    |
+| 10  | 모니터: isChecking 가드 — 체크 중 새 사이클 방지                          | unit: vi.useFakeTimers                      | unit    |
+| 11  | 모니터: 개별 알림 실패가 전체 사이클 중단 안 함                           | unit: 하나 reject                           | unit    |
+| 12  | 모니터: ConcurrencyLane acquire/release 정상                              | unit: mock lane                             | unit    |
+| 13  | 전달: Discord DM (user.createDM → send 호출 확인)                         | unit: mock Client                           | unit    |
+| 14  | 전달: WebSocket (broadcastToChannel 호출 확인)                            | unit: mock Broadcaster                      | unit    |
+| 15  | 전달: 하나의 채널 실패 시 다른 채널 정상 전달                             | unit: 하나 throw                            | unit    |
+| 16  | 이력: recordTrigger 후 getLastTrigger/getHistory 일관성                   | storage test                                | storage |
+| 17  | 도구: context.userId 사용, params.\_userId 미사용                         | unit: ToolExecutionContext mock             | unit    |
+| 18  | 도구: buildConditionFromParams 4가지 타입 + Zod 검증 실패                 | unit: 유효/무효 입력                        | unit    |
+| 19  | 만료: expiresAt 지난 알림은 listEnabled에서 제외                          | storage test                                | storage |
+| 20  | 모니터 테스트: vi.advanceTimersByTimeAsync(30_000) 패턴                   | unit: fake timer                            | unit    |
+| 21  | DB 마이그레이션 v2→v3 후 alerts/alert_history 정상 존재                   | storage test                                | storage |
 
 ### vitest 실행 기대 결과
 
 ```bash
 # unit 테스트
-pnpm vitest run src/skills/alerts/ --exclude='**/*.storage.test.ts'
-# 예상: 4 파일, ~30 tests passed
+pnpm vitest run packages/skills-finance/src/alerts/ --exclude='**/*.storage.test.ts'
+# 예상: 4 파일, ~40 tests passed
 
 # storage 테스트 (실제 SQLite)
-pnpm vitest run src/skills/alerts/__tests__/store.storage.test.ts
-# 예상: 1 파일, ~12 tests passed
+pnpm vitest run packages/skills-finance/src/alerts/__tests__/store.storage.test.ts
+# 예상: 1 파일, ~15 tests passed
+
+# 타입체크
+pnpm tsgo --noEmit
 ```
 
 ---
 
-## 8. 복잡도 및 예상 파일 수
+## 9. 복잡도 및 예상 파일 수
 
-| 항목               | 값                                                                                 |
-| ------------------ | ---------------------------------------------------------------------------------- |
-| **복잡도**         | **L** (Large)                                                                      |
-| **소스 파일**      | 10개                                                                               |
-| **테스트 파일**    | 4개                                                                                |
-| **총 파일 수**     | **14개**                                                                           |
-| **예상 LOC**       | ~1,580                                                                             |
-| **예상 소요 기간** | 3-4일                                                                              |
-| **외부 의존성**    | 없음 (node:sqlite 내장, Phase 14 래퍼 사용)                                        |
-| **새 환경변수**    | `ALERT_CHECK_INTERVAL_MS` (기본 30000), `ALERT_DEFAULT_COOLDOWN_MINUTES` (기본 15) |
-| **SQLite 테이블**  | `alerts`, `alert_history` (2개)                                                    |
+| 항목            | 값                                                                                                                                     |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **복잡도**      | **L** (Large)                                                                                                                          |
+| **신규 소스**   | 12개                                                                                                                                   |
+| **수정 파일**   | 3개 (database.ts, tables/alerts.ts, commands/alert.ts)                                                                                 |
+| **테스트 파일** | 5개                                                                                                                                    |
+| **총 파일 수**  | **20개**                                                                                                                               |
+| **예상 LOC**    | ~1,815                                                                                                                                 |
+| **외부 의존성** | 없음 (기존 패키지만 사용)                                                                                                              |
+| **새 환경변수** | `ALERT_CHECK_INTERVAL_MS` (30000), `ALERT_DEFAULT_COOLDOWN_MS` (900000), `ALERT_MAX_CONCURRENT_CHECKS` (10), `ALERT_MAX_PER_USER` (50) |
+| **SQLite 변경** | SCHEMA_VERSION 2→3, MIGRATIONS[3]: DROP+CREATE alerts, CREATE alert_history                                                            |
 
-### 복잡도 근거 (L 판정)
+### 구현 순서 (의존성 기반)
 
-- **4가지 조건 평가기**: 각각 독립적이지만 Strategy 패턴으로 통합 필요
-- **SQLite 스키마 + CRUD**: 2개 테이블, 인덱스, 마이그레이션
-- **크론 기반 모니터링**: 인터벌 관리, 동시성 제어, 에러 격리
-- **멀티 채널 전달**: 3개 전달 핸들러, 부분 실패 처리
-- **쿨다운 + 만료 + 이력**: 시간 기반 로직이 여러 곳에 분산
-- **에이전트 도구 4개**: Phase 17 대비 도구 수 증가, 파라미터 -> 조건 변환 로직 필요
+```
+Step 1: 타입 정의
+  packages/skills-finance/src/alerts/types.ts
+  검증: tsc --noEmit 통과
+
+Step 2: 스키마 마이그레이션 + Storage CRUD
+  packages/storage/src/database.ts       (MIGRATIONS[3])
+  packages/storage/src/tables/alerts.ts  (확장)
+  packages/storage/src/tables/alert-history.ts (신규)
+  검증: store.storage.test.ts 통과
+
+Step 3: 시장 데이터 어댑터 + 스토어
+  packages/skills-finance/src/alerts/market-service.ts
+  packages/skills-finance/src/alerts/store.ts
+  검증: 타입 컴파일
+
+Step 4: 조건 평가기
+  conditions/price.ts, change.ts, volume.ts, news.ts
+  검증: conditions.test.ts 통과
+
+Step 5: 전달 디스패처
+  delivery.ts
+  검증: delivery.test.ts 통과
+
+Step 6: 모니터 엔진
+  monitor.ts
+  검증: monitor.test.ts 통과
+
+Step 7: 도구 등록 + 진입점
+  tools.ts, index.ts
+  검증: tools.test.ts 통과
+
+Step 8: Discord 커맨드 완성
+  channel-discord/commands/alert.ts
+  검증: /alert set 동작
+```
+
+### 의도적 제외 항목 (과잉 엔지니어링 방지)
+
+| 제안                   | 결정    | 근거                                  |
+| ---------------------- | ------- | ------------------------------------- |
+| `croner` 패키지        | ❌ 제외 | `setInterval` + `isChecking`으로 충분 |
+| 완전한 EventBus 전달   | ❌ 제외 | 3채널 규모에서 직접 호출이 더 단순    |
+| `AlertId` Branded Type | ❌ 제외 | 단순 UUID, 혼동 가능성 낮음           |
+| Redis Pub/Sub          | ❌ 제외 | 단일 서버 SQLite 기반                 |
+| `AsyncDisposable`      | ⚠️ P2   | graceful shutdown 필요 시 추가        |
+| EventBus emit          | ⚠️ P2   | 채널 확장 시 유용하나 현재 불필요     |
+| pruneAlertHistory      | ⚠️ P2   | 장기 운영 시 이력 정리                |
