@@ -78,9 +78,11 @@ describe('registerSetAlertTool — context.userId', () => {
     };
 
     registerSetAlertTool(mockRegistry as never, { store: mockStore as AlertStore });
-    expect(capturedExecutor).toBeTruthy();
+    if (capturedExecutor === null) {
+      throw new Error('executor not captured');
+    }
 
-    const executor = capturedExecutor as ToolExecutor;
+    const executor: ToolExecutor = capturedExecutor;
     const result = await executor(
       {
         name: 'Test',
@@ -126,9 +128,11 @@ describe('registerRemoveAlertTool — 다른 사용자 알림 삭제 거부', ()
     };
 
     registerRemoveAlertTool(mockRegistry as never, { store: mockStore as AlertStore });
-    expect(capturedExecutor).toBeTruthy();
+    if (capturedExecutor === null) {
+      throw new Error('executor not captured');
+    }
 
-    const executor = capturedExecutor as ToolExecutor;
+    const executor: ToolExecutor = capturedExecutor;
     const result = await executor(
       { alertId: 'alert-1' },
       {
