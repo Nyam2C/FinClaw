@@ -2,6 +2,16 @@ import { describe, it, expect, vi } from 'vitest';
 import type { AlertStore, CreateAlertInput } from '../types.js';
 import { buildConditionFromParams } from '../tools.js';
 
+type ToolExecutor = (
+  input: Record<string, unknown>,
+  context: {
+    userId: string;
+    sessionId: string;
+    channelId: string;
+    abortSignal: AbortSignal;
+  },
+) => Promise<{ content: string; isError: boolean }>;
+
 describe('buildConditionFromParams', () => {
   it('price 조건 파싱', () => {
     const result = buildConditionFromParams({
@@ -49,19 +59,9 @@ describe('registerSetAlertTool — context.userId', () => {
     // 실제 executor를 추출하여 테스트
     const { registerSetAlertTool } = await import('../tools.js');
 
-    let capturedExecutor:
-      | ((
-          input: Record<string, unknown>,
-          context: {
-            userId: string;
-            sessionId: string;
-            channelId: string;
-            abortSignal: AbortSignal;
-          },
-        ) => Promise<{ content: string; isError: boolean }>)
-      | null = null;
+    let capturedExecutor: ToolExecutor | null = null;
     const mockRegistry = {
-      register: vi.fn().mockImplementation((_def: unknown, executor: typeof capturedExecutor) => {
+      register: vi.fn().mockImplementation((_def: unknown, executor: ToolExecutor) => {
         capturedExecutor = executor;
       }),
     };
@@ -80,7 +80,7 @@ describe('registerSetAlertTool — context.userId', () => {
     registerSetAlertTool(mockRegistry as never, { store: mockStore as AlertStore });
     expect(capturedExecutor).toBeTruthy();
 
-    const executor = capturedExecutor as NonNullable<typeof capturedExecutor>;
+    const executor = capturedExecutor as ToolExecutor;
     const result = await executor(
       {
         name: 'Test',
@@ -103,19 +103,9 @@ describe('registerRemoveAlertTool — 다른 사용자 알림 삭제 거부', ()
   it('다른 사용자의 알림은 삭제 불가', async () => {
     const { registerRemoveAlertTool } = await import('../tools.js');
 
-    let capturedExecutor:
-      | ((
-          input: Record<string, unknown>,
-          context: {
-            userId: string;
-            sessionId: string;
-            channelId: string;
-            abortSignal: AbortSignal;
-          },
-        ) => Promise<{ content: string; isError: boolean }>)
-      | null = null;
+    let capturedExecutor: ToolExecutor | null = null;
     const mockRegistry = {
-      register: vi.fn().mockImplementation((_def: unknown, executor: typeof capturedExecutor) => {
+      register: vi.fn().mockImplementation((_def: unknown, executor: ToolExecutor) => {
         capturedExecutor = executor;
       }),
     };
@@ -138,7 +128,7 @@ describe('registerRemoveAlertTool — 다른 사용자 알림 삭제 거부', ()
     registerRemoveAlertTool(mockRegistry as never, { store: mockStore as AlertStore });
     expect(capturedExecutor).toBeTruthy();
 
-    const executor = capturedExecutor as NonNullable<typeof capturedExecutor>;
+    const executor = capturedExecutor as ToolExecutor;
     const result = await executor(
       { alertId: 'alert-1' },
       {
