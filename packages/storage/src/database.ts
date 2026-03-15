@@ -18,7 +18,7 @@ export interface DatabaseOptions {
 
 // ─── Schema ───
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 const SCHEMA_DDL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -97,20 +97,34 @@ CREATE TABLE IF NOT EXISTS embedding_cache (
 
 CREATE TABLE IF NOT EXISTS alerts (
   id                TEXT PRIMARY KEY,
-  name              TEXT,
-  symbol            TEXT NOT NULL,
-  condition_type    TEXT NOT NULL CHECK(condition_type IN ('above','below','crosses_above','crosses_below','change_percent')),
-  condition_value   REAL NOT NULL,
-  condition_field   TEXT,
+  user_id           TEXT NOT NULL,
+  name              TEXT NOT NULL,
+  condition_type    TEXT NOT NULL CHECK(
+    condition_type IN ('price', 'change', 'volume', 'news')
+  ),
+  condition_json    TEXT NOT NULL,
+  channels_json     TEXT NOT NULL DEFAULT '["discord","websocket"]',
+  cooldown_ms       INTEGER NOT NULL DEFAULT 900000,
   enabled           INTEGER NOT NULL DEFAULT 1,
-  channel_id        TEXT,
   trigger_count     INTEGER NOT NULL DEFAULT 0,
-  cooldown_ms       INTEGER NOT NULL DEFAULT 0,
   last_triggered_at INTEGER,
-  created_at        INTEGER NOT NULL
+  expires_at        INTEGER,
+  created_at        INTEGER NOT NULL,
+  updated_at        INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_alerts_symbol ON alerts(symbol);
-CREATE INDEX IF NOT EXISTS idx_alerts_active ON alerts(enabled) WHERE enabled = 1;
+CREATE INDEX IF NOT EXISTS idx_alerts_user_id ON alerts(user_id);
+CREATE INDEX IF NOT EXISTS idx_alerts_enabled ON alerts(enabled) WHERE enabled = 1;
+
+CREATE TABLE IF NOT EXISTS alert_history (
+  id                    TEXT PRIMARY KEY,
+  alert_id              TEXT NOT NULL REFERENCES alerts(id) ON DELETE CASCADE,
+  triggered_at          INTEGER NOT NULL,
+  condition_snapshot    TEXT NOT NULL,
+  delivery_results_json TEXT NOT NULL DEFAULT '[]',
+  current_value         TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_alert_history_alert_id ON alert_history(alert_id);
+CREATE INDEX IF NOT EXISTS idx_alert_history_triggered ON alert_history(triggered_at DESC);
 
 CREATE TABLE IF NOT EXISTS market_cache (
   key        TEXT PRIMARY KEY,
@@ -157,6 +171,40 @@ CREATE TABLE IF NOT EXISTS portfolio_holdings (
   FOREIGN KEY (portfolio_id) REFERENCES portfolios(id) ON DELETE CASCADE
 );
 `,
+  3: `
+    DROP TABLE IF EXISTS alerts;
+
+    CREATE TABLE IF NOT EXISTS alerts (
+      id                TEXT PRIMARY KEY,
+      user_id           TEXT NOT NULL,
+      name              TEXT NOT NULL,
+      condition_type    TEXT NOT NULL CHECK(
+        condition_type IN ('price', 'change', 'volume', 'news')
+      ),
+      condition_json    TEXT NOT NULL,
+      channels_json     TEXT NOT NULL DEFAULT '["discord","websocket"]',
+      cooldown_ms       INTEGER NOT NULL DEFAULT 900000,
+      enabled           INTEGER NOT NULL DEFAULT 1,
+      trigger_count     INTEGER NOT NULL DEFAULT 0,
+      last_triggered_at INTEGER,
+      expires_at        INTEGER,
+      created_at        INTEGER NOT NULL,
+      updated_at        INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_alerts_user_id ON alerts(user_id);
+    CREATE INDEX IF NOT EXISTS idx_alerts_enabled ON alerts(enabled) WHERE enabled = 1;
+
+    CREATE TABLE IF NOT EXISTS alert_history (
+      id                    TEXT PRIMARY KEY,
+      alert_id              TEXT NOT NULL REFERENCES alerts(id) ON DELETE CASCADE,
+      triggered_at          INTEGER NOT NULL,
+      condition_snapshot    TEXT NOT NULL,
+      delivery_results_json TEXT NOT NULL DEFAULT '[]',
+      current_value         TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_alert_history_alert_id ON alert_history(alert_id);
+    CREATE INDEX IF NOT EXISTS idx_alert_history_triggered ON alert_history(triggered_at DESC);
+  `,
 };
 
 // ─── Internal helpers ───

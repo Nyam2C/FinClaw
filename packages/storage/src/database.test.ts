@@ -27,6 +27,7 @@ describe('openDatabase', () => {
     const tableNames = tables.map((t) => t.name).toSorted();
     expect(tableNames).toEqual(
       [
+        'alert_history',
         'alerts',
         'conversations',
         'embedding_cache',
@@ -75,7 +76,7 @@ describe('openDatabase', () => {
     const result = database.db
       .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
       .get() as unknown as { value: string };
-    expect(result.value).toBe('2');
+    expect(result.value).toBe('3');
   });
 
   it('sqlite-vec 로드 확인 — SELECT vec_version()', () => {
