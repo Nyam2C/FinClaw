@@ -18,7 +18,7 @@ export interface DatabaseOptions {
 
 // ─── Schema ───
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 const SCHEMA_DDL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -121,9 +121,43 @@ CREATE TABLE IF NOT EXISTS market_cache (
   expires_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_market_cache_expires ON market_cache(expires_at);
+
+CREATE TABLE IF NOT EXISTS portfolios (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  currency   TEXT NOT NULL DEFAULT 'USD',
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS portfolio_holdings (
+  portfolio_id TEXT NOT NULL,
+  symbol       TEXT NOT NULL,
+  quantity     REAL NOT NULL,
+  average_cost REAL NOT NULL,
+  PRIMARY KEY (portfolio_id, symbol),
+  FOREIGN KEY (portfolio_id) REFERENCES portfolios(id) ON DELETE CASCADE
+);
 `;
 
-const MIGRATIONS: Record<number, string> = {};
+const MIGRATIONS: Record<number, string> = {
+  2: `
+CREATE TABLE IF NOT EXISTS portfolios (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  currency   TEXT NOT NULL DEFAULT 'USD',
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS portfolio_holdings (
+  portfolio_id TEXT NOT NULL,
+  symbol       TEXT NOT NULL,
+  quantity     REAL NOT NULL,
+  average_cost REAL NOT NULL,
+  PRIMARY KEY (portfolio_id, symbol),
+  FOREIGN KEY (portfolio_id) REFERENCES portfolios(id) ON DELETE CASCADE
+);
+`,
+};
 
 // ─── Internal helpers ───
 
