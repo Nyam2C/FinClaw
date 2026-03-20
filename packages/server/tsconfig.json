@@ -9,6 +9,7 @@
     { "path": "../storage" },
     { "path": "../agent" },
     { "path": "../channel-discord" },
-    { "path": "../skills-finance" }
+    { "path": "../skills-finance" },
+    { "path": "../tui" }
   ]
 }

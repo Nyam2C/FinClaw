@@ -13,6 +13,7 @@
     "@finclaw/infra": "workspace:*",
     "@finclaw/skills-finance": "workspace:*",
     "@finclaw/storage": "workspace:*",
+    "@finclaw/tui": "workspace:*",
     "@finclaw/types": "workspace:*",
     "chokidar": "^5.0.0",
     "commander": "^14",

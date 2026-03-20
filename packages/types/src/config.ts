@@ -18,6 +18,7 @@ export interface GatewayConfig {
   host?: string;
   tls?: boolean;
   corsOrigins?: string[];
+  auth?: { token?: string };
 }
 
 export interface AgentsConfig {

@@ -8,7 +8,7 @@ import { validateToken } from './token.js';
 /**
  * 요청의 인증 정보를 추출하고 검증한다.
  *
- * 우선순위: Bearer token > X-API-Key > none
+ * 우선순위: Bearer token > ?token= query param > X-API-Key > none
  */
 export async function authenticate(
   req: IncomingMessage,
@@ -22,6 +22,17 @@ export async function authenticate(
   if (authorization?.startsWith('Bearer ')) {
     const token = authorization.slice(7);
     const result = validateToken(token, config.jwtSecret);
+    if (!result.ok) {
+      getEventBus().emit('gateway:auth:failure', ip, result.error);
+    }
+    return result;
+  }
+
+  // ?token= query param 폴백 (WebSocket 브라우저 클라이언트용)
+  const url = req.url ?? '';
+  const tokenParam = new URL(url, 'http://localhost').searchParams.get('token');
+  if (tokenParam) {
+    const result = validateToken(tokenParam, config.jwtSecret);
     if (!result.ok) {
       getEventBus().emit('gateway:auth:failure', ip, result.error);
     }
