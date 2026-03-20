@@ -190,4 +190,6 @@ describe('validateToken', () => {
     const result = validateToken(token, TEST_SECRET);
     expect(result.ok).toBe(true);
   });
+
+  // TODO: ?token= query param 인증 테스트 미작성 — authenticate()의 URL 파싱 경로 검증 필요 (MEDIUM)
 });

@@ -1,37 +1,14 @@
 // packages/web/src/app-chat.ts
 // Chat queueing/streaming — handles chat.stream.* notifications
 
+import type {
+  ChatStreamDeltaParams,
+  ChatStreamEndParams,
+  ChatStreamErrorParams,
+  ChatStreamToolStartParams,
+  ChatStreamToolEndParams,
+} from '@finclaw/types';
 import type { AppGateway } from './app-gateway.js';
-
-/** Matches @finclaw/types ChatStreamDeltaParams */
-interface ChatDeltaParams {
-  readonly sessionId: string;
-  readonly delta: string;
-}
-
-/** Matches @finclaw/types ChatStreamEndParams */
-interface ChatEndParams {
-  readonly sessionId: string;
-  readonly result: unknown;
-}
-
-/** Matches @finclaw/types ChatStreamErrorParams */
-interface ChatErrorParams {
-  readonly sessionId: string;
-  readonly error: string;
-}
-
-/** Matches @finclaw/types ChatStreamToolStartParams */
-interface ChatToolStartParams {
-  readonly sessionId: string;
-  readonly toolCall: { readonly name: string; readonly input: unknown };
-}
-
-/** Matches @finclaw/types ChatStreamToolEndParams */
-interface ChatToolEndParams {
-  readonly sessionId: string;
-  readonly result: unknown;
-}
 
 export type ChatStatus = 'idle' | 'streaming' | 'error';
 
@@ -95,12 +72,12 @@ export function createAppChat(gateway: AppGateway, sessionId: string): AppChat {
 
     switch (method) {
       case 'chat.stream.delta': {
-        const delta = (p as unknown as ChatDeltaParams).delta;
+        const delta = (p as unknown as ChatStreamDeltaParams).delta;
         setState({ streamBuffer: state.streamBuffer + delta });
         break;
       }
       case 'chat.stream.end': {
-        const _endParams = p as unknown as ChatEndParams;
+        const _endParams = p as unknown as ChatStreamEndParams;
         const assistantMsg: ChatMessage = {
           role: 'assistant',
           content: state.streamBuffer,
@@ -115,7 +92,7 @@ export function createAppChat(gateway: AppGateway, sessionId: string): AppChat {
         break;
       }
       case 'chat.stream.error': {
-        const errorParams = p as unknown as ChatErrorParams;
+        const errorParams = p as unknown as ChatStreamErrorParams;
         setState({
           status: 'error',
           error: errorParams.error,
@@ -125,7 +102,7 @@ export function createAppChat(gateway: AppGateway, sessionId: string): AppChat {
         break;
       }
       case 'chat.stream.tool_start': {
-        const toolParams = p as unknown as ChatToolStartParams;
+        const toolParams = p as unknown as ChatStreamToolStartParams;
         const tool: ToolActivity = {
           name: toolParams.toolCall.name,
           input: toolParams.toolCall.input,
@@ -135,7 +112,9 @@ export function createAppChat(gateway: AppGateway, sessionId: string): AppChat {
         break;
       }
       case 'chat.stream.tool_end': {
-        const toolEnd = p as unknown as ChatToolEndParams;
+        // TODO: tool_end 매칭이 배열 마지막 기반 — 병렬 도구 호출 시 오매칭 위험.
+        // ChatStreamToolEndParams에 name 필드 추가 후 name 기반 매칭으로 개선 필요 (MEDIUM)
+        const toolEnd = p as unknown as ChatStreamToolEndParams;
         const tools = [...state.tools];
         const last = tools[tools.length - 1];
         if (last) {

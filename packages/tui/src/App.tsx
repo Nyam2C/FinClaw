@@ -74,15 +74,17 @@ export function App({ gatewayUrl, token, agentId }: AppProps) {
           break;
         }
         case 'chat.stream.end':
-          setStreamText('');
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: crypto.randomUUID(),
-              role: 'assistant',
-              content: streamText,
-            },
-          ]);
+          setStreamText((currentStream) => {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: crypto.randomUUID(),
+                role: 'assistant',
+                content: currentStream,
+              },
+            ]);
+            return '';
+          });
           break;
         case 'chat.stream.error': {
           const { error } = params as unknown as ChatStreamErrorParams;

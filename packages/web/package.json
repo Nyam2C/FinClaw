@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@finclaw/types": "workspace:*",
     "dompurify": "^3.2.6",
     "lit": "^3.3.0",
     "marked": "^15.0.0"

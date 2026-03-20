@@ -207,6 +207,9 @@ importers:
 
   packages/web:
     dependencies:
+      '@finclaw/types':
+        specifier: workspace:*
+        version: link:../types
       dompurify:
         specifier: ^3.2.6
         version: 3.3.3

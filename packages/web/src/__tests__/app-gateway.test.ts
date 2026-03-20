@@ -209,6 +209,8 @@ describe('createAppGateway', () => {
     expect(instances.length).toBe(1);
   });
 
+  // TODO: 연결 끊김 시 pending request reject 테스트 미작성 (MEDIUM)
+
   it('should remove notification handler with offNotification', async () => {
     const handler = vi.fn();
     gw.onNotification(handler);

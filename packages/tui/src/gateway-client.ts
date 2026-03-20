@@ -69,6 +69,8 @@ export function createGatewayClient(options: {
   }
 
   function scheduleReconnect(): void {
+    // TODO: setTimeout(async () => {...}) 내 async 에러가 silent failure됨.
+    // unhandledRejection 핸들러 또는 .catch() 래핑 필요 (LOW)
     reconnectTimer = setTimeout(async () => {
       try {
         await doConnect();

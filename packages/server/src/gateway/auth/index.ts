@@ -30,6 +30,7 @@ export async function authenticate(
 
   // ?token= query param 폴백 (WebSocket 브라우저 클라이언트용)
   const url = req.url ?? '';
+  // TODO: 'http://localhost' 하드코딩 — req.url이 항상 상대경로라 영향 없으나, req.headers.host 사용 검토 (LOW)
   const tokenParam = new URL(url, 'http://localhost').searchParams.get('token');
   if (tokenParam) {
     const result = validateToken(tokenParam, config.jwtSecret);

@@ -16,5 +16,23 @@ marked.setOptions({
  */
 export function renderMarkdown(md: string): string {
   const raw = marked.parse(md, { async: false }) as string;
-  return DOMPurify.sanitize(raw);
+  const ALLOWED_TAGS = [
+    'p',
+    'br',
+    'strong',
+    'em',
+    'code',
+    'pre',
+    'ul',
+    'ol',
+    'li',
+    'a',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'blockquote',
+  ];
+  const ALLOWED_ATTR = ['href', 'target', 'rel', 'class'];
+  return DOMPurify.sanitize(raw, { ALLOWED_TAGS, ALLOWED_ATTR });
 }

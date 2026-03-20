@@ -4,9 +4,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // ─── Mock WebSocket (vi.hoisted로 호이스팅 문제 해결) ───
 
-const { MockWebSocket } = vi.hoisted(() => {
+const { MockWebSocket, wsInstances } = vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { EventEmitter } = require('node:events') as typeof import('node:events');
+  const wsInstances: InstanceType<typeof MockWebSocket>[] = [];
   class MockWebSocket extends EventEmitter {
     static OPEN = 1;
     readyState = MockWebSocket.OPEN;
@@ -17,6 +18,7 @@ const { MockWebSocket } = vi.hoisted(() => {
       public opts?: Record<string, unknown>,
     ) {
       super();
+      wsInstances.push(this);
       // 다음 tick에 open 이벤트 발생
       setTimeout(() => this.emit('open'), 0);
     }
@@ -29,7 +31,7 @@ const { MockWebSocket } = vi.hoisted(() => {
       this.readyState = 3; // CLOSED
     }
   }
-  return { MockWebSocket };
+  return { MockWebSocket, wsInstances };
 });
 
 // ws 모듈 mock
@@ -39,10 +41,17 @@ vi.mock('ws', () => ({
 
 import { createGatewayClient } from '../gateway-client.js';
 
+/** Test helper: assert value is defined and return narrowed type */
+function defined<T>(value: T | undefined | null): T {
+  expect(value).toBeDefined();
+  return value as T;
+}
+
 describe('gateway-client', () => {
   let client: ReturnType<typeof createGatewayClient>;
 
   beforeEach(() => {
+    wsInstances.length = 0;
     vi.useFakeTimers();
     client = createGatewayClient({
       reconnectOptions: { initialDelayMs: 800, multiplier: 1.7, maxDelayMs: 15_000 },
@@ -87,8 +96,15 @@ describe('gateway-client', () => {
     await vi.advanceTimersByTimeAsync(0);
     await connectPromise;
 
-    // notification 메시지 시뮬레이션은 MockWebSocket.emit('message', ...) 으로 수행
-    // 실제 테스트에서는 ws 인스턴스에 접근하여 message 이벤트를 발생시킴
+    const ws = defined(wsInstances[0]);
+    const notification = JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'chat.stream.delta',
+      params: { sessionId: 's1', delta: 'hello' },
+    });
+    ws.emit('message', notification);
+
+    expect(handler).toHaveBeenCalledWith('chat.stream.delta', { sessionId: 's1', delta: 'hello' });
   });
 
   it('요청 30초 타임아웃 시 reject한다', async () => {
@@ -114,9 +130,18 @@ describe('gateway-client', () => {
     await vi.advanceTimersByTimeAsync(0);
     await connectPromise;
 
-    // 연결 끊김 시뮬레이션 → scheduleReconnect 호출 확인
-    // 800ms 후 재연결 시도
     expect(client.isConnected).toBe(true);
+
+    // 연결 끊김 시뮬레이션
+    const ws = defined(wsInstances[0]);
+    ws.readyState = 3; // CLOSED
+    ws.emit('close', 1006, 'connection lost');
+
+    expect(disconnectedHandler).toHaveBeenCalled();
+
+    // 800ms 후 재연결 시도
+    await vi.advanceTimersByTimeAsync(800);
+    expect(wsInstances.length).toBe(2); // 새 WebSocket 인스턴스 생성됨
   });
 
   it('응답 프레임의 id로 올바른 pending request를 resolve한다', async () => {
@@ -124,8 +149,19 @@ describe('gateway-client', () => {
     await vi.advanceTimersByTimeAsync(0);
     await connectPromise;
 
-    // 시퀀스 ID 매칭은 내부적으로 Map<number, {resolve, reject}>로 관리
-    // 다수 요청 시 각각 올바르게 매칭되는지 확인
+    const ws = defined(wsInstances[0]);
+    const requestPromise = client.request('chat.start', { agentId: 'default' });
+
+    // 전송된 프레임에서 id 추출
+    const sent = JSON.parse(defined(ws.sentMessages[0])) as { id: number };
+    // 서버 응답 시뮬레이션
+    ws.emit(
+      'message',
+      JSON.stringify({ jsonrpc: '2.0', id: sent.id, result: { sessionId: 'sess-abc' } }),
+    );
+
+    const result = await requestPromise;
+    expect(result).toEqual({ sessionId: 'sess-abc' });
   });
 
   it('disconnect() 호출 시 재연결 타이머를 정리한다', async () => {
@@ -142,14 +178,22 @@ describe('gateway-client', () => {
   });
 
   it('sessionId 획득 흐름: chat.start → sessionId 반환', async () => {
-    // chat.start 요청 후 서버 응답으로 sessionId를 받는 흐름 검증
     const connectPromise = client.connect('ws://localhost:3000/ws', 'token');
     await vi.advanceTimersByTimeAsync(0);
     await connectPromise;
 
-    // request('chat.start', { agentId: 'default' }) 호출 후
-    // 서버가 { jsonrpc: '2.0', id: 1, result: { sessionId: 'sess-123' } } 응답
-    // → resolve({ sessionId: 'sess-123' })
+    const ws = defined(wsInstances[0]);
+    const requestPromise = client.request('chat.start', { agentId: 'default' });
+
+    const sent = JSON.parse(defined(ws.sentMessages[0])) as { id: number };
+    ws.emit(
+      'message',
+      JSON.stringify({ jsonrpc: '2.0', id: sent.id, result: { sessionId: 'sess-123' } }),
+    );
+
+    const result = await requestPromise;
+    expect(result).toEqual({ sessionId: 'sess-123' });
+    expect((result as { sessionId: string }).sessionId).toBe('sess-123');
   });
 
   it('session.get 호출 (not session.info)', async () => {

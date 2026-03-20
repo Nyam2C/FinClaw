@@ -110,6 +110,10 @@ export function createAppGateway(
 
     ws.addEventListener('close', (event) => {
       const reason = `disconnected (${event.code}): ${event.reason || 'connection lost'}`;
+      for (const pending of pendingRequests.values()) {
+        pending.reject(new Error(reason));
+      }
+      pendingRequests.clear();
       for (const handler of disconnectedHandlers) {
         handler(reason);
       }
@@ -124,10 +128,11 @@ export function createAppGateway(
   }
 
   function scheduleReconnect(): void {
+    const delay = backoffMs;
+    backoffMs = Math.min(backoffMs * reconnect.multiplier, reconnect.maxDelayMs);
     reconnectTimer = setTimeout(() => {
       doConnect();
-      backoffMs = Math.min(backoffMs * reconnect.multiplier, reconnect.maxDelayMs);
-    }, backoffMs);
+    }, delay);
   }
 
   return {

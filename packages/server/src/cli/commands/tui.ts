@@ -8,7 +8,7 @@ export function register(program: Command, deps: CliDeps): void {
   program
     .command('tui')
     .description('launch the terminal UI control panel')
-    .option('-g, --gateway-url <url>', 'gateway server URL', 'ws://127.0.0.1:3000')
+    .option('-g, --gateway-url <url>', 'gateway server URL', 'ws://127.0.0.1:3000/ws')
     .option('-a, --agent <id>', 'agent ID', 'default')
     .action(async (opts: { gatewayUrl: string; agent: string }) => {
       deps.output(theme.info('Launching TUI...'));
