@@ -8,6 +8,7 @@
     { "path": "packages/agent" },
     { "path": "packages/channel-discord" },
     { "path": "packages/skills-finance" },
-    { "path": "packages/server" }
+    { "path": "packages/server" },
+    { "path": "packages/tui" }
   ]
 }

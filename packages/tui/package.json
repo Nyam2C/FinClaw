@@ -1,0 +1,26 @@
+{
+  "name": "@finclaw/tui",
+  "version": "0.1.0",
+  "private": true,
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "tsc --build --clean"
+  },
+  "dependencies": {
+    "@finclaw/types": "workspace:*",
+    "ink": "^6.0.0",
+    "ink-text-input": "^6.0.0",
+    "react": "^19.0.0",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/ws": "^8.18.0"
+  }
+}

@@ -1,4 +1,9 @@
-import type { RpcRequest, RpcResponse } from '@finclaw/types';
+import type {
+  RpcRequest,
+  RpcResponse,
+  JsonRpcNotification,
+  BroadcastChannel,
+} from '@finclaw/types';
 // packages/server/src/gateway/rpc/types.ts
 import type { z } from 'zod/v4';
 
@@ -10,6 +15,8 @@ export type {
   RpcMethod,
   WsEvent,
   GatewayStatus,
+  JsonRpcNotification,
+  BroadcastChannel,
 } from '@finclaw/types';
 export { RPC_ERROR_CODES } from '@finclaw/types';
 
@@ -48,13 +55,6 @@ export type AuthResult =
   | { readonly ok: false; readonly error: string; readonly code: number };
 
 // === JSON-RPC 프로토콜 확장 ===
-
-/** JSON-RPC 알림 (서버 → 클라이언트, id 없음) */
-export interface JsonRpcNotification {
-  readonly jsonrpc: '2.0';
-  readonly method: string;
-  readonly params?: Record<string, unknown>;
-}
 
 /** JSON-RPC 배치 요청 */
 export type JsonRpcBatchRequest = readonly RpcRequest[];
@@ -168,9 +168,6 @@ export interface ConfigChangeEvent {
   readonly previousHash: string;
   readonly currentHash: string;
 }
-
-/** 브로드캐스트 채널 */
-export type BroadcastChannel = 'config.updated' | 'session.event' | 'system.status' | 'market.tick';
 
 /** Rate limit 상태 */
 export interface RateLimitInfo {
