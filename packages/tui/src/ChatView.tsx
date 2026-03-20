@@ -28,7 +28,9 @@ export function ChatView({ messages, streamText, onSend, onCommand }: ChatViewPr
   const [input, setInput] = useState('');
 
   const handleSubmit = async (value: string) => {
-    if (!value.trim()) return;
+    if (!value.trim()) {
+      return;
+    }
     if (value.startsWith('/')) {
       onCommand(value);
     } else {

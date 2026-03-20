@@ -31,7 +31,9 @@ export function DashboardView({ panel, client }: DashboardViewProps) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!client.isConnected) return;
+    if (!client.isConnected) {
+      return;
+    }
 
     const load = async () => {
       setLoading(true);
@@ -100,7 +102,9 @@ export function DashboardView({ panel, client }: DashboardViewProps) {
 }
 
 function renderMarket(quote: QuoteData | null) {
-  if (!quote) return <Text color="gray">No data</Text>;
+  if (!quote) {
+    return <Text color="gray">No data</Text>;
+  }
   const changeColor = quote.change >= 0 ? 'green' : 'red';
   return (
     <Box flexDirection="column">
@@ -116,7 +120,9 @@ function renderMarket(quote: QuoteData | null) {
 }
 
 function renderPortfolio(data: unknown) {
-  if (!data) return <Text color="gray">No portfolio data</Text>;
+  if (!data) {
+    return <Text color="gray">No portfolio data</Text>;
+  }
   return (
     <Box flexDirection="column">
       <Text>{JSON.stringify(data, null, 2)}</Text>
@@ -141,7 +147,9 @@ function renderAlerts(alerts: AlertData[] | null) {
 }
 
 function renderSettings(data: unknown) {
-  if (!data) return <Text color="gray">No settings loaded</Text>;
+  if (!data) {
+    return <Text color="gray">No settings loaded</Text>;
+  }
   return (
     <Box flexDirection="column">
       <Text>{JSON.stringify(data, null, 2)}</Text>

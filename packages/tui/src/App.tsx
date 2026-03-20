@@ -138,13 +138,17 @@ export function App({ gatewayUrl, token, agentId }: AppProps) {
     if (key.tab) {
       setPanel((prev) => PANELS[(PANELS.indexOf(prev) + 1) % PANELS.length]);
     }
-    if (input === 'q' && key.ctrl) exit();
+    if (input === 'q' && key.ctrl) {
+      exit();
+    }
   });
 
   // 메시지 전송
   const sendMessage = useCallback(
     async (text: string) => {
-      if (!sessionId) return;
+      if (!sessionId) {
+        return;
+      }
       setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'user', content: text }]);
       await client.request('chat.send', {
         sessionId,
