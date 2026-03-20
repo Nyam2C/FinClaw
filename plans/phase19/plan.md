@@ -4,12 +4,12 @@
 
 터미널 UI(TUI)와 웹 기반 컨트롤 패널을 구현하여 FinClaw 플랫폼의 두 가지 프론트엔드 인터페이스를 제공한다. 구체적으로:
 
-1. **TUI (Terminal UI)**: 터미널에서 AI 에이전트와 대화하고, 시장 데이터/포트폴리오/알림 상태를 실시간으로 모니터링할 수 있는 채팅 클라이언트. 함수형 팩토리 패턴으로 5개 핸들러 모듈을 조합한다.
-2. **웹 UI (Web Control Panel)**: Lit 3 기반 웹 컴포넌트로 구현된 브라우저 대시보드. 채팅 인터페이스, 시장 대시보드, 포트폴리오 뷰, 알림 관리, 설정 편집 기능을 탭 네비게이션으로 제공한다.
-3. **공유 백엔드 프로토콜**: 양쪽 프론트엔드 모두 Phase 10-11의 Gateway WebSocket 서버에 동일한 JSON-RPC 프로토콜로 연결한다. 스트리밍 응답, 실시간 시장 데이터, 알림 이벤트를 WebSocket으로 수신한다.
+1. **TUI (Terminal UI)**: Ink v6 (React for CLI) 기반 터미널 채팅 클라이언트. `packages/tui` 패키지로 독립 구성. AI 에이전트와 대화하고, 시장 데이터/포트폴리오/알림 상태를 실시간으로 모니터링한다.
+2. **웹 UI (Web Control Panel)**: Lit 3 기반 웹 컴포넌트로 구현된 브라우저 대시보드. `packages/web` 패키지로 독립 구성. 채팅 인터페이스, 시장 대시보드, 포트폴리오 뷰, 알림 관리, 설정 편집 기능을 탭 네비게이션으로 제공한다.
+3. **공유 백엔드 프로토콜**: 양쪽 프론트엔드 모두 Phase 10-11의 Gateway WebSocket 서버에 동일한 JSON-RPC 2.0 프로토콜로 연결한다. 서버는 `JsonRpcNotification` (`{jsonrpc:'2.0', method, params}`) 형식으로 스트리밍 응답, 실시간 시장 데이터, 알림 이벤트를 WebSocket으로 푸시한다.
 4. **Vite 개발 서버**: 웹 UI를 위한 HMR(Hot Module Replacement) 지원 개발 환경을 제공한다.
 
-OpenClaw의 TUI(37파일, 4,938줄) + UI(100파일, 16,609줄) 대비 FinClaw는 핵심 기능에 집중하여 약 20개 파일, 3,500줄 규모로 구현한다.
+OpenClaw의 TUI(37파일, 4,938줄) + UI(100파일, 16,609줄) 대비 FinClaw는 핵심 기능에 집중하여 약 28개 파일, ~3,200줄 규모로 구현한다.
 
 ---
 
@@ -25,58 +25,94 @@ OpenClaw의 TUI(37파일, 4,938줄) + UI(100파일, 16,609줄) 대비 FinClaw는
 
 **핵심 적용 패턴:**
 
-1. **TUI 함수형 팩토리**: OpenClaw의 `createCommandHandlers()`, `createEventHandlers()`, `createSessionActions()` 패턴을 채택. context 파라미터로 의존성 주입, 클로저 내 상태 캡슐화. 테스트 시 context 모킹으로 Pi-TUI 없이 단위 테스트 가능.
+1. **TUI Ink v6**: React for CLI. `<Static>` 기반 채팅 로그(깜박임 없는 스트리밍), 함수형 컴포넌트 + hooks로 상태 관리. tsconfig에 `react-jsx` 설정.
 2. **UI Module Delegation**: OpenClaw의 `app.ts` + `app-*.ts` 위임 패턴을 축소 적용. 단일 LitElement가 중앙 상태를 관리하되, 기능별 로직은 별도 모듈로 분리.
 3. **Shadow DOM 비사용**: OpenClaw과 동일하게 `createRenderRoot() { return this; }`로 글로벌 CSS 직접 사용. FinClaw UI가 페이지 전체를 점유하므로 CSS 충돌 위험 없음.
-4. **스트림 어셈블러**: OpenClaw의 `TuiStreamAssembler.ingestDelta()` 패턴으로 LLM 스트리밍 응답을 효율적으로 조립. 변경 없는 delta는 렌더 스킵.
+4. **스트림 어셈블러**: 서버가 `chat.stream.delta` notification으로 증분 텍스트 조각을 전송. 클라이언트는 `currentStreamText += delta`로 누적 조립. (OpenClaw의 전체 텍스트 교체 방식과 다름)
 5. **Gateway 재연결**: 지수 백오프(800ms 초기, 1.7배 증가, 15초 상한)로 WebSocket 자동 재연결.
+
+### OpenClaw ↔ FinClaw 번역 테이블
+
+> **주의:** OpenClaw 코드를 그대로 복사하면 작동하지 않는 항목들. 반드시 FinClaw 서버 구현에 맞게 변환할 것.
+
+| OpenClaw 용어 / 패턴                | FinClaw 서버 실제                                              | 근거                                           |
+| ----------------------------------- | -------------------------------------------------------------- | ---------------------------------------------- |
+| `EventFrame { event, payload }`     | `JsonRpcNotification { jsonrpc:'2.0', method, params }`        | `rpc/types.ts:53-57`, `broadcaster.ts:108-112` |
+| `sessionKey`                        | `sessionId` (`chat.start` 반환값)                              | `chat.ts:8,38`, `session.ts:8,12`              |
+| `market.quote` + `{ ticker }`       | `finance.quote` + `{ symbol }`                                 | `finance.ts:8-12`, `types/gateway.ts:16`       |
+| `session.info`                      | `session.get`                                                  | `session.ts:9`, `types/gateway.ts:6`           |
+| delta 전체 텍스트 교체 (`!==` 비교) | 증분 delta 누적 (`+=`)                                         | `broadcaster.ts:68-97` (bufferDelta)           |
+| `{ id, method, params }`            | `{ jsonrpc:'2.0', id, method, params }`                        | `types/gateway.ts:30-35` (RpcRequest)          |
+| `event.event === 'chat'` 분기       | method 기반: `chat.stream.delta/end/error/tool_start/tool_end` | `broadcaster.ts:33-66`                         |
 
 ---
 
 ## 3. 생성할 파일
 
-### TUI 소스 파일 (6개)
+### 패키지 설정 (4개)
 
-| #   | 파일 경로                   | 설명                                                             | 예상 LOC |
-| --- | --------------------------- | ---------------------------------------------------------------- | -------- |
-| 1   | `src/tui/index.ts`          | TUI 진입점, `runTui()` 함수, 위젯 트리 구성                      | ~150     |
-| 2   | `src/tui/chat.ts`           | 채팅 뷰 (메시지 이력, 입력, 스트리밍 표시)                       | ~180     |
-| 3   | `src/tui/dashboard.ts`      | 대시보드 뷰 (시장 개요, 포트폴리오 요약, 활성 알림)              | ~150     |
-| 4   | `src/tui/status.ts`         | 상태 바 (연결 상태, 활성 모델, 토큰 사용량)                      | ~60      |
-| 5   | `src/tui/navigation.ts`     | 탭 기반 패널 전환 (chat, market, portfolio, alerts, settings)    | ~80      |
-| 6   | `src/tui/gateway-client.ts` | Gateway WebSocket 클라이언트 (Node.js ws, 재연결, 이벤트 핸들링) | ~200     |
+| #   | 파일 경로                    | 설명                                                | 예상 LOC |
+| --- | ---------------------------- | --------------------------------------------------- | -------- |
+| 1   | `packages/tui/package.json`  | TUI 패키지 — ink, react, ws, @finclaw/types         | ~20      |
+| 2   | `packages/tui/tsconfig.json` | react-jsx, 프로젝트 참조 (types)                    | ~15      |
+| 3   | `packages/web/package.json`  | Web 패키지 — lit, marked, dompurify, @finclaw/types | ~20      |
+| 4   | `packages/web/tsconfig.json` | DOM lib, 프로젝트 참조 (types)                      | ~15      |
 
-### 웹 UI 소스 파일 (10개)
+### TUI 소스 파일 (6개) — `packages/tui/src/`
 
-| #   | 파일 경로                         | 설명                                             | 예상 LOC |
-| --- | --------------------------------- | ------------------------------------------------ | -------- |
-| 7   | `src/web/index.html`              | HTML 엔트리포인트                                | ~25      |
-| 8   | `src/web/main.ts`                 | 웹 앱 부트스트랩, Gateway 연결 초기화            | ~50      |
-| 9   | `src/web/app.ts`                  | FinClawApp LitElement, 중앙 상태 관리, 탭 라우팅 | ~250     |
-| 10  | `src/web/app-gateway.ts`          | Gateway WebSocket 연결/이벤트 위임 모듈          | ~150     |
-| 11  | `src/web/app-chat.ts`             | 채팅 메시지 송수신/큐 관리 위임 모듈             | ~130     |
-| 12  | `src/web/views/market-view.ts`    | 시장 대시보드 뷰 (시세 테이블, 워치리스트)       | ~150     |
-| 13  | `src/web/views/portfolio-view.ts` | 포트폴리오 뷰 (보유 종목, P&L 요약)              | ~120     |
-| 14  | `src/web/views/alerts-view.ts`    | 알림 관리 뷰 (생성/편집/삭제, 이력)              | ~130     |
-| 15  | `src/web/views/settings-view.ts`  | 설정 패널 뷰 (API 키, 모델 선택, 테마)           | ~100     |
-| 16  | `src/web/styles/theme.css`        | CSS 테마 변수, 다크/라이트 모드                  | ~120     |
+| #   | 파일 경로                            | 설명                                        | 예상 LOC |
+| --- | ------------------------------------ | ------------------------------------------- | -------- |
+| 5   | `packages/tui/src/index.ts`          | Ink render 진입점 + `runTui()` 함수         | ~50      |
+| 6   | `packages/tui/src/App.tsx`           | Ink 루트 컴포넌트, 패널 라우팅              | ~120     |
+| 7   | `packages/tui/src/ChatView.tsx`      | `<Static>` 기반 채팅 (깜박임 없는 스트리밍) | ~150     |
+| 8   | `packages/tui/src/DashboardView.tsx` | 시장/포트폴리오/알림 요약                   | ~120     |
+| 9   | `packages/tui/src/StatusBar.tsx`     | 연결 상태, 모델 정보                        | ~50      |
+| 10  | `packages/tui/src/gateway-client.ts` | ws 패키지 기반 WebSocket + JSON-RPC 2.0     | ~200     |
+
+### 웹 UI 소스 파일 (11개) — `packages/web/src/`
+
+| #   | 파일 경로                                  | 설명                                                  | 예상 LOC |
+| --- | ------------------------------------------ | ----------------------------------------------------- | -------- |
+| 11  | `packages/web/src/index.html`              | HTML 엔트리포인트                                     | ~25      |
+| 12  | `packages/web/src/main.ts`                 | 웹 앱 부트스트랩, Gateway 연결 초기화                 | ~50      |
+| 13  | `packages/web/src/app.ts`                  | FinClawApp LitElement, 중앙 상태 관리, 탭 라우팅      | ~250     |
+| 14  | `packages/web/src/app-gateway.ts`          | Gateway WebSocket 연결/이벤트 위임 모듈               | ~150     |
+| 15  | `packages/web/src/app-chat.ts`             | 채팅 메시지 송수신/큐 관리 위임 모듈                  | ~130     |
+| 16  | `packages/web/src/markdown.ts`             | marked + DOMPurify (AI 응답 표/목록 렌더링, XSS 방어) | ~60      |
+| 17  | `packages/web/src/views/market-view.ts`    | 시장 대시보드 뷰 (시세 테이블, 워치리스트)            | ~150     |
+| 18  | `packages/web/src/views/portfolio-view.ts` | 포트폴리오 뷰 (보유 종목, P&L 요약)                   | ~120     |
+| 19  | `packages/web/src/views/alerts-view.ts`    | 알림 관리 뷰 (생성/편집/삭제, 이력)                   | ~130     |
+| 20  | `packages/web/src/views/settings-view.ts`  | 설정 패널 뷰 (API 키, 모델 선택, 테마)                | ~100     |
+| 21  | `packages/web/src/styles/theme.css`        | CSS 테마 변수, 다크/라이트 모드, 금융 도메인 색상     | ~140     |
+
+### 공유 타입 (1개)
+
+| #   | 파일 경로                            | 설명                                                                  | 예상 LOC |
+| --- | ------------------------------------ | --------------------------------------------------------------------- | -------- |
+| 22  | `packages/types/src/notification.ts` | JsonRpcNotification, Stream params, BroadcastChannel (공유 타입 추출) | ~40      |
 
 ### 설정 파일 (1개)
 
-| #   | 파일 경로                | 설명                              | 예상 LOC |
-| --- | ------------------------ | --------------------------------- | -------- |
-| 17  | `src/web/vite.config.ts` | Vite 개발 서버 설정 (프록시, HMR) | ~30      |
+| #   | 파일 경로                     | 설명                                  | 예상 LOC |
+| --- | ----------------------------- | ------------------------------------- | -------- |
+| 23  | `packages/web/vite.config.ts` | Vite 8.0 개발 서버 설정 (프록시, HMR) | ~35      |
+
+### CLI 서브커맨드 (1개)
+
+| #   | 파일 경로                                 | 설명                          | 예상 LOC |
+| --- | ----------------------------------------- | ----------------------------- | -------- |
+| 24  | `packages/server/src/cli/commands/tui.ts` | `finclaw tui` 서브커맨드 등록 | ~30      |
 
 ### 테스트 파일 (4개)
 
-| #   | 파일 경로                                  | 테스트 대상                                      | 예상 LOC |
-| --- | ------------------------------------------ | ------------------------------------------------ | -------- |
-| 18  | `src/tui/__tests__/chat.test.ts`           | TUI 채팅 핸들러 (메시지 라우팅, 스트림 어셈블리) | ~130     |
-| 19  | `src/tui/__tests__/gateway-client.test.ts` | Gateway 클라이언트 (연결, 재연결, 이벤트)        | ~120     |
-| 20  | `src/web/__tests__/app-gateway.test.ts`    | 웹 Gateway 연결/이벤트 핸들링                    | ~100     |
-| 21  | `src/web/__tests__/app-chat.test.ts`       | 웹 채팅 큐잉/스트리밍 처리                       | ~100     |
+| #   | 파일 경로                                           | 테스트 대상                                      | 예상 LOC |
+| --- | --------------------------------------------------- | ------------------------------------------------ | -------- |
+| 25  | `packages/tui/src/__tests__/chat.test.ts`           | TUI 채팅 핸들러 (메시지 라우팅, 스트림 어셈블리) | ~130     |
+| 26  | `packages/tui/src/__tests__/gateway-client.test.ts` | Gateway 클라이언트 (연결, 재연결, 이벤트)        | ~120     |
+| 27  | `packages/web/src/__tests__/app-gateway.test.ts`    | 웹 Gateway 연결/이벤트 핸들링                    | ~100     |
+| 28  | `packages/web/src/__tests__/app-chat.test.ts`       | 웹 채팅 큐잉/스트리밍 처리                       | ~100     |
 
-**합계: 소스 17개 + 테스트 4개 = 21개 파일, 예상 ~2,500 LOC**
+**합계: 패키지설정 4 + 소스 20 + 테스트 4 = 28개 파일, 예상 ~3,200 LOC**
 
 ---
 
@@ -84,63 +120,58 @@ OpenClaw의 TUI(37파일, 4,938줄) + UI(100파일, 16,609줄) 대비 FinClaw는
 
 ### 4.1 공유 Gateway 프로토콜 타입
 
+> **설계 원칙:** 서버의 `@finclaw/types/gateway.ts`에 이미 `RpcRequest`, `RpcResponse`, `RpcError`가 정의되어 있다. 이를 재정의하지 않고 import하여 사용한다. `JsonRpcNotification`은 현재 `packages/server/src/gateway/rpc/types.ts`에만 존재하므로, `@finclaw/types/notification.ts`로 추출하여 TUI/Web에서도 공유한다.
+
 ```typescript
-// src/tui/gateway-client.ts (TUI) / src/web/app-gateway.ts (Web) 에서 공유
+// packages/types/src/notification.ts — 신규 생성
 
-/** Gateway JSON-RPC 요청 프레임 */
-export interface RequestFrame {
-  readonly id: number; // 요청 시퀀스 번호 (응답 매칭)
-  readonly method: string; // RPC 메서드 (예: "chat.send", "market.quote")
-  readonly params?: Record<string, unknown>;
+/** JSON-RPC 2.0 알림 (서버 → 클라이언트, id 없음) */
+export interface JsonRpcNotification<T = Record<string, unknown>> {
+  readonly jsonrpc: '2.0';
+  readonly method: string;
+  readonly params?: T;
 }
 
-/** Gateway JSON-RPC 응답 프레임 */
-export interface ResponseFrame {
-  readonly id: number; // 요청과 매칭되는 시퀀스 번호
-  readonly result?: unknown;
-  readonly error?: { code: number; message: string; data?: unknown };
+// ─── 채팅 스트리밍 notification params ───
+
+/** chat.stream.delta — 증분 텍스트 조각 */
+export interface ChatStreamDeltaParams {
+  readonly sessionId: string;
+  readonly delta: string; // 증분 텍스트 (전체가 아님, += 로 누적)
 }
 
-/** Gateway 서버 이벤트 프레임 */
-export interface EventFrame {
-  readonly event: string; // 이벤트 타입
-  readonly payload: unknown;
+/** chat.stream.end — 스트리밍 완료 */
+export interface ChatStreamEndParams {
+  readonly sessionId: string;
+  readonly result: unknown;
 }
 
-/** 채팅 이벤트 페이로드 */
-export interface ChatEventPayload {
-  readonly runId: string;
-  readonly state: 'delta' | 'final' | 'error' | 'tool_use' | 'tool_result';
-  readonly message?: string;
-  readonly toolName?: string;
-  readonly toolInput?: unknown;
-  readonly toolResult?: unknown;
+/** chat.stream.error — 스트리밍 에러 */
+export interface ChatStreamErrorParams {
+  readonly sessionId: string;
+  readonly error: string;
 }
 
-/** 알림 이벤트 페이로드 */
-export interface AlertEventPayload {
-  readonly type: 'alert.triggered';
-  readonly alertId: string;
-  readonly name: string;
-  readonly message: string;
-  readonly currentValue: string;
-  readonly triggeredAt: string;
+/** chat.stream.tool_start — 도구 호출 시작 */
+export interface ChatStreamToolStartParams {
+  readonly sessionId: string;
+  readonly toolCall: { readonly name: string; readonly input: unknown };
 }
 
-/** 시장 데이터 이벤트 페이로드 */
-export interface MarketEventPayload {
-  readonly type: 'market.update';
-  readonly ticker: string;
-  readonly price: number;
-  readonly change: number;
-  readonly changePercent: number;
+/** chat.stream.tool_end — 도구 호출 결과 */
+export interface ChatStreamToolEndParams {
+  readonly sessionId: string;
+  readonly result: unknown;
 }
+
+/** 브로드캐스트 채널 (서버 rpc/types.ts의 BroadcastChannel과 동일) */
+export type BroadcastChannel = 'config.updated' | 'session.event' | 'system.status' | 'market.tick';
 ```
 
 ### 4.2 TUI 타입
 
 ```typescript
-// src/tui/index.ts
+// packages/tui/src/App.tsx
 
 /** TUI 패널 식별자 */
 export type TuiPanel = 'chat' | 'market' | 'portfolio' | 'alerts' | 'settings';
@@ -151,7 +182,7 @@ export interface TuiState {
   connected: boolean;
   lastError: string | null;
   agentId: string;
-  sessionKey: string;
+  sessionId: string; // chat.start 반환값, 초기 ''
   model: string;
   tokenUsage: number;
 }
@@ -173,7 +204,7 @@ export interface GatewayClient {
   connect(url: string, token: string): Promise<void>;
   disconnect(): void;
   request(method: string, params?: Record<string, unknown>): Promise<unknown>;
-  onEvent(handler: (event: EventFrame) => void): void;
+  onNotification(handler: (method: string, params: Record<string, unknown>) => void): void;
   onConnected(handler: () => void): void;
   onDisconnected(handler: (reason: string) => void): void;
   readonly isConnected: boolean;
@@ -185,12 +216,12 @@ export interface TuiHandlers {
     handleCommand(value: string): Promise<void>;
     sendMessage(value: string): Promise<void>;
   };
-  readonly eventHandlers: {
-    handleChatEvent(payload: ChatEventPayload): void;
-    handleAlertEvent(payload: AlertEventPayload): void;
-    handleMarketEvent(payload: MarketEventPayload): void;
+  readonly streamHandlers: {
+    /** method 기반 notification 라우팅 */
+    handleStreamNotification(method: string, params: Record<string, unknown>): void;
   };
   readonly sessionActions: {
+    startSession(agentId: string): Promise<string>; // sessionId 반환
     refreshSession(): Promise<void>;
     loadHistory(): Promise<void>;
     switchAgent(agentId: string): Promise<void>;
@@ -206,7 +237,7 @@ export interface TuiHandlers {
 ### 4.3 웹 UI 타입
 
 ```typescript
-// src/web/app.ts
+// packages/web/src/app.ts
 
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
@@ -233,7 +264,7 @@ export interface AppViewState {
 
   // 채팅 상태
   chatMessages: ChatMessage[];
-  chatStream: string | null; // 스트리밍 중인 응답 텍스트
+  chatStream: string | null; // 스트리밍 중인 응답 텍스트 (증분 누적)
   chatSending: boolean;
   chatQueue: string[]; // 대기 중인 메시지 큐
 
@@ -253,7 +284,7 @@ export interface AppViewState {
 
   // 에이전트 상태
   agentId: string;
-  sessionKey: string;
+  sessionId: string; // chat.start 반환값, 초기 ''
   model: string;
   tokenUsage: number;
 }
@@ -267,7 +298,7 @@ export interface ChatMessage {
 }
 
 export interface WatchlistItem {
-  readonly ticker: string;
+  readonly symbol: string; // finance.quote의 symbol 파라미터와 일치
   readonly name: string;
   readonly price: number;
   readonly change: number;
@@ -280,23 +311,17 @@ export interface WatchlistItem {
 
 ## 5. 구현 상세
 
-### 5.1 TUI 진입점 및 위젯 트리
+### 5.1 TUI 진입점 및 Ink 컴포넌트 트리
 
 ```typescript
-// src/tui/index.ts
+// packages/tui/src/index.ts
 
-import { createGatewayClient } from './gateway-client.js';
-import { createChatHandlers } from './chat.js';
-import { createDashboardHandlers } from './dashboard.js';
-import { createStatusBar } from './status.js';
-import { createNavigation } from './navigation.js';
+import { render } from 'ink';
+import React from 'react';
+import { App } from './App.js';
 
 /**
- * TUI 진입점 -- 위젯 트리 구성 및 핸들러 초기화
- *
- * OpenClaw의 runTui() 패턴을 참조:
- * - 함수형 팩토리로 핸들러 생성 (context 주입)
- * - 위젯 트리: header + chatLog + statusBar + footer + input
+ * TUI 진입점 -- Ink v6 render
  */
 export async function runTui(options: {
   gatewayUrl: string;
@@ -305,261 +330,198 @@ export async function runTui(options: {
 }): Promise<void> {
   const { gatewayUrl, token, agentId = 'default' } = options;
 
-  // 1. 터미널 초기화 (raw mode)
-  const term = setupTerminal();
+  const { waitUntilExit } = render(React.createElement(App, { gatewayUrl, token, agentId }));
 
-  // 2. 상태 초기화
-  const state: TuiState = {
-    activePanel: 'chat',
-    connected: false,
-    lastError: null,
-    agentId,
-    sessionKey: 'main',
-    model: 'unknown',
-    tokenUsage: 0,
-  };
-
-  // 3. Gateway 클라이언트 생성
-  const client = createGatewayClient({
-    reconnectOptions: {
-      initialDelayMs: 800,
-      multiplier: 1.7,
-      maxDelayMs: 15_000,
-    },
-  });
-
-  // 4. 위젯 트리 구성
-  const header = createHeader(state);
-  const chatArea = createChatArea();
-  const statusBar = createStatusBar(state);
-  const footer = createFooter(state);
-  const input = createInput();
-
-  // 5. TUI 컨텍스트 구성 (팩토리 함수에 주입)
-  const context: TuiContext = {
-    state,
-    client,
-    logger: createTuiLogger(),
-    updateStatus: (text) => statusBar.update(text),
-    appendChat: (role, text) => chatArea.append(role, text),
-    updateAssistant: (text) => chatArea.updateLast(text),
-    finalizeAssistant: (text) => chatArea.finalizeLast(text),
-    setPanel: (panel) => {
-      state.activePanel = panel;
-      navigation.setActive(panel);
-      refreshPanel(panel);
-    },
-  };
-
-  // 6. 팩토리 함수로 핸들러 생성
-  const chatHandlers = createChatHandlers(context);
-  const dashboardHandlers = createDashboardHandlers(context);
-  const navigation = createNavigation(context);
-
-  // 7. 이벤트 바인딩
-  client.onEvent((event) => {
-    if (event.event === 'chat') {
-      chatHandlers.eventHandlers.handleChatEvent(event.payload as ChatEventPayload);
-    } else if (event.event === 'alert.triggered') {
-      chatHandlers.eventHandlers.handleAlertEvent(event.payload as AlertEventPayload);
-    } else if (event.event === 'market.update') {
-      dashboardHandlers.handleMarketEvent(event.payload as MarketEventPayload);
-    }
-  });
-
-  client.onConnected(() => {
-    state.connected = true;
-    state.lastError = null;
-    statusBar.update('Connected');
-    chatHandlers.sessionActions.refreshSession();
-  });
-
-  client.onDisconnected((reason) => {
-    state.connected = false;
-    state.lastError = reason;
-    statusBar.update(`Disconnected: ${reason}`);
-  });
-
-  // 8. 입력 핸들러 -- OpenClaw의 createEditorSubmitHandler 패턴
-  input.onSubmit(async (text: string) => {
-    if (text.startsWith('/')) {
-      await chatHandlers.commandHandlers.handleCommand(text);
-    } else {
-      await chatHandlers.commandHandlers.sendMessage(text);
-    }
-  });
-
-  // 9. 키보드 단축키
-  term.onKey((key: string) => {
-    if (key === 'tab') navigation.nextPanel();
-    if (key === 'q' && term.isCtrl) shutdown();
-  });
-
-  // 10. Gateway 연결
-  await client.connect(gatewayUrl, token);
-
-  // 11. 초기 데이터 로드
-  await chatHandlers.sessionActions.loadHistory();
+  await waitUntilExit();
 }
 ```
 
-### 5.2 TUI 채팅 핸들러 (팩토리 패턴)
+```typescript
+// packages/tui/src/App.tsx — Ink 루트 컴포넌트 스케치
+
+import React, { useState, useEffect } from 'react';
+import { Box, Text, useInput, useApp } from 'ink';
+import { createGatewayClient } from './gateway-client.js';
+import { ChatView } from './ChatView.js';
+import { DashboardView } from './DashboardView.js';
+import { StatusBar } from './StatusBar.js';
+
+interface AppProps {
+  gatewayUrl: string;
+  token: string;
+  agentId: string;
+}
+
+export function App({ gatewayUrl, token, agentId }: AppProps) {
+  const { exit } = useApp();
+  const [panel, setPanel] = useState<TuiPanel>('chat');
+  const [connected, setConnected] = useState(false);
+  const [sessionId, setSessionId] = useState(''); // chat.start 호출 후 동적 획득
+  const [model, setModel] = useState('');
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [streamText, setStreamText] = useState('');
+
+  // Gateway 클라이언트 (한 번만 생성)
+  const [client] = useState(() =>
+    createGatewayClient({
+      reconnectOptions: { initialDelayMs: 800, multiplier: 1.7, maxDelayMs: 15_000 },
+    }),
+  );
+
+  // 연결 + 세션 시작
+  useEffect(() => {
+    (async () => {
+      client.onConnected(async () => {
+        setConnected(true);
+        // chat.start → sessionId 획득
+        const result = await client.request('chat.start', { agentId }) as { sessionId: string };
+        setSessionId(result.sessionId);
+
+        // session.get으로 모델 정보 획득
+        const info = await client.request('session.get', { sessionId: result.sessionId }) as SessionInfo;
+        setModel(info.model);
+      });
+
+      client.onDisconnected(() => setConnected(false));
+
+      // notification 라우팅 (method 기반)
+      client.onNotification((method, params) => {
+        switch (method) {
+          case 'chat.stream.delta':
+            // 증분 누적
+            setStreamText((prev) => prev + (params as ChatStreamDeltaParams).delta);
+            break;
+          case 'chat.stream.end':
+            setMessages((prev) => [...prev, { role: 'assistant', content: streamText /* finalize */ }]);
+            setStreamText('');
+            break;
+          case 'chat.stream.error':
+            setMessages((prev) => [...prev, { role: 'system', content: `[Error] ${(params as ChatStreamErrorParams).error}` }]);
+            setStreamText('');
+            break;
+          case 'chat.stream.tool_start':
+            setMessages((prev) => [...prev, { role: 'system', content: `[Tool] ${(params as ChatStreamToolStartParams).toolCall.name}` }]);
+            break;
+          case 'chat.stream.tool_end':
+            setMessages((prev) => [...prev, { role: 'tool', content: JSON.stringify((params as ChatStreamToolEndParams).result) }]);
+            break;
+        }
+      });
+
+      await client.connect(gatewayUrl, token);
+    })();
+
+    return () => client.disconnect();
+  }, []);
+
+  // 키보드 단축키
+  useInput((input, key) => {
+    if (key.tab) {
+      const panels: TuiPanel[] = ['chat', 'market', 'portfolio', 'alerts', 'settings'];
+      setPanel((prev) => panels[(panels.indexOf(prev) + 1) % panels.length]);
+    }
+    if (input === 'q' && key.ctrl) exit();
+  });
+
+  // 메시지 전송
+  const sendMessage = async (text: string) => {
+    if (!sessionId) return;
+    setMessages((prev) => [...prev, { role: 'user', content: text }]);
+    await client.request('chat.send', {
+      sessionId,
+      message: text,
+      idempotencyKey: crypto.randomUUID(),
+    });
+  };
+
+  return (
+    <Box flexDirection="column" height="100%">
+      <StatusBar connected={connected} model={model} panel={panel} />
+      {panel === 'chat'
+        ? <ChatView messages={messages} streamText={streamText} onSend={sendMessage} />
+        : <DashboardView panel={panel} client={client} />}
+    </Box>
+  );
+}
+```
+
+### 5.2 TUI 채팅 핸들러 (method 기반 notification 라우팅)
 
 ```typescript
-// src/tui/chat.ts
+// packages/tui/src/ChatView.tsx
 
 /**
- * 채팅 핸들러 팩토리 -- OpenClaw의 createCommandHandlers + createEventHandlers 패턴
- * context를 클로저로 캡슐화하여 테스트 시 모킹 용이
+ * 채팅 뷰 — Ink <Static> 기반 (확정된 메시지는 재렌더 없음)
+ *
+ * notification 라우팅은 App.tsx에서 method 기반으로 처리:
+ * - 'chat.stream.delta' → currentStreamText += delta (증분 누적)
+ * - 'chat.stream.end' → finalize (메시지 확정)
+ * - 'chat.stream.tool_start' → 도구 호출 표시
+ * - 'chat.stream.tool_end' → 도구 결과 표시
+ * - 'chat.stream.error' → 에러 표시
  */
-export function createChatHandlers(context: TuiContext) {
-  // 스트림 어셈블러: delta 이벤트를 조립하여 변경 시에만 렌더
-  let currentStreamText = '';
-  let currentRunId = '';
 
-  const commandHandlers = {
-    /** 슬래시 명령어 처리 */
-    async handleCommand(value: string): Promise<void> {
-      const [cmd, ...args] = value.slice(1).split(' ');
-      switch (cmd) {
-        case 'help':
-          context.appendChat('system', formatHelpText());
-          break;
-        case 'market':
-          context.setPanel('market');
-          break;
-        case 'portfolio':
-          context.setPanel('portfolio');
-          break;
-        case 'alerts':
-          context.setPanel('alerts');
-          break;
-        case 'model':
-          await switchModel(args[0]);
-          break;
-        case 'quit':
-        case 'exit':
-          process.exit(0);
-          break;
-        default:
-          context.appendChat(
-            'system',
-            `Unknown command: /${cmd}. Type /help for available commands.`,
-          );
-      }
-    },
+import React, { useState } from 'react';
+import { Box, Text, Static, TextInput } from 'ink';
 
-    /** 일반 메시지 전송 */
-    async sendMessage(value: string): Promise<void> {
-      context.appendChat('user', value);
-      context.updateStatus('Thinking...');
+interface ChatViewProps {
+  messages: ChatMessage[];
+  streamText: string;
+  onSend: (text: string) => Promise<void>;
+}
 
-      try {
-        await context.client.request('chat.send', {
-          sessionKey: context.state.sessionKey,
-          message: value,
-          idempotencyKey: crypto.randomUUID(),
-        });
-      } catch (error) {
-        context.appendChat(
-          'system',
-          `Error: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        context.updateStatus('Ready');
-      }
-    },
+export function ChatView({ messages, streamText, onSend }: ChatViewProps) {
+  const [input, setInput] = useState('');
+
+  const handleSubmit = async (value: string) => {
+    if (!value.trim()) return;
+    if (value.startsWith('/')) {
+      // 슬래시 명령어 처리
+      handleCommand(value);
+    } else {
+      await onSend(value);
+    }
+    setInput('');
   };
 
-  const eventHandlers = {
-    /** 채팅 이벤트 처리 -- OpenClaw StreamAssembler 패턴 */
-    handleChatEvent(payload: ChatEventPayload): void {
-      switch (payload.state) {
-        case 'delta':
-          if (payload.runId !== currentRunId) {
-            currentRunId = payload.runId;
-            currentStreamText = '';
-          }
-          if (payload.message && payload.message !== currentStreamText) {
-            currentStreamText = payload.message;
-            context.updateAssistant(currentStreamText);
-          }
-          break;
+  return (
+    <Box flexDirection="column" flexGrow={1}>
+      {/* 확정된 메시지 (재렌더 없음) */}
+      <Static items={messages}>
+        {(msg, i) => (
+          <Box key={i}>
+            <Text color={msg.role === 'user' ? 'blue' : msg.role === 'assistant' ? 'green' : 'gray'}>
+              [{msg.role}] {msg.content}
+            </Text>
+          </Box>
+        )}
+      </Static>
 
-        case 'final':
-          context.finalizeAssistant(payload.message ?? currentStreamText);
-          currentStreamText = '';
-          currentRunId = '';
-          context.updateStatus('Ready');
-          break;
+      {/* 스트리밍 중인 응답 */}
+      {streamText && (
+        <Box>
+          <Text color="green" dimColor>[assistant] {streamText}▊</Text>
+        </Box>
+      )}
 
-        case 'tool_use':
-          context.appendChat(
-            'system',
-            `[Tool] ${payload.toolName}(${JSON.stringify(payload.toolInput)})`,
-          );
-          break;
-
-        case 'tool_result':
-          context.appendChat('tool', `[Result] ${JSON.stringify(payload.toolResult)}`);
-          break;
-
-        case 'error':
-          context.appendChat('system', `[Error] ${payload.message}`);
-          context.updateStatus('Ready');
-          break;
-      }
-    },
-
-    /** 알림 이벤트 처리 */
-    handleAlertEvent(payload: AlertEventPayload): void {
-      context.appendChat('system', `[Alert] ${payload.name}: ${payload.message}`);
-    },
-
-    /** 시장 데이터 이벤트 처리 */
-    handleMarketEvent(payload: MarketEventPayload): void {
-      // 대시보드 패널이 활성일 때만 업데이트
-      if (context.state.activePanel === 'market') {
-        // dashboard.updateTicker(payload) -- dashboard 모듈에서 처리
-      }
-    },
-  };
-
-  const sessionActions = {
-    async refreshSession(): Promise<void> {
-      const info = (await context.client.request('session.info', {
-        sessionKey: context.state.sessionKey,
-      })) as SessionInfo;
-      context.state.model = info.model;
-      context.state.tokenUsage = info.tokenUsage;
-    },
-
-    async loadHistory(): Promise<void> {
-      const history = (await context.client.request('chat.history', {
-        sessionKey: context.state.sessionKey,
-        limit: 50,
-      })) as ChatMessage[];
-      for (const msg of history) {
-        context.appendChat(msg.role, msg.content);
-      }
-    },
-
-    async switchAgent(agentId: string): Promise<void> {
-      context.state.agentId = agentId;
-      await context.client.request('session.switchAgent', { agentId });
-      await this.refreshSession();
-    },
-  };
-
-  return { commandHandlers, eventHandlers, sessionActions };
+      {/* 입력 */}
+      <Box>
+        <Text color="cyan">&gt; </Text>
+        <TextInput value={input} onChange={setInput} onSubmit={handleSubmit} />
+      </Box>
+    </Box>
+  );
 }
 ```
 
 ### 5.3 Gateway WebSocket 클라이언트 (TUI용)
 
 ```typescript
-// src/tui/gateway-client.ts
+// packages/tui/src/gateway-client.ts
 
-import WebSocket from 'ws'; // Node.js WebSocket
+import WebSocket from 'ws'; // Node.js WebSocket — 커스텀 헤더(Authorization) 필요
+import type { RpcRequest } from '@finclaw/types';
+import type { JsonRpcNotification } from '@finclaw/types/notification.js';
 
 interface ReconnectOptions {
   readonly initialDelayMs: number; // 800
@@ -583,7 +545,7 @@ export function createGatewayClient(options: {
       reject: (error: Error) => void;
     }
   >();
-  const eventHandlers: Array<(event: EventFrame) => void> = [];
+  const notificationHandlers: Array<(method: string, params: Record<string, unknown>) => void> = [];
   const connectedHandlers: Array<() => void> = [];
   const disconnectedHandlers: Array<(reason: string) => void> = [];
 
@@ -593,7 +555,7 @@ export function createGatewayClient(options: {
   function handleMessage(data: string): void {
     const frame = JSON.parse(data);
 
-    // 응답 프레임: pending request 해소
+    // 응답 프레임: id가 있고 pending request에 매칭
     if ('id' in frame && pendingRequests.has(frame.id)) {
       const pending = pendingRequests.get(frame.id)!;
       pendingRequests.delete(frame.id);
@@ -605,10 +567,10 @@ export function createGatewayClient(options: {
       return;
     }
 
-    // 이벤트 프레임: 등록된 핸들러 호출
-    if ('event' in frame) {
-      for (const handler of eventHandlers) {
-        handler(frame as EventFrame);
+    // JSON-RPC notification: method가 있고 id가 없음
+    if ('method' in frame && !('id' in frame)) {
+      for (const handler of notificationHandlers) {
+        handler(frame.method, frame.params ?? {});
       }
     }
   }
@@ -676,7 +638,7 @@ export function createGatewayClient(options: {
       }
 
       const id = ++sequenceId;
-      const frame: RequestFrame = { id, method, params };
+      const frame: RpcRequest = { jsonrpc: '2.0', id, method: method as any, params };
 
       return new Promise((resolve, reject) => {
         pendingRequests.set(id, { resolve, reject });
@@ -692,8 +654,8 @@ export function createGatewayClient(options: {
       });
     },
 
-    onEvent(handler) {
-      eventHandlers.push(handler);
+    onNotification(handler) {
+      notificationHandlers.push(handler);
     },
     onConnected(handler) {
       connectedHandlers.push(handler);
@@ -708,12 +670,13 @@ export function createGatewayClient(options: {
 ### 5.4 웹 UI Lit 3 애플리케이션
 
 ```typescript
-// src/web/app.ts
+// packages/web/src/app.ts
 
 import { LitElement, html } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
-import { initGatewayConnection, handleGatewayEvent } from './app-gateway.js';
-import { handleSendChat, handleChatEvent, flushChatQueue } from './app-chat.js';
+import { initGatewayConnection, handleGatewayNotification } from './app-gateway.js';
+import { handleSendChat, handleStreamNotification, flushChatQueue } from './app-chat.js';
+import { renderMarkdown } from './markdown.js';
 
 @customElement('finclaw-app')
 export class FinClawApp extends LitElement {
@@ -728,7 +691,7 @@ export class FinClawApp extends LitElement {
   @state() activeTab: WebTab = 'chat';
 
   @state() chatMessages: ChatMessage[] = [];
-  @state() chatStream: string | null = null;
+  @state() chatStream: string | null = null; // 증분 누적 텍스트
   @state() chatSending = false;
   @state() chatQueue: string[] = [];
 
@@ -737,11 +700,11 @@ export class FinClawApp extends LitElement {
   @state() alerts: AlertDefinition[] = [];
 
   @state() agentId = 'default';
-  @state() sessionKey = 'main';
+  @state() sessionId = ''; // chat.start 반환값, 초기 비어있음
   @state() model = '';
   @state() tokenUsage = 0;
 
-  private client: GatewayBrowserClient | null = null;
+  client: GatewayBrowserClient | null = null;
 
   // ─── 생명주기 ───
 
@@ -818,7 +781,11 @@ export class FinClawApp extends LitElement {
             (msg) => html`
               <div class="message ${msg.role}">
                 <span class="role">${msg.role}</span>
-                <span class="content">${msg.content}</span>
+                <span class="content"
+                  >${msg.role === 'assistant'
+                    ? renderMarkdown(msg.content) // finalized 메시지만 Markdown 렌더링
+                    : msg.content}</span
+                >
               </div>
             `,
           )}
@@ -851,12 +818,17 @@ export class FinClawApp extends LitElement {
 }
 ```
 
-### 5.5 웹 채팅 큐잉 (OpenClaw 패턴)
+### 5.5 웹 채팅 큐잉 (method 기반 notification 라우팅)
 
 ```typescript
-// src/web/app-chat.ts
+// packages/web/src/app-chat.ts
 
 import type { FinClawApp } from './app.js';
+import type {
+  ChatStreamDeltaParams,
+  ChatStreamEndParams,
+  ChatStreamErrorParams,
+} from '@finclaw/types/notification.js';
 
 /**
  * 채팅 메시지 전송 -- OpenClaw의 handleSendChat 큐잉 패턴
@@ -896,7 +868,7 @@ async function sendChat(app: FinClawApp, message: string): Promise<void> {
 
   try {
     await app.client?.request('chat.send', {
-      sessionKey: app.sessionKey,
+      sessionId: app.sessionId,
       message,
       idempotencyKey: crypto.randomUUID(),
     });
@@ -914,20 +886,27 @@ async function sendChat(app: FinClawApp, message: string): Promise<void> {
   }
 }
 
-/** 채팅 이벤트 핸들러 -- 스트리밍 응답 처리 */
-export function handleChatEvent(app: FinClawApp, payload: ChatEventPayload): void {
-  switch (payload.state) {
-    case 'delta':
-      app.chatStream = payload.message ?? app.chatStream;
+/** method 기반 스트리밍 notification 핸들러 */
+export function handleStreamNotification(
+  app: FinClawApp,
+  method: string,
+  params: Record<string, unknown>,
+): void {
+  switch (method) {
+    case 'chat.stream.delta': {
+      // 증분 누적 (전체 교체가 아님!)
+      const { delta } = params as unknown as ChatStreamDeltaParams;
+      app.chatStream = (app.chatStream ?? '') + delta;
       break;
+    }
 
-    case 'final':
+    case 'chat.stream.end': {
       app.chatMessages = [
         ...app.chatMessages,
         {
           id: crypto.randomUUID(),
           role: 'assistant',
-          content: payload.message ?? app.chatStream ?? '',
+          content: app.chatStream ?? '',
           timestamp: new Date(),
         },
       ];
@@ -937,14 +916,16 @@ export function handleChatEvent(app: FinClawApp, payload: ChatEventPayload): voi
       // 큐에 대기 중인 메시지 처리
       flushChatQueue(app);
       break;
+    }
 
-    case 'error':
+    case 'chat.stream.error': {
+      const { error } = params as unknown as ChatStreamErrorParams;
       app.chatMessages = [
         ...app.chatMessages,
         {
           id: crypto.randomUUID(),
           role: 'system',
-          content: `[Error] ${payload.message}`,
+          content: `[Error] ${error}`,
           timestamp: new Date(),
         },
       ];
@@ -952,6 +933,7 @@ export function handleChatEvent(app: FinClawApp, payload: ChatEventPayload): voi
       app.chatSending = false;
       flushChatQueue(app);
       break;
+    }
   }
 }
 
@@ -967,14 +949,15 @@ export function flushChatQueue(app: FinClawApp): void {
 ### 5.6 Vite 설정
 
 ```typescript
-// src/web/vite.config.ts
+// packages/web/vite.config.ts — Vite 8.0
 
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  root: 'src/web',
+  root: '.', // 패키지 루트 기준
   server: {
     port: 5173,
+    strictPort: true,
     proxy: {
       // Gateway WebSocket/HTTP API 프록시
       '/api': {
@@ -988,11 +971,182 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: '../../dist/web',
+    outDir: 'dist',
     emptyOutDir: true,
   },
 });
 ```
+
+### 5.7 Markdown 렌더링
+
+```typescript
+// packages/web/src/markdown.ts
+
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
+
+/**
+ * AI 응답 Markdown → 안전한 HTML 변환
+ *
+ * marked로 파싱 후 DOMPurify로 XSS 방어.
+ * 금융 AI 응답에 자주 등장하는 표, 목록, 코드 블록을 지원한다.
+ */
+
+const ALLOWED_TAGS = [
+  'p',
+  'br',
+  'strong',
+  'em',
+  'code',
+  'pre',
+  'ul',
+  'ol',
+  'li',
+  'table',
+  'thead',
+  'tbody',
+  'tr',
+  'th',
+  'td',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'blockquote',
+  'a',
+  'span',
+];
+
+const ALLOWED_ATTR = ['href', 'target', 'rel', 'class'];
+
+export function renderMarkdown(text: string): string {
+  const raw = marked.parse(text, { async: false }) as string;
+  return DOMPurify.sanitize(raw, {
+    ALLOWED_TAGS,
+    ALLOWED_ATTR,
+    ADD_ATTR: ['target'], // 외부 링크 새 탭
+  });
+}
+```
+
+### 5.8 CSS 테마 (금융 도메인 특화)
+
+```css
+/* packages/web/src/styles/theme.css */
+
+:root {
+  /* 기본 색상 */
+  --bg-primary: #0a0e17;
+  --bg-secondary: #111827;
+  --text-primary: #e5e7eb;
+  --text-secondary: #9ca3af;
+  --border-color: #1f2937;
+
+  /* 금융 도메인 색상 */
+  --color-gain: #10b981; /* 상승 — 녹색 */
+  --color-loss: #ef4444; /* 하락 — 적색 */
+  --color-neutral: #6b7280; /* 보합 — 회색 */
+  --color-gain-bg: rgba(16, 185, 129, 0.1);
+  --color-loss-bg: rgba(239, 68, 68, 0.1);
+
+  /* 상태 색상 */
+  --color-connected: #10b981;
+  --color-disconnected: #ef4444;
+  --color-reconnecting: #f59e0b;
+
+  /* 채팅 역할 색상 */
+  --color-user: #60a5fa;
+  --color-assistant: #34d399;
+  --color-system: #9ca3af;
+  --color-tool: #a78bfa;
+}
+```
+
+### 5.9 Gateway 타입 추출
+
+`packages/types/src/notification.ts`에 아래 타입을 정의한다 (§4.1 참조):
+
+- `JsonRpcNotification<T>` — 서버 `rpc/types.ts`에서 추출
+- `ChatStreamDeltaParams`, `ChatStreamEndParams`, `ChatStreamErrorParams`, `ChatStreamToolStartParams`, `ChatStreamToolEndParams`
+- `BroadcastChannel` — 서버 `rpc/types.ts`에서 추출
+
+`packages/types/src/index.ts`에 `export * from './notification.js'` 추가.
+
+서버의 `rpc/types.ts`는 `JsonRpcNotification`을 `@finclaw/types/notification.js`에서 import하도록 변경. (기존 서버 코드와의 호환성 유지)
+
+### 5.10 CLI 서브커맨드
+
+```typescript
+// packages/server/src/cli/commands/tui.ts
+
+import type { Command } from 'commander';
+import type { ServerDeps } from '../types.js';
+
+/**
+ * finclaw tui 서브커맨드 등록
+ * register(program, deps) 패턴 — 기존 CLI 구조와 일관
+ */
+export function register(program: Command, deps: ServerDeps): void {
+  program
+    .command('tui')
+    .description('터미널 UI 시작')
+    .option('--gateway <url>', 'Gateway WebSocket URL', 'ws://localhost:3000/ws')
+    .option('--agent <id>', '사용할 에이전트 ID', 'default')
+    .action(async (opts) => {
+      const { runTui } = await import('@finclaw/tui');
+      await runTui({
+        gatewayUrl: opts.gateway,
+        token: deps.config.auth.token,
+        agentId: opts.agent,
+      });
+    });
+}
+
+// packages/server/src/cli/program.ts 에 추가:
+// import { register as registerTui } from './commands/tui.js';
+// registerTui(program, deps);
+```
+
+### 5.11 브라우저 WS 인증
+
+브라우저 `WebSocket` API는 커스텀 헤더를 지원하지 않으므로, query parameter 폴백이 필요하다.
+
+```typescript
+// packages/web/src/app-gateway.ts 에서:
+const wsUrl = `${baseUrl}/ws?token=${encodeURIComponent(token)}`;
+const ws = new WebSocket(wsUrl);
+```
+
+서버 auth 함수 (`packages/server/src/gateway/ws/connection.ts`)에서 query param 토큰 추출 로직이 이미 구현되어 있는지 확인할 것. 미구현 시 다음 패턴으로 추가:
+
+```typescript
+// 서버 ws connection 핸들러에서:
+function extractToken(req: IncomingMessage): string | null {
+  // 1. Authorization 헤더 (TUI)
+  const authHeader = req.headers['authorization'];
+  if (authHeader?.startsWith('Bearer ')) return authHeader.slice(7);
+
+  // 2. Query param 폴백 (브라우저)
+  const url = new URL(req.url ?? '', `http://${req.headers.host}`);
+  return url.searchParams.get('token');
+}
+```
+
+### 5.12 구현 순서
+
+의존성 기반 5일 가이드:
+
+| Day   | 작업                                 | 산출물                                                                                | 의존  |
+| ----- | ------------------------------------ | ------------------------------------------------------------------------------------- | ----- |
+| **1** | 공유 타입 추출 + 패키지 scaffolding  | `notification.ts`, `packages/tui/package.json`, `packages/web/package.json`, tsconfig | 없음  |
+| **2** | TUI gateway-client + 테스트          | `gateway-client.ts`, `gateway-client.test.ts`                                         | Day 1 |
+| **3** | TUI Ink 컴포넌트 + 채팅 테스트       | `App.tsx`, `ChatView.tsx`, `DashboardView.tsx`, `StatusBar.tsx`, `chat.test.ts`       | Day 2 |
+| **4** | Web Lit 앱 + gateway + chat + 테스트 | `app.ts`, `app-gateway.ts`, `app-chat.ts`, `markdown.ts`, 테스트 2개                  | Day 1 |
+| **5** | Web views + CSS + Vite + CLI 커맨드  | views 4개, `theme.css`, `vite.config.ts`, `tui.ts` CLI                                | Day 4 |
+
+Day 2-3 (TUI)와 Day 4 (Web)는 독립적으로 병렬 진행 가능.
 
 ---
 
@@ -1024,67 +1178,93 @@ Phase 16-18 (금융 스킬)   ──┘
 
 ### 기능 검증 체크리스트
 
-| #   | 검증 항목                                                       | 테스트 방법               | 테스트 tier |
-| --- | --------------------------------------------------------------- | ------------------------- | ----------- |
-| 1   | TUI 채팅 핸들러: 메시지 -> sendMessage 라우팅                   | unit test: context 모킹   | unit        |
-| 2   | TUI 채팅 핸들러: `/help` 슬래시 명령어 처리                     | unit test: context 모킹   | unit        |
-| 3   | TUI 스트림 어셈블러: delta -> updateAssistant, 변경 없으면 스킵 | unit test                 | unit        |
-| 4   | TUI 스트림 어셈블러: final -> finalizeAssistant                 | unit test                 | unit        |
-| 5   | Gateway 클라이언트: 요청-응답 시퀀스 ID 매칭                    | unit test: mock WebSocket | unit        |
-| 6   | Gateway 클라이언트: 연결 끊김 시 자동 재연결 (지수 백오프)      | unit test: 타이머 mock    | unit        |
-| 7   | Gateway 클라이언트: 요청 30초 타임아웃                          | unit test: fake timers    | unit        |
-| 8   | 웹 채팅 큐잉: 첫 메시지 응답 전 두 번째 메시지 큐에 추가        | unit test: app state      | unit        |
-| 9   | 웹 채팅 큐잉: final 수신 후 큐에서 다음 메시지 자동 전송        | unit test                 | unit        |
-| 10  | 웹 Gateway 모듈: 이벤트 라우팅 (chat/alert/market)              | unit test: mock client    | unit        |
-| 11  | Vite 개발 서버: HMR + API 프록시 동작                           | 수동 검증                 | manual      |
-| 12  | TUI 탭 네비게이션: tab 키로 패널 전환                           | 수동 검증                 | manual      |
+| #   | 검증 항목                                                                  | 테스트 방법               | 테스트 tier |
+| --- | -------------------------------------------------------------------------- | ------------------------- | ----------- |
+| 1   | TUI 채팅 핸들러: 메시지 -> sendMessage 라우팅                              | unit test: context 모킹   | unit        |
+| 2   | TUI 채팅 핸들러: `/help` 슬래시 명령어 처리                                | unit test: context 모킹   | unit        |
+| 3   | TUI 스트림: `chat.stream.delta` → `currentStreamText += delta` (증분 누적) | unit test                 | unit        |
+| 4   | TUI 스트림: `chat.stream.end` → finalizeAssistant                          | unit test                 | unit        |
+| 5   | Gateway 클라이언트: 요청-응답 시퀀스 ID 매칭                               | unit test: mock WebSocket | unit        |
+| 6   | Gateway 클라이언트: 연결 끊김 시 자동 재연결 (지수 백오프)                 | unit test: 타이머 mock    | unit        |
+| 7   | Gateway 클라이언트: 요청 30초 타임아웃                                     | unit test: fake timers    | unit        |
+| 8   | 웹 채팅 큐잉: 첫 메시지 응답 전 두 번째 메시지 큐에 추가                   | unit test: app state      | unit        |
+| 9   | 웹 채팅 큐잉: `chat.stream.end` 수신 후 큐에서 다음 메시지 자동 전송       | unit test                 | unit        |
+| 10  | 웹 Gateway 모듈: method 기반 notification 라우팅                           | unit test: mock client    | unit        |
+| 11  | Vite 개발 서버: HMR + API 프록시 동작                                      | 수동 검증                 | manual      |
+| 12  | TUI 탭 네비게이션: tab 키로 패널 전환                                      | 수동 검증                 | manual      |
+| 13  | JSON-RPC 2.0 규격 준수: 모든 요청에 `jsonrpc:'2.0'` 포함                   | unit test: 프레임 검증    | unit        |
+| 14  | sessionId 획득 흐름: `chat.start` → sessionId 저장 → 후속 요청에 사용      | unit test                 | unit        |
+| 15  | `finance.quote` 파라미터: `{ symbol }` (not `{ ticker }`)                  | unit test                 | unit        |
+| 16  | Markdown XSS 방어: `<script>` 태그 제거 확인                               | unit test: DOMPurify      | unit        |
+| 17  | 브라우저 WS query param 인증: `?token=` 폴백                               | unit test                 | unit        |
+| 18  | `session.get` 호출 (not `session.info`)                                    | unit test: 메서드명 검증  | unit        |
 
 ### vitest 실행 기대 결과
 
 ```bash
-# TUI 테스트 (Pi-TUI 의존 없이 context 모킹)
-pnpm vitest run src/tui/__tests__/
-# 예상: 2 파일, ~18 tests passed
+# TUI 테스트
+pnpm --filter @finclaw/tui vitest run
+# 예상: 2 파일, ~20 tests passed
 
 # 웹 UI 테스트
-pnpm vitest run src/web/__tests__/
-# 예상: 2 파일, ~14 tests passed
+pnpm --filter @finclaw/web vitest run
+# 예상: 2 파일, ~16 tests passed
 
-# 총 32 tests
+# 총 ~36 tests
 ```
 
 ---
 
 ## 8. 복잡도 및 예상 파일 수
 
-| 항목                     | 값                                                      |
-| ------------------------ | ------------------------------------------------------- |
-| **복잡도**               | **L** (Large)                                           |
-| **소스 파일**            | 17개 (TUI 6 + Web 10 + config 1)                        |
-| **테스트 파일**          | 4개                                                     |
-| **총 파일 수**           | **21개**                                                |
-| **예상 LOC**             | ~2,500                                                  |
-| **예상 소요 기간**       | 4-5일                                                   |
-| **새 외부 의존성**       | `lit` (웹 UI), `vite` (개발 서버), `ws` (TUI WebSocket) |
-| **OpenClaw 대비 축소율** | ~12% (21K LOC -> 2.5K LOC)                              |
+| 항목                     | 값                                                                           |
+| ------------------------ | ---------------------------------------------------------------------------- |
+| **복잡도**               | **L** (Large)                                                                |
+| **소스 파일**            | 20개 (TUI 6 + Web 11 + 공유타입 1 + CLI 1 + Vite 1)                          |
+| **패키지 설정**          | 4개 (packages/tui, packages/web의 package.json + tsconfig.json)              |
+| **테스트 파일**          | 4개                                                                          |
+| **총 파일 수**           | **28개**                                                                     |
+| **예상 LOC**             | ~3,200                                                                       |
+| **예상 소요 기간**       | 5일                                                                          |
+| **새 외부 의존성**       | TUI: `ink`, `react`, `ws` / Web: `lit`, `vite@^8.0.0`, `marked`, `dompurify` |
+| **OpenClaw 대비 축소율** | ~15% (21K LOC → 3.2K LOC)                                                    |
+
+### 루트 프로젝트 설정 변경
+
+- `tsconfig.json`: `references`에 `packages/tui`, `packages/web` 추가
+- `packages/server/tsconfig.json`: `references`에 `../tui`, `../web` 추가 (TUI CLI 커맨드)
+- `pnpm-workspace.yaml`: 이미 `packages/*` glob이므로 변경 불필요
 
 ### 복잡도 근거 (L 판정)
 
-- **이중 프론트엔드**: TUI(Node.js 터미널)와 Web(브라우저) 두 가지 전혀 다른 런타임 환경
-- **WebSocket 프로토콜 구현**: 요청-응답 매칭, 이벤트 라우팅, 재연결 로직
-- **스트리밍 처리**: LLM 응답의 delta/final 이벤트 조립, 변경 감지 최적화
+- **이중 프론트엔드**: TUI(Node.js 터미널, Ink/React)와 Web(브라우저, Lit) 두 가지 전혀 다른 런타임 환경
+- **WebSocket 프로토콜 구현**: JSON-RPC 2.0 요청-응답 매칭, notification 라우팅, 재연결 로직
+- **스트리밍 처리**: 서버의 150ms 배치 delta를 증분 누적(`+=`)으로 조립
 - **큐잉 메커니즘**: 동시 메시지 전송 시 순서 보장
 - **다중 뷰**: 5개 탭(chat, market, portfolio, alerts, settings) 각각의 렌더링 로직
-- **외부 의존성 3개**: lit, vite, ws를 프로젝트에 처음 도입
+- **외부 의존성 7개**: ink, react, ws, lit, vite, marked, dompurify를 프로젝트에 처음 도입
 
 ### OpenClaw 대비 축소 범위
 
 | OpenClaw 기능              | FinClaw 포함 여부 | 비고                                |
 | -------------------------- | ----------------- | ----------------------------------- |
-| Pi-TUI 위젯 트리           | 단순화            | 커스텀 위젯 대신 기본 터미널 출력   |
+| Pi-TUI 위젯 트리           | Ink v6 대체       | React for CLI, 더 간결한 API        |
 | Lit 3 웹 컴포넌트          | 포함              | 5개 탭으로 축소 (OpenClaw: 10개 탭) |
 | Ed25519 디바이스 인증      | 제외              | 토큰 기반 인증만                    |
 | 130개 @state               | ~15개             | 핵심 상태만                         |
 | Canvas Host                | 제외              | 내장 웹 콘텐츠 불필요               |
 | 다국어 지원                | 제외              | 한국어/영어만                       |
 | Playwright 브라우저 테스트 | 제외              | Vitest Node.js 테스트만             |
+
+### 명시적 제외 사항 (과잉 엔지니어링 방지)
+
+다음 항목은 Phase 19 범위에서 **의도적으로 제외**한다. 필요 시 후속 Phase에서 추가.
+
+- **Ed25519 디바이스 인증** — 토큰 인증으로 충분
+- **Canvas Host** (내장 웹 콘텐츠 렌더링) — 불필요
+- **Playwright E2E 테스트** — Vitest 단위 테스트로 커버
+- **PWA (Service Worker, 오프라인)** — 서버 항시 연결 전제
+- **CSS-in-JS** — 글로벌 CSS + Shadow DOM 비사용으로 충분
+- **i18n 프레임워크** — 하드코딩 한국어/영어
+- **WebSocket 메시지 압축 (permessage-deflate)** — 메시지 크기가 작아 불필요
+- **커스텀 TUI 위젯 라이브러리** — Ink 내장 컴포넌트로 충분

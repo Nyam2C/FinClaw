@@ -22,8 +22,8 @@ describe('buildProgram', () => {
     expect(program.version()).toBeTruthy();
   });
 
-  it('registers 10 commands', () => {
-    // start, stop, config, agent, channel, market, news, alert, health, status
+  it('registers 11 commands', () => {
+    // start, stop, config, agent, channel, market, news, alert, tui, health, status
     const names = program.commands.map((c) => c.name());
     expect(names).toContain('start');
     expect(names).toContain('stop');
@@ -35,7 +35,8 @@ describe('buildProgram', () => {
     expect(names).toContain('market');
     expect(names).toContain('news');
     expect(names).toContain('alert');
-    expect(names).toHaveLength(10);
+    expect(names).toContain('tui');
+    expect(names).toHaveLength(11);
   });
 
   it('has global --verbose option', () => {

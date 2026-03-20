@@ -10,6 +10,7 @@ import * as marketCmd from './commands/market.js';
 import * as newsCmd from './commands/news.js';
 import * as startCmd from './commands/start.js';
 import * as stopCmd from './commands/stop.js';
+import * as tuiCmd from './commands/tui.js';
 import { EXIT } from './exit-codes.js';
 import { registerPreActionHooks } from './preaction.js';
 import { theme } from './terminal/theme.js';
@@ -45,6 +46,7 @@ export function buildProgram(deps: CliDeps): Command {
   marketCmd.register(program, deps);
   newsCmd.register(program, deps);
   alertCmd.register(program, deps);
+  tuiCmd.register(program, deps);
 
   // TODO: health/status를 commands/로 추출하면 일관성 향상
   program
