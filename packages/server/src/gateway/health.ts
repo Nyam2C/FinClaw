@@ -1,5 +1,6 @@
 // packages/server/src/gateway/health.ts
 import type { ComponentHealth, SystemHealth, LivenessResponse } from './rpc/types.js';
+import { loadVersion } from './version.js';
 
 type HealthChecker = () => Promise<ComponentHealth>;
 
@@ -48,7 +49,7 @@ export async function checkReadiness(
   return {
     status,
     uptime: process.uptime(),
-    version: '0.1.0',
+    version: loadVersion(),
     components,
     memory: {
       heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),

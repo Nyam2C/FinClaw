@@ -1,0 +1,9 @@
+{
+  "name": "my-plugin",
+  "version": "0.1.0",
+  "description": "A template for creating FinClaw plugins",
+  "main": "src/index.ts",
+  "type": "skill",
+  "config": {},
+  "configSchema": {}
+}

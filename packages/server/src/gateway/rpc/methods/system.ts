@@ -1,6 +1,7 @@
 // packages/server/src/gateway/rpc/methods/system.ts
 import { z } from 'zod/v4';
 import type { RpcMethodHandler } from '../types.js';
+import { loadVersion } from '../../version.js';
 import { registerMethod, getRegisteredMethods } from '../index.js';
 
 // -- system.health --
@@ -44,7 +45,7 @@ const infoHandler: RpcMethodHandler<
   async execute() {
     return {
       name: 'finclaw-gateway',
-      version: '0.1.0',
+      version: loadVersion(),
       methods: getRegisteredMethods(),
       capabilities: ['streaming', 'batch', 'subscriptions'],
     };

@@ -6,6 +6,7 @@ import { checkLiveness, checkReadiness } from './health.js';
 import { handleChatCompletions } from './openai-compat/router.js';
 import { createError, RpcErrors } from './rpc/errors.js';
 import { dispatchRpc } from './rpc/index.js';
+import { loadVersion } from './version.js';
 
 interface Route {
   readonly method: string;
@@ -136,7 +137,7 @@ async function handleInfoRequest(
   res.end(
     JSON.stringify({
       name: 'finclaw-gateway',
-      version: '0.1.0',
+      version: loadVersion(),
       capabilities: ['streaming', 'batch', 'subscriptions'],
     }),
   );

@@ -30,7 +30,7 @@ describe('Health Check', () => {
       expect(result.connections).toBe(5);
       expect(result.activeSessions).toBe(0);
       expect(result.memory).toBeDefined();
-      expect(result.version).toBe('0.1.0');
+      expect(result.version).toBe('0.0.0-dev');
     });
 
     it('모든 컴포넌트 healthy → ok', async () => {
