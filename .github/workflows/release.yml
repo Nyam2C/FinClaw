@@ -31,6 +31,7 @@ jobs:
 
       - name: Build
         run: pnpm build
+        # TODO: 스킬 번들 배포 시 `tsx scripts/build-skills.ts` 단계 추가
 
       - name: Test
         run: pnpm test:ci

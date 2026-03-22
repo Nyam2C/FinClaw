@@ -7,6 +7,7 @@
  * @see packages/server/src/plugins/loader.ts — PluginBuildApi 인터페이스 정의
  */
 
+// TODO: @finclaw/server가 exports 필드로 PluginBuildApi를 노출하면 직접 import로 전환
 /** PluginBuildApi 축약 타입 (원본: packages/server/src/plugins/loader.ts) */
 interface PluginApi {
   readonly pluginName: string;

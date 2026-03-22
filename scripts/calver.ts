@@ -9,7 +9,7 @@
  *   tsx scripts/calver.ts          # 버전 태그명 출력만
  *   tsx scripts/calver.ts --tag    # git tag -a 생성
  */
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 
 function exec(cmd: string): string {
   try {
@@ -51,6 +51,6 @@ const tagName = `v${version}`;
 console.log(tagName);
 
 if (process.argv.includes('--tag')) {
-  execSync(`git tag -a ${tagName} -m "Release ${version}"`, { stdio: 'inherit' });
+  execFileSync('git', ['tag', '-a', tagName, '-m', `Release ${version}`], { stdio: 'inherit' });
   console.log(`Tag ${tagName} created.`);
 }

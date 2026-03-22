@@ -12,6 +12,7 @@ import { execSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+// TODO: calver.ts와 동일한 exec() 헬퍼 — 스크립트 증가 시 공유 유틸 추출 고려
 function exec(cmd: string): string {
   try {
     return execSync(cmd, { encoding: 'utf-8' }).trim();

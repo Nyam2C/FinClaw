@@ -18,6 +18,7 @@ import { join, resolve } from 'node:path';
 const SKILLS_DIST_DIR = resolve('packages/skills-finance/dist');
 const DEFAULT_OUT_DIR = resolve('dist/skills');
 
+// TODO: 스킬 수가 늘어나면 readdirSync로 자동 탐색 전환 고려
 const SKILL_DIRS = ['market', 'news', 'alerts'] as const;
 
 interface SkillBuildResult {
