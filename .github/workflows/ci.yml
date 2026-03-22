@@ -22,7 +22,7 @@ jobs:
       - uses: pnpm/action-setup@v4
         # packageManager 필드에서 pnpm 버전 자동 감지
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version-file: '.node-version'
           cache: 'pnpm'

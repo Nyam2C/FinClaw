@@ -19,7 +19,7 @@ jobs:
       # ── 빌드 검증 (ci.yml과 동일 파이프라인) ──
       - uses: pnpm/action-setup@v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version-file: '.node-version'
           cache: 'pnpm'
