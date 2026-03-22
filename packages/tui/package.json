@@ -17,7 +17,7 @@
     "ink": "^6.0.0",
     "ink-text-input": "^6.0.0",
     "react": "^19.0.0",
-    "ws": "^8.19.0"
+    "ws": "^8.20.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

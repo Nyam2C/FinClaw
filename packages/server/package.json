@@ -20,7 +20,7 @@
     "croner": "^9",
     "jiti": "^2.6.0",
     "picocolors": "^1.1.1",
-    "ws": "^8.19.0",
+    "ws": "^8.20.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
