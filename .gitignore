@@ -1,6 +1,7 @@
 node_modules/
 dist/
 *.tsbuildinfo
+build-info.json
 
 .env
 .env.local

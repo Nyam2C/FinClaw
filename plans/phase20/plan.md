@@ -4,10 +4,17 @@
 
 FinClaw 플랫폼의 확장성과 프로덕션 강화를 구축한다. 구체적으로:
 
-1. **플러그인 확장 시스템**: 서드파티 개발자가 새로운 채널 어댑터나 금융 스킬을 독립적으로 개발하고 FinClaw에 연결할 수 있는 플러그인 SDK와 템플릿을 제공한다.
-2. **릴리즈 CI/CD**: GitHub Actions 기반 릴리즈 워크플로우(release.yml)로 시맨틱 버전 태그, 체인지로그, GitHub Release를 자동화한다.
-3. **프로덕션 강화**: 헬스 모니터링, 구조화 로깅, Graceful Shutdown, 리소스 제한 및 정리를 통해 프로덕션 환경에서 안정적으로 운영 가능하게 한다.
+1. **플러그인 템플릿**: 서드파티 개발자가 실제 `register(api: PluginBuildApi)` 패턴으로 플러그인을 개발할 수 있는 예제 템플릿을 제공한다.
+2. **릴리즈 CI/CD**: GitHub Actions 기반 릴리즈 워크플로우(release.yml)로 CalVer 태그, 체인지로그, GitHub Release를 자동화한다.
+3. **빌드 메타데이터 & 자동화 스크립트**: CalVer 버전 생성, 빌드 정보 생성, 의존성 버전 검증 스크립트를 구현한다.
 4. **스킬 빌드 시스템**: 금융 스킬을 독립적으로 번들링하여 배포할 수 있는 빌드 스크립트를 구현한다.
+5. **기존 코드 보강**: health.ts 버전 하드코딩 해소, Dockerfile HEALTHCHECK 활성화, dependabot 설정.
+
+> **이미 구현된 영역 (본 Phase에서 신규 구현하지 않음):**
+>
+> - **플러그인 SDK**: `packages/server/src/plugins/` 9개 파일 (discovery, loader, manifest, registry, hooks, hook-types, event-bridge, errors, index)
+> - **헬스 모니터링**: `packages/server/src/gateway/health.ts` (liveness/readiness, 체커 팩토리, TTL 캐시)
+> - **Graceful Shutdown**: `packages/server/src/process/lifecycle.ts` + `signal-handler.ts` (LIFO cleanup, 30초 타임아웃, SIGINT/SIGTERM)
 
 이 Phase는 Phase 1-19의 모든 기능이 완성된 후 실행되며, FinClaw를 개발 프로젝트에서 프로덕션 시스템으로 전환하는 마지막 단계이다.
 
@@ -28,7 +35,7 @@ FinClaw 플랫폼의 확장성과 프로덕션 강화를 구축한다. 구체적
 
 **핵심 적용 패턴:**
 
-1. **플러그인 매니페스트**: OpenClaw의 `openclaw.plugin.json` 패턴을 `finclaw.plugin.json`으로 적용. 플러그인의 채널/스킬 등록 정보, 설정 스키마를 선언적으로 정의.
+1. **플러그인 매니페스트**: OpenClaw의 `openclaw.plugin.json` 패턴을 `finclaw-plugin.json`으로 적용. 플러그인의 타입/슬롯 정보를 선언적으로 정의. (실제 구현: `packages/server/src/plugins/discovery.ts`의 `MANIFEST_FILENAME`)
 2. **Docker 레이어 캐싱**: package.json + lockfile 먼저 COPY -> `pnpm install` -> 소스 COPY -> `pnpm build` 순서로 의존성 캐시를 극대화.
 3. **멀티 플랫폼 빌드**: OpenClaw의 `docker-release.yml` 패턴 -- amd64/arm64 병렬 빌드 후 `docker buildx imagetools create`로 멀티 플랫폼 매니페스트 생성.
 4. **Graceful Shutdown**: `SIGTERM`/`SIGINT` 시그널 수신 시 진행 중인 요청 완료 대기, WebSocket 연결 정리, 크론 작업 정지, DB 연결 종료의 순서화된 셧다운.
@@ -36,342 +43,135 @@ FinClaw 플랫폼의 확장성과 프로덕션 강화를 구축한다. 구체적
 
 ---
 
-## 3. 생성할 파일
+## 3. 생성/수정할 파일
 
-### 플러그인 시스템 (3개)
+### 신규 파일 (7개)
 
-| #   | 파일 경로                                        | 설명                                                      | 예상 LOC |
-| --- | ------------------------------------------------ | --------------------------------------------------------- | -------- |
-| 1   | `src/plugins/sdk.ts`                             | 플러그인 SDK: 타입 export, 플러그인 등록 API, 생명주기 훅 | ~120     |
-| 2   | `extensions/plugin-template/package.json`        | 예제 플러그인 패키지 정의                                 | ~15      |
-| 3   | `extensions/plugin-template/src/index.ts`        | 예제 플러그인 진입점 (스켈레톤)                           | ~50      |
-| 4   | `extensions/plugin-template/finclaw.plugin.json` | 플러그인 매니페스트 (채널/스킬 등록 정보)                 | ~15      |
+#### 플러그인 템플릿 (3개)
 
-### CI/CD 워크플로우 (1개)
+| #   | 파일 경로                                        | 설명                                        | 예상 LOC |
+| --- | ------------------------------------------------ | ------------------------------------------- | -------- |
+| 1   | `extensions/plugin-template/package.json`        | 예제 플러그인 패키지 정의                   | ~15      |
+| 2   | `extensions/plugin-template/src/index.ts`        | 예제 플러그인 진입점 (`register(api)` 패턴) | ~40      |
+| 3   | `extensions/plugin-template/finclaw-plugin.json` | 플러그인 매니페스트 (실제 스키마 준수)      | ~12      |
 
-| #   | 파일 경로                       | 설명                                         | 예상 LOC |
-| --- | ------------------------------- | -------------------------------------------- | -------- |
-| 5   | `.github/workflows/release.yml` | 시맨틱 버전 태그, 체인지로그, GitHub Release | ~60      |
+#### 빌드/릴리즈 스크립트 (3개)
 
-### 빌드 스크립트 (1개)
+| #   | 파일 경로                       | 설명                                | 예상 LOC |
+| --- | ------------------------------- | ----------------------------------- | -------- |
+| 4   | `scripts/write-build-info.ts`   | 빌드 메타데이터(버전, git SHA) 생성 | ~35      |
+| 5   | `scripts/calver.ts`             | CalVer(`YYYY.M.D`) 자동 생성        | ~50      |
+| 6   | `scripts/check-dep-versions.ts` | 워크스페이스 의존성 버전 일치 검증  | ~30      |
+
+#### 인프라 설정 (1개)
+
+| #   | 파일 경로                | 설명                              | 예상 LOC |
+| --- | ------------------------ | --------------------------------- | -------- |
+| 7   | `.github/dependabot.yml` | GitHub Actions 자동 업데이트 설정 | ~10      |
+
+#### CI/CD 워크플로우 (1개)
+
+| #   | 파일 경로                       | 설명                                           | 예상 LOC |
+| --- | ------------------------------- | ---------------------------------------------- | -------- |
+| 8   | `.github/workflows/release.yml` | CalVer 태그, 체인지로그, GitHub Release 자동화 | ~70      |
+
+#### 빌드 스크립트 (1개)
 
 | #   | 파일 경로                 | 설명                      | 예상 LOC |
 | --- | ------------------------- | ------------------------- | -------- |
-| 6   | `scripts/build-skills.ts` | 금융 스킬 번들링 스크립트 | ~80      |
+| 9   | `scripts/build-skills.ts` | 금융 스킬 번들링 스크립트 | ~80      |
 
-### 프로덕션 강화 (2개)
+### 기존 파일 수정 (3개)
 
-| #   | 파일 경로               | 설명                                     | 예상 LOC |
-| --- | ----------------------- | ---------------------------------------- | -------- |
-| 7   | `src/infra/health.ts`   | 헬스 체크 엔드포인트 + 프로세스 모니터링 | ~100     |
-| 8   | `src/infra/shutdown.ts` | Graceful Shutdown 오케스트레이터         | ~90      |
+| #   | 파일 경로                               | 수정 내용                                          |
+| --- | --------------------------------------- | -------------------------------------------------- |
+| M1  | `packages/server/src/gateway/health.ts` | `'0.1.0'` 하드코딩 → `build-info.json` 로드        |
+| M2  | `Dockerfile`                            | HEALTHCHECK 주석 해제 + `/healthz` 엔드포인트 사용 |
+| M3  | `packages/channel-discord/package.json` | zod `^3.25.0` → `^4.0.0` 업그레이드                |
 
-### 테스트 파일 (3개)
-
-| #   | 파일 경로                              | 테스트 대상                   | 예상 LOC |
-| --- | -------------------------------------- | ----------------------------- | -------- |
-| 9   | `src/plugins/__tests__/sdk.test.ts`    | 플러그인 SDK (등록, 생명주기) | ~100     |
-| 10  | `src/infra/__tests__/health.test.ts`   | 헬스 체크 응답 형식           | ~80      |
-| 11  | `src/infra/__tests__/shutdown.test.ts` | Graceful Shutdown 순서        | ~90      |
-
-**합계: 소스 8개 + 테스트 3개 = 11개 파일, 예상 ~860 LOC**
+**합계: 신규 9개 + 수정 3개 = 12개 파일, 예상 ~410 LOC (신규)**
 
 ---
 
 ## 4. 핵심 인터페이스/타입
 
-### 4.1 플러그인 SDK 타입
+> 플러그인 SDK, 헬스, 셧다운은 이미 구현 완료. 아래는 실제 코드의 핵심 시그니처 참조이다.
+
+### 4.1 플러그인 시스템 (구현 완료 — 참조용)
+
+**매니페스트 스키마** — `packages/server/src/plugins/manifest.ts`:
 
 ```typescript
-// src/plugins/sdk.ts
+// Zod v4 strictObject — finclaw-plugin.json의 유효성 검증
+PluginManifestSchema = z.strictObject({
+  name, version, description?, author?, main, type,
+  dependencies?, slots?, config?, configSchema?
+})
+```
 
-/** 플러그인 매니페스트 (finclaw.plugin.json) */
-export interface PluginManifest {
-  readonly id: string; // 플러그인 고유 식별자
-  readonly name: string; // 표시 이름
-  readonly version: string; // 플러그인 버전
-  readonly description?: string;
-  readonly author?: string;
-  readonly homepage?: string;
+**플러그인 등록 API** — `packages/server/src/plugins/loader.ts`:
 
-  // 제공하는 기능
-  readonly channels?: readonly string[]; // 제공하는 채널 ID 목록
-  readonly skills?: readonly PluginSkillRef[]; // 제공하는 스킬 참조
-  readonly tools?: readonly PluginToolRef[]; // 제공하는 에이전트 도구 참조
-
-  // 설정 스키마
-  readonly configSchema?: JsonSchema; // JSON Schema (설정 UI 자동 생성용)
-
-  // 요구 사항
-  readonly requires?: {
-    readonly finclawVersion?: string; // 최소 FinClaw 버전
-    readonly env?: readonly string[]; // 필수 환경변수
-  };
+```typescript
+// 플러그인 모듈이 export하는 함수
+interface PluginExports {
+  readonly register?: (api: PluginBuildApi) => void;
+  readonly activate?: (api: PluginBuildApi) => void;
+  readonly deactivate?: () => Promise<void>;
 }
 
-/** 플러그인 스킬 참조 */
-export interface PluginSkillRef {
-  readonly name: string;
-  readonly description: string;
-  readonly entryPoint: string; // 상대 경로 (예: "./skills/my-skill.js")
-}
-
-/** 플러그인 도구 참조 */
-export interface PluginToolRef {
-  readonly name: string;
-  readonly description: string;
-  readonly entryPoint: string;
-}
-
-/** 플러그인 생명주기 인터페이스 */
-export interface PluginLifecycle {
-  /** 플러그인 초기화 (서버 시작 시 호출) */
-  onInit?(context: PluginContext): Promise<void>;
-
-  /** 플러그인 정리 (서버 종료 시 호출) */
-  onShutdown?(): Promise<void>;
-
-  /** 설정 변경 시 호출 */
-  onConfigChange?(config: Record<string, unknown>): Promise<void>;
-}
-
-/** 플러그인에 주입되는 컨텍스트 */
-export interface PluginContext {
-  readonly config: Record<string, unknown>; // 플러그인별 설정값
-  readonly logger: Logger; // 스코프된 로거
-  readonly registerTool: (tool: ToolDefinition) => void;
-  readonly registerChannel: (channel: ChannelAdapter) => void;
-  readonly getService: <T>(name: string) => T; // 서비스 로케이터
-}
-
-/** 플러그인 진입점 함수 시그니처 */
-export type PluginEntryPoint = (context: PluginContext) => PluginLifecycle;
-
-// ─── 플러그인 레지스트리 ───
-
-/** 로드된 플러그인 인스턴스 */
-export interface LoadedPlugin {
-  readonly manifest: PluginManifest;
-  readonly lifecycle: PluginLifecycle;
-  readonly path: string; // 플러그인 디렉토리 경로
-}
-
-/** 플러그인 레지스트리 인터페이스 */
-export interface PluginRegistry {
-  /** 디렉토리에서 플러그인 발견 및 로드 */
-  discoverPlugins(dirs: readonly string[]): Promise<void>;
-
-  /** 특정 플러그인 로드 */
-  loadPlugin(pluginPath: string): Promise<LoadedPlugin>;
-
-  /** 로드된 플러그인 목록 */
-  listPlugins(): readonly LoadedPlugin[];
-
-  /** 특정 플러그인 조회 */
-  getPlugin(id: string): LoadedPlugin | undefined;
-
-  /** 모든 플러그인 초기화 */
-  initAll(context: PluginContext): Promise<void>;
-
-  /** 모든 플러그인 정리 (역순) */
-  shutdownAll(): Promise<void>;
+// register() 콜백에 주입되는 API
+interface PluginBuildApi {
+  readonly pluginName: string;
+  registerChannel(channel: ChannelPlugin): void;
+  registerHook(hookName, handler, opts?: { priority?: number }): void;
+  registerService(service: PluginService): void;
+  registerCommand(command: Omit<PluginCommand, 'pluginName'>): void;
+  registerRoute(route: Omit<RouteRegistration, 'pluginName'>): void;
+  addDiagnostic(diagnostic: Omit<PluginDiagnostic, 'pluginName'>): void;
 }
 ```
 
-### 4.2 헬스 체크 타입
+**5단계 로딩 파이프라인**: Discovery → Manifest(Zod v4) → Security(경로 검증) → Load(ESM/TS strip/jiti) → Register(콜백 실행)
 
-```typescript
-// src/infra/health.ts
+### 4.2 헬스 체크 (구현 완료 — 참조용)
 
-/** 헬스 체크 응답 */
-export interface HealthCheckResponse {
-  readonly status: 'healthy' | 'degraded' | 'unhealthy';
-  readonly version: string;
-  readonly uptime: number; // 초
-  readonly timestamp: string; // ISO 8601
-  readonly checks: Record<string, ComponentHealth>;
-}
+**파일**: `packages/server/src/gateway/health.ts`
 
-/** 개별 컴포넌트 헬스 */
-export interface ComponentHealth {
-  readonly status: 'up' | 'down' | 'degraded';
-  readonly latencyMs?: number;
-  readonly message?: string;
-  readonly lastChecked: string;
-}
+- `checkLiveness()` → `{ status: 'ok', uptime }` (항상 200)
+- `checkReadiness(activeSessions, connections)` → `SystemHealth` (ok/degraded/error + components + memory)
+- `createProviderHealthChecker(name, checkFn)` — 60초 TTL 캐시
+- `createDbHealthChecker(checkFn)` — 즉시 체크
 
-/** 헬스 체크 가능한 컴포넌트 인터페이스 */
-export interface HealthCheckable {
-  readonly name: string;
-  checkHealth(): Promise<ComponentHealth>;
-}
-```
+### 4.3 Graceful Shutdown (구현 완료 — 참조용)
 
-### 4.3 Graceful Shutdown 타입
+**파일**: `packages/server/src/process/lifecycle.ts` + `signal-handler.ts`
 
-```typescript
-// src/infra/shutdown.ts
-
-/** 셧다운 단계 */
-export type ShutdownPhase =
-  | 'stop-accepting' // 새 요청 수신 중단
-  | 'drain-requests' // 진행 중 요청 완료 대기
-  | 'stop-cron' // 크론 작업 정지
-  | 'close-websockets' // WebSocket 연결 정리
-  | 'stop-plugins' // 플러그인 셧다운
-  | 'close-database' // DB 연결 종료
-  | 'cleanup'; // 임시 파일 정리
-
-/** 셧다운 훅 */
-export interface ShutdownHook {
-  readonly phase: ShutdownPhase;
-  readonly name: string;
-  readonly timeoutMs: number; // 개별 훅 타임아웃
-  execute(): Promise<void>;
-}
-
-/** Graceful Shutdown 오케스트레이터 인터페이스 */
-export interface ShutdownOrchestrator {
-  register(hook: ShutdownHook): void;
-  shutdown(reason: string): Promise<void>;
-  readonly isShuttingDown: boolean;
-}
-```
+- `ProcessLifecycle` 클래스: `register(fn)` → LIFO 순서 실행
+- `setupGracefulShutdown(logger, getCleanupFns)`: SIGINT/SIGTERM → 30초 타임아웃 → cleanup 순차 실행
+- 두 번째 시그널 시 강제 종료
 
 ---
 
 ## 5. 구현 상세
 
-### 5.1 플러그인 발견 및 로딩
+### 5.1 플러그인 템플릿
 
-```typescript
-// src/plugins/sdk.ts
+> 기존 plan.md의 팩토리 패턴 `(ctx: PluginContext) => PluginLifecycle` 대신,
+> 실제 구현된 `register(api: PluginBuildApi)` 패턴을 사용한다.
 
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-import type { Logger } from '../infra/logger/types.js';
+**매니페스트 (`extensions/plugin-template/finclaw-plugin.json`)**:
 
-export function createPluginRegistry(deps: { logger: Logger }): PluginRegistry {
-  const { logger } = deps;
-  const plugins = new Map<string, LoadedPlugin>();
-
-  return {
-    /**
-     * 디렉토리에서 플러그인 자동 발견
-     * OpenClaw의 loadSkills() 5개 디렉토리 순회 패턴 참조
-     */
-    async discoverPlugins(dirs: readonly string[]): Promise<void> {
-      for (const dir of dirs) {
-        if (!existsSync(dir)) {
-          logger.debug('Plugin directory not found, skipping', { dir });
-          continue;
-        }
-
-        const entries = readdirSync(dir, { withFileTypes: true });
-        for (const entry of entries) {
-          if (!entry.isDirectory()) continue;
-
-          const pluginPath = join(dir, entry.name);
-          const manifestPath = join(pluginPath, 'finclaw.plugin.json');
-
-          if (!existsSync(manifestPath)) {
-            logger.debug('No manifest found, skipping', { path: pluginPath });
-            continue;
-          }
-
-          try {
-            await this.loadPlugin(pluginPath);
-          } catch (error) {
-            // 개별 플러그인 로드 실패가 전체를 중단하지 않음 (Graceful Degradation)
-            logger.error('Failed to load plugin', {
-              path: pluginPath,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
-        }
-      }
-
-      logger.info('Plugin discovery complete', { loaded: plugins.size });
-    },
-
-    async loadPlugin(pluginPath: string): Promise<LoadedPlugin> {
-      const absPath = resolve(pluginPath);
-      const manifestPath = join(absPath, 'finclaw.plugin.json');
-
-      // 매니페스트 파싱
-      const manifestRaw = readFileSync(manifestPath, 'utf-8');
-      const manifest = JSON.parse(manifestRaw) as PluginManifest;
-
-      // 요구 사항 검증
-      if (manifest.requires?.env) {
-        for (const envVar of manifest.requires.env) {
-          if (!process.env[envVar]) {
-            throw new Error(`Missing required env: ${envVar}`);
-          }
-        }
-      }
-
-      // 진입점 로드 (ESM dynamic import)
-      const entryPath = join(absPath, 'src', 'index.js');
-      const module = await import(entryPath);
-      const entryFn = module.default as PluginEntryPoint;
-
-      if (typeof entryFn !== 'function') {
-        throw new Error(`Plugin ${manifest.id}: default export is not a function`);
-      }
-
-      // 임시 컨텍스트로 플러그인 인스턴스 생성 (initAll에서 실제 컨텍스트 주입)
-      const lifecycle = entryFn({} as PluginContext);
-
-      const loaded: LoadedPlugin = { manifest, lifecycle, path: absPath };
-      plugins.set(manifest.id, loaded);
-
-      logger.info('Plugin loaded', { id: manifest.id, version: manifest.version });
-      return loaded;
-    },
-
-    listPlugins(): readonly LoadedPlugin[] {
-      return [...plugins.values()];
-    },
-
-    getPlugin(id: string): LoadedPlugin | undefined {
-      return plugins.get(id);
-    },
-
-    async initAll(context: PluginContext): Promise<void> {
-      for (const [id, plugin] of plugins) {
-        try {
-          await plugin.lifecycle.onInit?.(context);
-          logger.info('Plugin initialized', { id });
-        } catch (error) {
-          logger.error('Plugin init failed', {
-            id,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
-    },
-
-    /** 역순 셧다운 -- 나중에 로드된 플러그인을 먼저 종료 */
-    async shutdownAll(): Promise<void> {
-      const entries = [...plugins.entries()].reverse();
-      for (const [id, plugin] of entries) {
-        try {
-          await plugin.lifecycle.onShutdown?.();
-          logger.info('Plugin shutdown', { id });
-        } catch (error) {
-          logger.error('Plugin shutdown failed', {
-            id,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
-    },
-  };
+```json
+{
+  "name": "my-plugin",
+  "version": "0.1.0",
+  "description": "A template for creating FinClaw plugins",
+  "main": "src/index.ts",
+  "type": "skill",
+  "config": {},
+  "configSchema": {}
 }
 ```
-
-### 5.2 플러그인 템플릿
 
 **package.json (`extensions/plugin-template/package.json`)**:
 
@@ -379,56 +179,12 @@ export function createPluginRegistry(deps: { logger: Logger }): PluginRegistry {
 {
   "name": "@finclaw/plugin-template",
   "version": "0.1.0",
-  "description": "FinClaw plugin template - skeleton for custom channel/skill plugins",
+  "private": true,
+  "description": "FinClaw plugin template — skeleton for custom plugins",
   "type": "module",
   "main": "src/index.ts",
-  "scripts": {
-    "build": "tsc",
-    "typecheck": "tsc --noEmit"
-  },
   "devDependencies": {
-    "finclaw": "workspace:*"
-  },
-  "finclaw": {
-    "extensions": ["./src/index.ts"]
-  }
-}
-```
-
-**매니페스트 (`extensions/plugin-template/finclaw.plugin.json`)**:
-
-```json
-{
-  "id": "my-plugin",
-  "name": "My Custom Plugin",
-  "version": "0.1.0",
-  "description": "A template for creating FinClaw plugins",
-  "channels": [],
-  "skills": [
-    {
-      "name": "my-skill",
-      "description": "Example skill provided by this plugin",
-      "entryPoint": "./skills/my-skill.js"
-    }
-  ],
-  "tools": [
-    {
-      "name": "my_tool",
-      "description": "Example agent tool",
-      "entryPoint": "./tools/my-tool.js"
-    }
-  ],
-  "configSchema": {
-    "type": "object",
-    "properties": {
-      "apiKey": {
-        "type": "string",
-        "description": "API key for the plugin service"
-      }
-    }
-  },
-  "requires": {
-    "env": []
+    "@finclaw/types": "workspace:*"
   }
 }
 ```
@@ -436,46 +192,55 @@ export function createPluginRegistry(deps: { logger: Logger }): PluginRegistry {
 **진입점 (`extensions/plugin-template/src/index.ts`)**:
 
 ```typescript
-import type { PluginContext, PluginLifecycle } from 'finclaw/plugins/sdk';
+import type { PluginBuildApi } from '@finclaw/server/plugins';
 
 /**
  * FinClaw 플러그인 템플릿
  *
- * 이 파일은 플러그인의 진입점입니다. default export로 팩토리 함수를 내보내세요.
- * PluginContext를 통해 FinClaw의 서비스(로거, 도구 등록, 채널 등록 등)에 접근할 수 있습니다.
+ * register()로 채널, 훅, 서비스, 커맨드, 라우트를 등록한다.
+ * PluginBuildApi를 통해 FinClaw의 슬롯 시스템에 접근할 수 있다.
  */
-export default function myPlugin(context: PluginContext): PluginLifecycle {
-  return {
-    async onInit(ctx) {
-      ctx.logger.info('My plugin initialized');
-
-      // 에이전트 도구 등록 예시
-      ctx.registerTool({
-        name: 'my_tool',
-        description: 'An example tool that echoes input',
-        parameters: {
-          type: 'object',
-          properties: {
-            message: { type: 'string', description: 'Message to echo' },
-          },
-          required: ['message'],
-        },
-        execute: async (params) => {
-          return { success: true, data: { echo: params.message } };
-        },
-      });
+export function register(api: PluginBuildApi): void {
+  // 훅 등록 예시
+  api.registerHook(
+    'afterAgentRun',
+    async (payload) => {
+      console.log(`[${api.pluginName}] Agent run completed`, payload);
     },
+    { priority: 100 },
+  );
 
-    async onShutdown() {
-      // 리소스 정리
-    },
+  // 커맨드 등록 예시
+  api.registerCommand({
+    name: 'my-command',
+    description: 'An example command provided by this plugin',
+    execute: async () => ({ success: true }),
+  });
+}
 
-    async onConfigChange(config) {
-      // 설정 변경 대응
-    },
-  };
+export async function deactivate(): Promise<void> {
+  // 리소스 정리
 }
 ```
+
+### 5.2 빌드 메타데이터 스크립트
+
+**`scripts/write-build-info.ts`** (~35 LOC):
+
+- `git describe --tags --always` + `git rev-parse --short HEAD`로 버전/SHA 추출
+- `{ version, gitSha, builtAt }` 객체를 `packages/server/build-info.json`에 기록
+- CI의 빌드 단계에서 `tsx scripts/write-build-info.ts` 실행
+
+**`scripts/calver.ts`** (~50 LOC):
+
+- `YYYY.M.D` 형식 CalVer 생성 (예: `2026.3.22`)
+- 같은 날 복수 릴리즈 시 suffix 추가 (예: `2026.3.22.1`)
+- `git tag -a vYYYY.M.D -m "Release YYYY.M.D"` 실행 옵션
+
+**`scripts/check-dep-versions.ts`** (~30 LOC):
+
+- 워크스페이스 내 공통 의존성(zod, typescript 등)의 버전 불일치 검출
+- CI에서 `tsx scripts/check-dep-versions.ts` 실행하여 불일치 시 실패
 
 ### 5.3 릴리즈 워크플로우
 
@@ -493,11 +258,32 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # 전체 이력 (changelog 생성용)
+          fetch-depth: 0
 
+      # ── 빌드 검증 (CI와 동일 파이프라인) ──
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.node-version'
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Type Check
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+
+      - name: Test
+        run: pnpm test:ci
+
+      # ── 릴리즈 ──
       - name: Generate changelog
         id: changelog
         run: |
@@ -528,213 +314,38 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') }}
 ````
 
-### 5.4 Graceful Shutdown 오케스트레이터
+> **deploy.yml과의 관계**: 둘 다 `tags: ['v*']`로 트리거되어 병렬 실행된다.
+>
+> - `release.yml`: 빌드 검증 → GitHub Release + 체인지로그 생성 (역할: 릴리즈 메타데이터)
+> - `deploy.yml`: Docker 이미지 빌드 → ghcr.io 푸시 (역할: 컨테이너 배포)
+
+### 5.4 health.ts 버전 수정
+
+`packages/server/src/gateway/health.ts`의 `version: '0.1.0'` 하드코딩을 `build-info.json` 로드로 교체:
 
 ```typescript
-// src/infra/shutdown.ts
+// health.ts 상단에 추가
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
-import type { Logger } from './logger/types.js';
-
-const PHASE_ORDER: ShutdownPhase[] = [
-  'stop-accepting',
-  'drain-requests',
-  'stop-cron',
-  'close-websockets',
-  'stop-plugins',
-  'close-database',
-  'cleanup',
-];
-
-const TOTAL_TIMEOUT_MS = 30_000; // 전체 셧다운 최대 30초
-
-export function createShutdownOrchestrator(deps: { logger: Logger }): ShutdownOrchestrator {
-  const { logger } = deps;
-  const hooks: ShutdownHook[] = [];
-  let shuttingDown = false;
-
-  function register(hook: ShutdownHook): void {
-    hooks.push(hook);
-    logger.debug('Shutdown hook registered', { name: hook.name, phase: hook.phase });
+function loadVersion(): string {
+  try {
+    const info = JSON.parse(
+      readFileSync(resolve(import.meta.dirname, '../../build-info.json'), 'utf-8'),
+    );
+    return info.version ?? '0.0.0-dev';
+  } catch {
+    return '0.0.0-dev';
   }
-
-  async function shutdown(reason: string): Promise<void> {
-    if (shuttingDown) {
-      logger.warn('Shutdown already in progress');
-      return;
-    }
-    shuttingDown = true;
-    logger.info('Graceful shutdown initiated', { reason });
-
-    const startTime = Date.now();
-
-    for (const phase of PHASE_ORDER) {
-      const phaseHooks = hooks.filter((h) => h.phase === phase);
-      if (phaseHooks.length === 0) continue;
-
-      logger.info(`Shutdown phase: ${phase}`, { hookCount: phaseHooks.length });
-
-      for (const hook of phaseHooks) {
-        // 전체 타임아웃 체크
-        if (Date.now() - startTime > TOTAL_TIMEOUT_MS) {
-          logger.error('Shutdown timeout exceeded, forcing exit');
-          process.exit(1);
-        }
-
-        try {
-          await Promise.race([
-            hook.execute(),
-            new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error(`Hook timeout: ${hook.name}`)), hook.timeoutMs),
-            ),
-          ]);
-          logger.debug(`Hook completed: ${hook.name}`);
-        } catch (error) {
-          // 개별 훅 실패가 셧다운을 중단하지 않음
-          logger.error(`Hook failed: ${hook.name}`, {
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
-    }
-
-    const elapsed = Date.now() - startTime;
-    logger.info('Graceful shutdown complete', { elapsedMs: elapsed });
-    process.exit(0);
-  }
-
-  return {
-    register,
-    shutdown,
-    get isShuttingDown() {
-      return shuttingDown;
-    },
-  };
-}
-
-/** 시그널 핸들러 설정 */
-export function setupSignalHandlers(orchestrator: ShutdownOrchestrator): void {
-  const signals: NodeJS.Signals[] = ['SIGTERM', 'SIGINT', 'SIGHUP'];
-
-  for (const signal of signals) {
-    process.on(signal, () => {
-      orchestrator.shutdown(`Received ${signal}`);
-    });
-  }
-
-  // Uncaught exception 핸들링
-  process.on('uncaughtException', (error) => {
-    console.error('Uncaught exception:', error);
-    orchestrator.shutdown(`Uncaught exception: ${error.message}`);
-  });
-
-  process.on('unhandledRejection', (reason) => {
-    console.error('Unhandled rejection:', reason);
-    orchestrator.shutdown(`Unhandled rejection: ${String(reason)}`);
-  });
 }
 ```
 
-### 5.5 헬스 체크
+### 5.5 Dockerfile HEALTHCHECK 활성화
 
-```typescript
-// src/infra/health.ts
-
-export function createHealthChecker(deps: {
-  version: string;
-  startTime: Date;
-  components: HealthCheckable[];
-}): {
-  check: () => Promise<HealthCheckResponse>;
-  handleRequest: (req: Request) => Promise<Response>;
-} {
-  const { version, startTime, components } = deps;
-
-  async function check(): Promise<HealthCheckResponse> {
-    const checks: Record<string, ComponentHealth> = {};
-    let overallStatus: 'healthy' | 'degraded' | 'unhealthy' = 'healthy';
-
-    await Promise.allSettled(
-      components.map(async (component) => {
-        try {
-          const health = await component.checkHealth();
-          checks[component.name] = health;
-
-          if (health.status === 'down') overallStatus = 'unhealthy';
-          else if (health.status === 'degraded' && overallStatus === 'healthy') {
-            overallStatus = 'degraded';
-          }
-        } catch (error) {
-          checks[component.name] = {
-            status: 'down',
-            message: error instanceof Error ? error.message : String(error),
-            lastChecked: new Date().toISOString(),
-          };
-          overallStatus = 'unhealthy';
-        }
-      }),
-    );
-
-    return {
-      status: overallStatus,
-      version,
-      uptime: (Date.now() - startTime.getTime()) / 1000,
-      timestamp: new Date().toISOString(),
-      checks,
-    };
-  }
-
-  async function handleRequest(): Promise<Response> {
-    const result = await check();
-    const statusCode = result.status === 'healthy' ? 200 : result.status === 'degraded' ? 200 : 503;
-
-    return new Response(JSON.stringify(result, null, 2), {
-      status: statusCode,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-
-  return { check, handleRequest };
-}
-
-/** SQLite 헬스 체크 컴포넌트 */
-export function createDatabaseHealthCheck(db: DatabaseSync): HealthCheckable {
-  return {
-    name: 'database',
-    async checkHealth(): Promise<ComponentHealth> {
-      const start = performance.now();
-      try {
-        db.prepare('SELECT 1').get();
-        return {
-          status: 'up',
-          latencyMs: Math.round(performance.now() - start),
-          lastChecked: new Date().toISOString(),
-        };
-      } catch (error) {
-        return {
-          status: 'down',
-          message: error instanceof Error ? error.message : String(error),
-          lastChecked: new Date().toISOString(),
-        };
-      }
-    },
-  };
-}
-
-/** Gateway WebSocket 헬스 체크 컴포넌트 */
-export function createGatewayHealthCheck(deps: {
-  getActiveConnections: () => number;
-}): HealthCheckable {
-  return {
-    name: 'gateway',
-    async checkHealth(): Promise<ComponentHealth> {
-      return {
-        status: 'up',
-        message: `${deps.getActiveConnections()} active connections`,
-        lastChecked: new Date().toISOString(),
-      };
-    },
-  };
-}
+```dockerfile
+# 기존 주석을 실제 코드로 교체 — /healthz (liveness) 엔드포인트 사용
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD node -e "fetch('http://localhost:3000/healthz').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
 ```
 
 ### 5.6 스킬 빌드 스크립트
@@ -853,56 +464,65 @@ Phase 16-18  (금융 스킬)     ─┘
 
 ### 기능 검증 체크리스트
 
-| #   | 검증 항목                                               | 테스트 방법                  | 테스트 tier |
-| --- | ------------------------------------------------------- | ---------------------------- | ----------- |
-| 1   | 플러그인 매니페스트 파싱 및 검증                        | unit test: 유효/무효 JSON    | unit        |
-| 2   | 플러그인 발견: 디렉토리 순회, finclaw.plugin.json 감지  | unit test: mock filesystem   | unit        |
-| 3   | 플러그인 로드: ESM dynamic import, 팩토리 함수 호출     | unit test: mock module       | unit        |
-| 4   | 플러그인 생명주기: onInit -> onShutdown 순서 보장       | unit test: 호출 순서 검증    | unit        |
-| 5   | 플러그인 역순 셧다운: 나중에 로드된 것 먼저 종료        | unit test: 3개 플러그인 순서 | unit        |
-| 6   | 헬스 체크: healthy/degraded/unhealthy 상태 판정         | unit test: mock components   | unit        |
-| 7   | 헬스 체크: SQLite SELECT 1 성공 -> up                   | unit test: mock db           | unit        |
-| 8   | 헬스 체크: HTTP 200 (healthy) / 503 (unhealthy) 응답    | unit test: handleRequest     | unit        |
-| 9   | Graceful Shutdown: 단계별 순서 실행                     | unit test: 훅 실행 순서 기록 | unit        |
-| 10  | Graceful Shutdown: 개별 훅 실패 시 다음 훅 계속         | unit test: 하나 reject       | unit        |
-| 11  | Graceful Shutdown: 전체 30초 타임아웃 초과 시 강제 종료 | unit test: fake timers       | unit        |
-| 12  | CI 워크플로우: release.yml YAML 문법 유효성             | `actionlint` 또는 수동 검증  | manual      |
-| 13  | 스킬 빌드: `tsx scripts/build-skills.ts` 성공           | 수동 검증                    | manual      |
+| #   | 검증 항목                                                      | 테스트 방법                             | 테스트 tier |
+| --- | -------------------------------------------------------------- | --------------------------------------- | ----------- |
+| 1   | 플러그인 템플릿 매니페스트가 `PluginManifestSchema` 검증 통과  | unit test: parseManifest(template json) | unit        |
+| 2   | 플러그인 템플릿 `register(api)` 함수가 정상 실행               | unit test: createPluginBuildApi로 검증  | unit        |
+| 3   | `write-build-info.ts`가 build-info.json 생성                   | unit test: 스크립트 실행 후 파일 확인   | unit        |
+| 4   | `calver.ts`가 `YYYY.M.D` 형식 생성                             | unit test: 날짜 기반 출력 검증          | unit        |
+| 5   | `check-dep-versions.ts`가 불일치 검출                          | unit test: 의도적 불일치 시나리오       | unit        |
+| 6   | health.ts가 build-info.json에서 버전 로드                      | unit test: mock build-info.json         | unit        |
+| 7   | health.ts fallback: build-info.json 없을 때 `'0.0.0-dev'` 반환 | unit test: 파일 없는 환경               | unit        |
+| 8   | release.yml YAML 문법 유효성                                   | `actionlint` 또는 수동 검증             | manual      |
+| 9   | dependabot.yml이 올바른 ecosystem/directory 설정               | 수동 검증                               | manual      |
+| 10  | Dockerfile HEALTHCHECK 지시자가 유효                           | `docker build` 후 `docker inspect`      | manual      |
+| 11  | 스킬 빌드: `tsx scripts/build-skills.ts` 성공                  | 수동 검증                               | manual      |
 
 ### vitest 실행 기대 결과
 
 ```bash
-# 플러그인 SDK 테스트
-pnpm vitest run src/plugins/__tests__/
-# 예상: 1 파일, ~8 tests passed
-
-# 인프라 (헬스 + 셧다운) 테스트
-pnpm vitest run src/infra/__tests__/health.test.ts src/infra/__tests__/shutdown.test.ts
-# 예상: 2 파일, ~15 tests passed
-
-# 총 23 tests
+# 플러그인 템플릿 검증 + 빌드 스크립트 테스트
+pnpm vitest run --filter "phase20"
+# 예상: ~10 tests passed
 ```
 
 ---
 
-## 8. 복잡도 및 예상 파일 수
+## 8. 의도적 제외 목록
 
-| 항목               | 값                                  |
-| ------------------ | ----------------------------------- |
-| **복잡도**         | **M** (Medium)                      |
-| **소스 파일**      | 8개                                 |
-| **테스트 파일**    | 3개                                 |
-| **총 파일 수**     | **11개**                            |
-| **예상 LOC**       | ~860                                |
-| **예상 소요 기간** | 2-3일                               |
-| **새 외부 의존성** | 없음 (GitHub Actions는 인프라 도구) |
-| **인프라 파일**    | 1 GitHub Actions (release.yml)      |
+> RSA 분석에서 식별된 과잉 엔지니어링 방지 항목. 현 단계에서 구현하지 않는다.
 
-### 복잡도 근거 (M 판정)
+| 제외 항목                       | 사유                                                 |
+| ------------------------------- | ---------------------------------------------------- |
+| 플러그인 핫 리로드              | 프로덕션에서 불필요, 개발 시 `tsx --watch`로 충분    |
+| 플러그인 의존성 그래프 해석     | 현재 플러그인 간 의존성 없음, 향후 필요 시 추가      |
+| 플러그인 샌드박스 (VM/Worker)   | 현재 내부 플러그인만 사용, 서드파티 격리는 향후 과제 |
+| 별도 ShutdownOrchestrator       | `ProcessLifecycle`의 LIFO 패턴으로 충분              |
+| 별도 HealthCheckable 인터페이스 | `HealthChecker` 함수 타입 + 팩토리 패턴으로 충분     |
+| 멀티 레지스트리 (환경별)        | 단일 글로벌 레지스트리로 충분                        |
+| Bun/Deno 호환성                 | Node.js 22+ 전용                                     |
+| Mintlify 문서 사이트            | README + 인라인 JSDoc으로 대체                       |
+| Chrome Extension / 모바일 앱    | 서버 + Discord + 웹으로 충분                         |
 
-- **3개 영역**: 플러그인 시스템, 프로덕션 강화, 스킬 빌드 (Docker는 Phase 0으로 이동)
-- **Graceful Shutdown 복잡성**: 7단계 순서화된 셧다운, 개별 타임아웃, 에러 격리
-- **전체 시스템 의존**: Phase 1-18 모듈과의 통합 지점 존재
+---
+
+## 9. 복잡도 및 예상 파일 수
+
+| 항목                | 값                                  |
+| ------------------- | ----------------------------------- |
+| **복잡도**          | **S** (Small)                       |
+| **신규 파일**       | 9개                                 |
+| **수정 파일**       | 3개                                 |
+| **총 파일 수**      | **12개**                            |
+| **예상 LOC (신규)** | ~410                                |
+| **새 외부 의존성**  | 없음 (GitHub Actions는 인프라 도구) |
+| **인프라 파일**     | 2 (release.yml, dependabot.yml)     |
+
+### 복잡도 근거 (S 판정)
+
+- 플러그인 SDK, 헬스, 셧다운은 **이미 구현 완료** — 신규 구현 불필요
+- 남은 작업은 템플릿 + 스크립트 + CI 설정 + 소규모 기존 파일 수정
+- 기존 Phase 20 plan의 핵심 3개 영역(sdk.ts ~120 LOC, health.ts ~100 LOC, shutdown.ts ~90 LOC)이 제거됨
 
 ### OpenClaw 대비 축소 범위
 
@@ -915,6 +535,3 @@ pnpm vitest run src/infra/__tests__/health.test.ts src/infra/__tests__/shutdown.
 | Bun 호환성                | 제외                             | Node.js 22+ 전용                           |
 | Calendar Versioning       | 포함                             | YYYY.M.D 형식                              |
 | 패치 시스템 (postinstall) | 제외                             | 단일 패키지이므로 불필요                   |
-| Mintlify 문서 사이트      | 제외                             | README + 인라인 JSDoc으로 대체             |
-| Chrome Extension          | 제외                             | 웹 UI로 대체                               |
-| macOS/iOS/Android 앱      | 제외                             | 서버 + Discord + 웹으로 충분               |
