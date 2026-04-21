@@ -1,6 +1,6 @@
 import type { ChannelPlugin, FinClawConfig, ModelRef } from '@finclaw/types';
 // packages/server/src/main.ts
-import { AnthropicAdapter, Runner } from '@finclaw/agent';
+import { AnthropicAdapter, InMemoryToolRegistry, Runner } from '@finclaw/agent';
 import { DiscordAccountSchema, DiscordAdapter } from '@finclaw/channel-discord';
 import {
   assertPortAvailable,
@@ -8,6 +8,10 @@ import {
   createLogger,
   getEventBus,
 } from '@finclaw/infra';
+import { registerGeneralTools } from '@finclaw/skills-general';
+import { createStorage } from '@finclaw/storage';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import type { GatewayServerConfig } from './gateway/rpc/types.js';
 import { InMemoryCommandRegistry } from './auto-reply/commands/registry.js';
 import { RunnerExecutionAdapter, type RunnerFactory } from './auto-reply/execution-adapter.js';
@@ -78,13 +82,22 @@ async function main(): Promise<void> {
   const discordToken = requireEnv('DISCORD_BOT_TOKEN');
   const discordAppId = requireEnv('DISCORD_APPLICATION_ID');
 
-  // 2. 기반
+  // 2. 기반 (로거, 라이프사이클, 스토리지)
   const logger = createLogger({ name: 'finclaw', level: 'info' });
   const lifecycle = new ProcessLifecycle({ logger });
+  const dbPath = process.env.FINCLAW_DB_PATH ?? join(homedir(), '.finclaw', 'db.sqlite');
+  const storage = createStorage({ dbPath });
+  await storage.initialize();
+  lifecycle.register(async () => {
+    await storage.close();
+  });
 
-  // 3. Agent 레이어
+  // 3. Agent 레이어 (툴 레지스트리 + 러너 팩토리)
   const anthropicAdapter = new AnthropicAdapter(anthropicKey);
   const lanes = new ConcurrencyLaneManager();
+  const toolRegistry = new InMemoryToolRegistry();
+  registerGeneralTools(toolRegistry);
+
   const runnerFactory: RunnerFactory = (dispatcher) =>
     new Runner({
       provider: anthropicAdapter,
@@ -92,11 +105,14 @@ async function main(): Promise<void> {
       laneManager: lanes,
     });
 
-  // 4. 실행 어댑터
+  // 4. 실행 어댑터 (storage + toolRegistry 주입 — per-request dispatcher를 빌드)
   const adapter = new RunnerExecutionAdapter({
     runnerFactory,
     defaultModel: DEFAULT_MODEL,
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
+    storage,
+    toolRegistry,
+    logger,
   });
 
   // 5. 파이프라인

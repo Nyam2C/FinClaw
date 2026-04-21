@@ -10,6 +10,7 @@
     { "path": "../agent" },
     { "path": "../channel-discord" },
     { "path": "../skills-finance" },
+    { "path": "../skills-general" },
     { "path": "../tui" }
   ]
 }

@@ -12,6 +12,7 @@
     "@finclaw/config": "workspace:*",
     "@finclaw/infra": "workspace:*",
     "@finclaw/skills-finance": "workspace:*",
+    "@finclaw/skills-general": "workspace:*",
     "@finclaw/storage": "workspace:*",
     "@finclaw/tui": "workspace:*",
     "@finclaw/types": "workspace:*",

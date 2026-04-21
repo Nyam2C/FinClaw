@@ -110,6 +110,9 @@ importers:
       '@finclaw/skills-finance':
         specifier: workspace:*
         version: link:../skills-finance
+      '@finclaw/skills-general':
+        specifier: workspace:*
+        version: link:../skills-general
       '@finclaw/storage':
         specifier: workspace:*
         version: link:../storage
