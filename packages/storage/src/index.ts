@@ -18,7 +18,12 @@ import { openDatabase } from './database.js';
 import { searchFts } from './search/fts.js';
 import { mergeHybridResults } from './search/hybrid.js';
 import { searchVector } from './search/vector.js';
-import { createConversation, getConversation } from './tables/conversations.js';
+import {
+  createConversation,
+  deleteConversation as deleteConversationFromDb,
+  getConversation,
+  upsertConversation as upsertConversationInDb,
+} from './tables/conversations.js';
 import { CACHE_TTL } from './tables/market-cache.js';
 import { addMemory, getMemory, addMemoryWithEmbedding } from './tables/memories.js';
 import { chunkMarkdown } from './tables/memories.js';
@@ -41,6 +46,13 @@ export {
 export { searchFts } from './search/fts.js';
 export { searchVector } from './search/vector.js';
 export { atomicReindex } from './reindex.js';
+export {
+  createConversation,
+  getConversation,
+  deleteConversation,
+  upsertConversation,
+  listConversations,
+} from './tables/conversations.js';
 export {
   getCachedData,
   setCachedData,
@@ -96,8 +108,22 @@ export function createStorage(options: StorageOptions): StorageAdapter {
       createConversation(database.db, record);
     },
 
+    async upsertConversation(record: ConversationRecord): Promise<void> {
+      upsertConversationInDb(database.db, {
+        sessionKey: record.sessionKey,
+        agentId: record.agentId,
+        messages: record.messages,
+        updatedAt: record.updatedAt,
+        metadata: record.metadata,
+      });
+    },
+
     async getConversation(sessionKey: SessionKey): Promise<ConversationRecord | null> {
       return getConversation(database.db, sessionKey);
+    },
+
+    async deleteConversation(sessionKey: SessionKey): Promise<boolean> {
+      return deleteConversationFromDb(database.db, sessionKey);
     },
 
     async searchConversations(query: SearchQuery): Promise<SearchResult[]> {

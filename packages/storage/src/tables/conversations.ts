@@ -175,6 +175,83 @@ export function deleteConversation(db: DatabaseSync, sessionKey: SessionKey): bo
   return Number(result.changes) > 0;
 }
 
+/**
+ * 대화 세션 전체를 갱신(존재 시)하거나 생성(없을 시)한다.
+ *
+ * 동일 sessionKey로 여러 번 호출해도 멱등적이며, 기존 메시지는
+ * 제거되고 payload.messages로 대체된다. Phase 21 auto-reply 파이프라인이
+ * 매 턴마다 최신 대화 이력 전체를 저장할 때 사용한다.
+ */
+export function upsertConversation(
+  db: DatabaseSync,
+  payload: {
+    readonly sessionKey: SessionKey;
+    readonly agentId: AgentId;
+    readonly messages: readonly ConversationMessage[];
+    readonly updatedAt: Timestamp;
+    readonly metadata?: Record<string, unknown>;
+  },
+): void {
+  const existing = db
+    .prepare('SELECT id FROM conversations WHERE id = ?')
+    .get(payload.sessionKey as string);
+
+  if (!existing) {
+    createConversation(db, {
+      sessionKey: payload.sessionKey,
+      agentId: payload.agentId,
+      messages: payload.messages as ConversationMessage[],
+      createdAt: payload.updatedAt,
+      updatedAt: payload.updatedAt,
+      metadata: payload.metadata,
+    });
+    return;
+  }
+
+  const insertMsg = db.prepare(
+    `INSERT INTO messages (id, conversation_id, role, content, tool_calls, token_count, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  );
+
+  db.exec('BEGIN');
+  try {
+    db.prepare('DELETE FROM messages WHERE conversation_id = ?').run(payload.sessionKey as string);
+
+    const updateParts: string[] = ['updated_at = ?', 'agent_id = ?'];
+    const updateParams: (string | number)[] = [
+      payload.updatedAt as number,
+      payload.agentId as string,
+    ];
+    if (payload.metadata !== undefined) {
+      updateParts.push('metadata = ?');
+      updateParams.push(JSON.stringify(payload.metadata));
+    }
+    updateParams.push(payload.sessionKey as string);
+    db.prepare(`UPDATE conversations SET ${updateParts.join(', ')} WHERE id = ?`).run(
+      ...updateParams,
+    );
+
+    for (const msg of payload.messages) {
+      const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+      const toolCalls = extractToolCalls(msg);
+      insertMsg.run(
+        crypto.randomUUID(),
+        payload.sessionKey as string,
+        msg.role,
+        content,
+        toolCalls,
+        null,
+        payload.updatedAt as number,
+      );
+    }
+
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
 export function listConversations(
   db: DatabaseSync,
   options?: { agentId?: AgentId; limit?: number; offset?: number },

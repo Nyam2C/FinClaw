@@ -1,10 +1,22 @@
+import type { ChannelPlugin, FinClawConfig, ModelRef } from '@finclaw/types';
 // packages/server/src/main.ts
-import { createLogger, getEventBus, assertPortAvailable } from '@finclaw/infra';
+import { AnthropicAdapter, Runner } from '@finclaw/agent';
+import { DiscordAccountSchema, DiscordAdapter } from '@finclaw/channel-discord';
+import {
+  assertPortAvailable,
+  ConcurrencyLaneManager,
+  createLogger,
+  getEventBus,
+} from '@finclaw/infra';
 import type { GatewayServerConfig } from './gateway/rpc/types.js';
+import { InMemoryCommandRegistry } from './auto-reply/commands/registry.js';
+import { RunnerExecutionAdapter, type RunnerFactory } from './auto-reply/execution-adapter.js';
+import { StubFinanceContextProvider } from './auto-reply/pipeline-context.js';
+import { AutoReplyPipeline } from './auto-reply/pipeline.js';
 import { createGatewayServer } from './gateway/server.js';
 import { ProcessLifecycle } from './process/lifecycle.js';
+import { MessageRouter } from './process/message-router.js';
 
-// TODO(review-3): PORT, HOST 등 기본 설정을 환경변수에서 읽도록 확장 필요
 /** 기본 게이트웨이 설정 */
 const defaultConfig: GatewayServerConfig = {
   host: '0.0.0.0',
@@ -16,12 +28,12 @@ const defaultConfig: GatewayServerConfig = {
   auth: {
     apiKeys: [],
     jwtSecret: process.env.GATEWAY_JWT_SECRET ?? 'dev-secret',
-    sessionTtlMs: 30 * 60_000, // 30분
+    sessionTtlMs: 30 * 60_000,
   },
   ws: {
     heartbeatIntervalMs: 30_000,
     heartbeatTimeoutMs: 10_000,
-    maxPayloadBytes: 1024 * 1024, // 1MB
+    maxPayloadBytes: 1024 * 1024,
     handshakeTimeoutMs: 10_000,
     maxConnections: 100,
   },
@@ -31,31 +43,123 @@ const defaultConfig: GatewayServerConfig = {
   },
 };
 
+const DEFAULT_MODEL: ModelRef = {
+  provider: 'anthropic',
+  model: 'claude-sonnet-4-5',
+  contextWindow: 200_000,
+  maxOutputTokens: 8_192,
+};
+
+const DEFAULT_SYSTEM_PROMPT =
+  'You are FinClaw, a helpful personal assistant. 한국어로 자연스럽게 대답해.';
+
+export class MissingEnvError extends Error {
+  constructor(public readonly envName: string) {
+    super(`Missing required env: ${envName}`);
+    this.name = 'MissingEnvError';
+  }
+}
+
+/**
+ * 환경 변수 조회 (테스트 가능한 형태).
+ * 값이 없으면 MissingEnvError throw.
+ */
+export function requireEnv(name: string, env: NodeJS.ProcessEnv = process.env): string {
+  const value = env[name];
+  if (!value) {
+    throw new MissingEnvError(name);
+  }
+  return value;
+}
+
 async function main(): Promise<void> {
+  // 1. env 검증
+  const anthropicKey = requireEnv('ANTHROPIC_API_KEY');
+  const discordToken = requireEnv('DISCORD_BOT_TOKEN');
+  const discordAppId = requireEnv('DISCORD_APPLICATION_ID');
+
+  // 2. 기반
   const logger = createLogger({ name: 'finclaw', level: 'info' });
   const lifecycle = new ProcessLifecycle({ logger });
 
-  // 포트 사용 가능 확인
+  // 3. Agent 레이어
+  const anthropicAdapter = new AnthropicAdapter(anthropicKey);
+  const lanes = new ConcurrencyLaneManager();
+  const runnerFactory: RunnerFactory = (dispatcher) =>
+    new Runner({
+      provider: anthropicAdapter,
+      toolExecutor: dispatcher,
+      laneManager: lanes,
+    });
+
+  // 4. 실행 어댑터
+  const adapter = new RunnerExecutionAdapter({
+    runnerFactory,
+    defaultModel: DEFAULT_MODEL,
+    systemPrompt: DEFAULT_SYSTEM_PROMPT,
+  });
+
+  // 5. 파이프라인
+  const financeCtxProvider = new StubFinanceContextProvider();
+  const commandRegistry = new InMemoryCommandRegistry();
+  const channelPluginRegistry = new Map<string, ChannelPlugin>();
+  const pipeline = new AutoReplyPipeline(
+    {
+      enableAck: true,
+      commandPrefix: '!finclaw ',
+      maxResponseLength: 2000,
+      timeoutMs: 60_000,
+      respectMarketHours: false,
+    },
+    {
+      executionAdapter: adapter,
+      financeContextProvider: financeCtxProvider,
+      commandRegistry,
+      logger,
+      getChannel: (id) => channelPluginRegistry.get(id),
+    },
+  );
+
+  // 6. MessageRouter
+  const routerConfig: FinClawConfig = {};
+  const router = new MessageRouter({
+    config: routerConfig,
+    logger,
+    onProcess: (ctx, match, signal) => pipeline.process(ctx, match, signal),
+  });
+
+  // 7. Discord
+  const discordAdapter = new DiscordAdapter();
+  const discordAccount = DiscordAccountSchema.parse({
+    botToken: discordToken,
+    applicationId: discordAppId,
+  });
+  const cleanup = await discordAdapter.setup(discordAccount);
+  lifecycle.register(cleanup);
+  channelPluginRegistry.set(discordAdapter.id as string, discordAdapter);
+  discordAdapter.onMessage(async (msg) => {
+    await router.route(msg);
+  });
+  logger.info('Discord adapter connected');
+
+  // 8. Gateway (기존 로직 — deps 확장은 Todo 7)
   await assertPortAvailable(defaultConfig.port);
-
-  // 게이트웨이 서버 생성
   const gateway = createGatewayServer(defaultConfig);
-
-  // CleanupFn 등록
   lifecycle.register(() => gateway.stop());
-
-  // 시그널 핸들러 초기화
   lifecycle.init();
-
-  // 서버 시작
   await gateway.start();
-  logger.info(`Gateway server listening on ${defaultConfig.host}:${defaultConfig.port}`);
+  logger.info(`Gateway listening on ${defaultConfig.host}:${defaultConfig.port}`);
 
-  // 시스템 준비 이벤트
   getEventBus().emit('system:ready');
 }
 
-main().catch((err) => {
-  console.error('Failed to start gateway server:', err);
-  process.exit(1);
-});
+if (!process.env.VITEST) {
+  main().catch((err) => {
+    if (err instanceof MissingEnvError) {
+      console.error(`[fatal] Missing required env: ${err.envName}`);
+    } else {
+      console.error('Failed to start gateway server:', err);
+    }
+    process.exit(1);
+  });
+}
