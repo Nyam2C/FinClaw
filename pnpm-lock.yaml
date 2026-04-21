@@ -169,6 +169,18 @@ importers:
         specifier: ^4.0.0
         version: 4.3.6
 
+  packages/skills-general:
+    dependencies:
+      '@finclaw/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@finclaw/infra':
+        specifier: workspace:*
+        version: link:../infra
+      '@finclaw/types':
+        specifier: workspace:*
+        version: link:../types
+
   packages/storage:
     dependencies:
       '@finclaw/types':
