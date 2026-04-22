@@ -69,6 +69,14 @@ export interface StorageOptions {
   embeddingProvider?: EmbeddingProvider;
 }
 
+/**
+ * createStorage 반환 타입 — StorageAdapter 계약 + skills-finance가 필요로 하는
+ * 원시 DatabaseSync 핸들을 함께 노출한다.
+ */
+export interface FinClawStorage extends StorageAdapter {
+  readonly db: Database['db'];
+}
+
 // NOTE(review-1 R-2): duplicates conversations.ts type — will be removed with LIKE fallback
 interface ConversationRow {
   id: string;
@@ -88,7 +96,7 @@ interface MemoryRow {
   metadata: string;
 }
 
-export function createStorage(options: StorageOptions): StorageAdapter {
+export function createStorage(options: StorageOptions): FinClawStorage {
   const database = openDatabase({
     path: options.dbPath,
     enableWAL: options.enableWAL,
@@ -96,6 +104,10 @@ export function createStorage(options: StorageOptions): StorageAdapter {
   const provider = options.embeddingProvider;
 
   return {
+    get db(): Database['db'] {
+      return database.db;
+    },
+
     async initialize(): Promise<void> {
       // DB already initialized in openDatabase — no-op
     },

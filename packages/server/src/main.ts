@@ -8,6 +8,7 @@ import {
   createLogger,
   getEventBus,
 } from '@finclaw/infra';
+import { registerMarketTools } from '@finclaw/skills-finance';
 import { registerGeneralTools } from '@finclaw/skills-general';
 import { createStorage } from '@finclaw/storage';
 import { homedir } from 'node:os';
@@ -97,6 +98,19 @@ async function main(): Promise<void> {
   const lanes = new ConcurrencyLaneManager();
   const toolRegistry = new InMemoryToolRegistry();
   registerGeneralTools(toolRegistry);
+
+  const alphaVantageKey = process.env.ALPHA_VANTAGE_KEY;
+  const coinGeckoKey = process.env.COINGECKO_API_KEY;
+  if (alphaVantageKey || coinGeckoKey) {
+    await registerMarketTools(toolRegistry, {
+      db: storage.db,
+      alphaVantageKey,
+      coinGeckoKey,
+    });
+    logger.info('Market tools registered');
+  } else {
+    logger.info('ALPHA_VANTAGE_KEY/COINGECKO_API_KEY not set — skipping market tools');
+  }
 
   const runnerFactory: RunnerFactory = (dispatcher) =>
     new Runner({
