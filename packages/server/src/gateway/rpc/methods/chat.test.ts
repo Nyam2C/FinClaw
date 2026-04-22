@@ -2,6 +2,7 @@ import type { ConversationRecord, MemoryEntry, ModelRef, SearchResult } from '@f
 import { resetEventBus } from '@finclaw/infra';
 // packages/server/src/gateway/rpc/methods/chat.test.ts
 import { describe, it, expect, beforeEach } from 'vitest';
+import type { RunnerExecutionAdapter } from '../../../auto-reply/execution-adapter.js';
 import type { GatewayServerContext } from '../../context.js';
 import type { GatewayServerConfig } from '../types.js';
 import { GatewayBroadcaster } from '../../broadcaster.js';
@@ -29,6 +30,17 @@ function makeStorage() {
     initialize: async () => undefined,
     close: async () => undefined,
   };
+}
+
+function makeStubAdapter(): RunnerExecutionAdapter {
+  return {
+    execute: async () => ({ content: '', usage: { inputTokens: 0, outputTokens: 0 } }),
+    executeForTui: async () => ({
+      messageId: 'test-msg-id',
+      content: '',
+      usage: { inputTokens: 0, outputTokens: 0 },
+    }),
+  } as unknown as RunnerExecutionAdapter;
 }
 
 function makeServerCtx(): GatewayServerContext {
@@ -69,6 +81,7 @@ describe('chat.* RPC methods', () => {
       broadcaster: ctx.broadcaster,
       storage: makeStorage(),
       defaultModel: TEST_MODEL,
+      adapter: makeStubAdapter(),
     });
   });
 

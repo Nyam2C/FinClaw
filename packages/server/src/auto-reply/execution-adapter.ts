@@ -1,5 +1,10 @@
 // packages/server/src/auto-reply/execution-adapter.ts
-import type { ExecutionToolDispatcher, Runner, ToolRegistry } from '@finclaw/agent';
+import type {
+  ExecutionToolDispatcher,
+  Runner,
+  StreamEventListener,
+  ToolRegistry,
+} from '@finclaw/agent';
 import type { FinClawLogger } from '@finclaw/infra';
 import type {
   AgentId,
@@ -7,11 +12,13 @@ import type {
   ContentBlock,
   ConversationMessage,
   ModelRef,
+  SessionKey,
   StorageAdapter,
   Timestamp,
 } from '@finclaw/types';
 import { ExecutionToolDispatcher as ToolDispatcherCtor } from '@finclaw/agent';
 import { createAgentId } from '@finclaw/types';
+import { randomUUID } from 'node:crypto';
 import type { PipelineMsgContext } from './pipeline-context.js';
 import { buildDispatcher } from './tool-dispatcher-adapter.js';
 
@@ -80,10 +87,14 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
   }
 
   async execute(ctx: PipelineMsgContext, signal: AbortSignal): Promise<ExecutionResult> {
-    const priorMessages = await this.loadHistory(ctx);
+    const priorMessages = await this.loadHistory(ctx.sessionKey);
     const userMessage: ConversationMessage = { role: 'user', content: ctx.normalizedBody };
 
-    const { dispatcher, toolDefinitions } = this.buildRequestDispatcher(ctx, signal);
+    const { dispatcher, toolDefinitions } = this.buildRequestDispatcher({
+      sessionId: ctx.sessionKey as string,
+      userId: ctx.senderId,
+      channelId: ctx.channelId as unknown as string,
+    });
     const runner = this.deps.runnerFactory(dispatcher);
 
     const params: AgentRunParams = {
@@ -98,7 +109,7 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
 
     const result = await runner.execute(params);
 
-    await this.persistHistory(ctx, result.messages);
+    await this.persistHistory(ctx.sessionKey, this.defaultAgentId, result.messages);
 
     return {
       content: extractAssistantText(result.messages),
@@ -109,44 +120,94 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
     };
   }
 
-  private async loadHistory(ctx: PipelineMsgContext): Promise<ConversationMessage[]> {
+  /**
+   * TUI 경로 전용 실행 — WebSocket 스트리밍 listener를 받는다.
+   *
+   * execute()와의 차이:
+   * - PipelineMsgContext 대신 sessionKey/agentId/model을 직접 받음 (채널 개념 없음)
+   * - StreamEventListener를 runner에 전달해 text_delta/tool_use_* 이벤트를 WS로 팬아웃
+   * - 세션에서 선택한 model을 사용 (deps.defaultModel이 아닌 인자 model)
+   */
+  async executeForTui(
+    input: {
+      readonly sessionKey: SessionKey;
+      readonly agentId: AgentId;
+      readonly userMessage: string;
+      readonly model: ModelRef;
+    },
+    listener: StreamEventListener | undefined,
+    signal: AbortSignal,
+  ): Promise<TuiExecutionResult> {
+    const priorMessages = await this.loadHistory(input.sessionKey);
+    const userMessage: ConversationMessage = { role: 'user', content: input.userMessage };
+
+    const { dispatcher, toolDefinitions } = this.buildRequestDispatcher({
+      sessionId: input.sessionKey as string,
+      userId: 'tui',
+      channelId: 'tui',
+    });
+    const runner = this.deps.runnerFactory(dispatcher);
+
+    const params: AgentRunParams = {
+      agentId: input.agentId,
+      sessionKey: input.sessionKey,
+      model: input.model,
+      systemPrompt: this.deps.systemPrompt,
+      messages: [...priorMessages, userMessage],
+      tools: toolDefinitions.length > 0 ? [...toolDefinitions] : undefined,
+      abortSignal: signal,
+    };
+
+    const result = await runner.execute(params, listener);
+
+    await this.persistHistory(input.sessionKey, input.agentId, result.messages);
+
+    return {
+      messageId: randomUUID(),
+      content: extractAssistantText(result.messages),
+      usage: {
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+      },
+    };
+  }
+
+  private async loadHistory(sessionKey: SessionKey): Promise<ConversationMessage[]> {
     const { storage } = this.deps;
     if (!storage) {
       return [];
     }
     try {
-      const record = await storage.getConversation(ctx.sessionKey);
+      const record = await storage.getConversation(sessionKey);
       if (!record?.messages.length) {
         return [];
       }
       return record.messages.slice(-this.historyLimit);
     } catch (err) {
       this.deps.logger?.warn(
-        `Failed to load conversation history for ${ctx.sessionKey}: ${toMessage(err)}`,
+        `Failed to load conversation history for ${sessionKey}: ${toMessage(err)}`,
       );
       return [];
     }
   }
 
-  private buildRequestDispatcher(
-    ctx: PipelineMsgContext,
-    _signal: AbortSignal,
-  ): {
+  private buildRequestDispatcher(ctx: {
+    readonly sessionId: string;
+    readonly userId: string;
+    readonly channelId: string;
+  }): {
     dispatcher: ExecutionToolDispatcher;
     toolDefinitions: readonly import('@finclaw/types').ToolDefinition[];
   } {
     if (!this.deps.toolRegistry) {
       return { dispatcher: new ToolDispatcherCtor(), toolDefinitions: [] };
     }
-    return buildDispatcher(this.deps.toolRegistry, {
-      sessionId: ctx.sessionKey as string,
-      userId: ctx.senderId,
-      channelId: ctx.channelId as unknown as string,
-    });
+    return buildDispatcher(this.deps.toolRegistry, ctx);
   }
 
   private async persistHistory(
-    ctx: PipelineMsgContext,
+    sessionKey: SessionKey,
+    agentId: AgentId,
     messages: readonly ConversationMessage[],
   ): Promise<void> {
     const { storage } = this.deps;
@@ -156,18 +217,24 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
     try {
       const now = Date.now() as Timestamp;
       await storage.upsertConversation({
-        sessionKey: ctx.sessionKey,
-        agentId: this.defaultAgentId,
+        sessionKey,
+        agentId,
         messages: [...messages],
         createdAt: now,
         updatedAt: now,
       });
     } catch (err) {
       this.deps.logger?.warn(
-        `Failed to persist conversation history for ${ctx.sessionKey}: ${toMessage(err)}`,
+        `Failed to persist conversation history for ${sessionKey}: ${toMessage(err)}`,
       );
     }
   }
+}
+
+export interface TuiExecutionResult {
+  readonly messageId: string;
+  readonly content: string;
+  readonly usage: { readonly inputTokens: number; readonly outputTokens: number };
 }
 
 export function extractAssistantText(messages: readonly ConversationMessage[]): string {

@@ -2,6 +2,7 @@ import type { ConversationRecord, MemoryEntry, ModelRef, SearchResult } from '@f
 import { resetEventBus } from '@finclaw/infra';
 // packages/server/src/gateway/server.test.ts
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import type { RunnerExecutionAdapter } from '../auto-reply/execution-adapter.js';
 import type { GatewayServerConfig } from './rpc/types.js';
 import { clearMethods } from './rpc/index.js';
 import { createGatewayServer, type GatewayServer, type GatewayServerDeps } from './server.js';
@@ -13,9 +14,21 @@ const TEST_MODEL: ModelRef = {
   maxOutputTokens: 8_192,
 };
 
+function makeStubAdapter(): RunnerExecutionAdapter {
+  return {
+    execute: async () => ({ content: '', usage: { inputTokens: 0, outputTokens: 0 } }),
+    executeForTui: async () => ({
+      messageId: 'stub',
+      content: '',
+      usage: { inputTokens: 0, outputTokens: 0 },
+    }),
+  } as unknown as RunnerExecutionAdapter;
+}
+
 function makeTestDeps(): GatewayServerDeps {
   return {
     defaultModel: TEST_MODEL,
+    adapter: makeStubAdapter(),
     storage: {
       saveConversation: async () => undefined,
       upsertConversation: async () => undefined,

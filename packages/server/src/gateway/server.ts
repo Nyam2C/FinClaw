@@ -10,6 +10,7 @@ import {
 } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
 import { WebSocketServer, type WebSocket } from 'ws';
+import type { RunnerExecutionAdapter } from '../auto-reply/execution-adapter.js';
 import type { GatewayServerContext } from './context.js';
 import type { GatewayServerConfig } from './rpc/types.js';
 import { GatewayBroadcaster } from './broadcaster.js';
@@ -28,6 +29,7 @@ import { startHeartbeat } from './ws/heartbeat.js';
 export interface GatewayServerDeps {
   readonly storage: StorageAdapter;
   readonly defaultModel: ModelRef;
+  readonly adapter: RunnerExecutionAdapter;
 }
 
 export interface GatewayServer {
@@ -76,6 +78,7 @@ export function createGatewayServer(
     broadcaster: ctx.broadcaster,
     storage: deps.storage,
     defaultModel: deps.defaultModel,
+    adapter: deps.adapter,
   });
   registerFinanceMethods();
   registerSessionMethods({

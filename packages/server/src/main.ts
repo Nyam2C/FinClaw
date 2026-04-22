@@ -172,16 +172,24 @@ async function main(): Promise<void> {
   });
   logger.info('Discord adapter connected');
 
-  // 8. Gateway
-  await assertPortAvailable(defaultConfig.port);
-  const gateway = createGatewayServer(defaultConfig, {
+  // 8. Gateway — FINCLAW_API_KEY 환경변수로 API 키 기반 인증 활성화
+  const gatewayConfig: GatewayServerConfig = {
+    ...defaultConfig,
+    auth: {
+      ...defaultConfig.auth,
+      apiKeys: process.env.FINCLAW_API_KEY ? [process.env.FINCLAW_API_KEY] : [],
+    },
+  };
+  await assertPortAvailable(gatewayConfig.port);
+  const gateway = createGatewayServer(gatewayConfig, {
     storage,
     defaultModel: DEFAULT_MODEL,
+    adapter,
   });
   lifecycle.register(() => gateway.stop());
   lifecycle.init();
   await gateway.start();
-  logger.info(`Gateway listening on ${defaultConfig.host}:${defaultConfig.port}`);
+  logger.info(`Gateway listening on ${gatewayConfig.host}:${gatewayConfig.port}`);
 
   getEventBus().emit('system:ready');
 }

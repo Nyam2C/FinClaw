@@ -1,15 +1,18 @@
 // packages/server/src/gateway/rpc/methods/chat.ts
-import type { ModelRef, SessionKey, StorageAdapter } from '@finclaw/types';
-import { createSessionKey } from '@finclaw/types';
+import type { AgentId, ModelRef, SessionKey, StorageAdapter } from '@finclaw/types';
+import { createAgentId, createSessionKey } from '@finclaw/types';
 import { z } from 'zod/v4';
+import type { RunnerExecutionAdapter } from '../../../auto-reply/execution-adapter.js';
 import type { GatewayBroadcaster } from '../../broadcaster.js';
 import type { ChatRegistry } from '../../registry.js';
 import type { RpcMethodHandler, WsConnection } from '../types.js';
 import { registerMethod } from '../index.js';
 
+/** chat.send 타임아웃 — 긴 도구 체인에서도 안전하도록 60초. */
+const CHAT_SEND_TIMEOUT_MS = 60_000;
+
 /**
  * chat.* 메서드가 필요로 하는 공용 의존성.
- * adapter/systemPrompt는 Todo 7에서 executeForTui 배선 시 확장된다.
  */
 export interface ChatMethodsDeps {
   readonly registry: ChatRegistry;
@@ -17,6 +20,7 @@ export interface ChatMethodsDeps {
   readonly broadcaster: GatewayBroadcaster;
   readonly storage: StorageAdapter;
   readonly defaultModel: ModelRef;
+  readonly adapter: RunnerExecutionAdapter;
 }
 
 /**
@@ -68,9 +72,35 @@ export function createChatMethods(deps: ChatMethodsDeps): readonly RpcMethodHand
       message: z.string(),
       idempotencyKey: z.string().optional(),
     }),
-    async execute(_params) {
-      // TODO(phase-21-todo-7): adapter.executeForTui 연동
-      throw new Error('chat.send requires execution engine wiring (phase 21 Todo 7)');
+    async execute(params) {
+      const session = deps.registry.getSession(params.sessionId);
+      if (!session) {
+        throw new Error('session not found');
+      }
+      const conn = deps.connections.get(session.connectionId);
+      // conn이 없어도 adapter는 실행 — 스트리밍 알림만 drop.
+      const listener = conn
+        ? (event: import('@finclaw/agent').StreamEvent) =>
+            deps.broadcaster.send(conn, session.sessionId, event)
+        : undefined;
+
+      const signal = AbortSignal.any([
+        session.abortController.signal,
+        AbortSignal.timeout(CHAT_SEND_TIMEOUT_MS),
+      ]);
+
+      const agentId: AgentId = createAgentId(session.agentId);
+      const result = await deps.adapter.executeForTui(
+        {
+          sessionKey: session.sessionKey,
+          agentId,
+          userMessage: params.message,
+          model: session.model,
+        },
+        listener,
+        signal,
+      );
+      return { messageId: result.messageId };
     },
   };
 
