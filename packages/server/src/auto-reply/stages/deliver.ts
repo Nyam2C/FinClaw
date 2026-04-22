@@ -1,6 +1,7 @@
 import type { FinClawLogger } from '@finclaw/infra';
 // packages/server/src/auto-reply/stages/deliver.ts
 import type { OutboundMessage, ReplyPayload, ChannelPlugin } from '@finclaw/types';
+import type { ToolCallRecord } from '../execution-adapter.js';
 import type { PipelineMsgContext } from '../pipeline-context.js';
 import type { StageResult } from '../pipeline.js';
 import type { ExecuteStageResult } from './execute.js';
@@ -32,6 +33,9 @@ export async function deliverResponse(
       '\n\n---\n' +
       '_본 정보는 투자 조언이 아니며, 투자 결정은 본인의 판단과 책임 하에 이루어져야 합니다._';
   }
+
+  // Phase 22: 도구 출처 footer 자동 첨부
+  content += formatSourceFooter(executeResult.toolCalls);
 
   // 메시지 분할
   // channelCapabilities는 PipelineMsgContext에서 non-optional이지만, 방어적 코딩으로 옵셔널 체이닝 유지.
@@ -66,4 +70,28 @@ export async function deliverResponse(
   }
 
   return { action: 'continue', data: outbound };
+}
+
+function formatSourceFooter(toolCalls: readonly ToolCallRecord[] | undefined): string {
+  if (!toolCalls || toolCalls.length === 0) {
+    return '';
+  }
+  const formatter = new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  const displayed = toolCalls.slice(0, 3);
+  const lines = displayed.map((tc) => {
+    const time = formatter.format(new Date(tc.timestamp));
+    const src = tc.source ? `(${tc.source})` : '';
+    return `📊 ${tc.name}${src} @ ${time} KST`;
+  });
+  if (toolCalls.length > 3) {
+    lines.push(`… (외 ${toolCalls.length - 3}개 도구)`);
+  }
+  return '\n\n---\n' + lines.join('\n');
 }
