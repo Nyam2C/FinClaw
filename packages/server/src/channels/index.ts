@@ -2,6 +2,8 @@
 export { createChannelDock, CORE_DOCKS } from './dock.js';
 export type { CreateDockOptions } from './dock.js';
 
+export { initChannels } from './init.js';
+
 export {
   registerChannelDock,
   getChannelDock,

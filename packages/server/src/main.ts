@@ -25,6 +25,7 @@ import { InMemoryCommandRegistry } from './auto-reply/commands/registry.js';
 import { RunnerExecutionAdapter, type RunnerFactory } from './auto-reply/execution-adapter.js';
 import { StubFinanceContextProvider } from './auto-reply/pipeline-context.js';
 import { AutoReplyPipeline } from './auto-reply/pipeline.js';
+import { initChannels } from './channels/index.js';
 import { createGatewayServer } from './gateway/server.js';
 import { ProcessLifecycle } from './process/lifecycle.js';
 import { MessageRouter } from './process/message-router.js';
@@ -120,6 +121,9 @@ async function main(): Promise<void> {
   lifecycle.register(async () => {
     await storage.close();
   });
+
+  // 2a. 채널 도크 자동 등록 (discord, http-webhook)
+  initChannels(logger);
 
   // 3. Discord 클라이언트 먼저 로그인 (alerts가 DM 전달 핸들을 필요로 함)
   const discordAdapter = new DiscordAdapter();
