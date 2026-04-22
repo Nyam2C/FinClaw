@@ -1,8 +1,20 @@
 // packages/server/src/auto-reply/commands/built-in.ts
+import type { ToolRegistry } from '@finclaw/agent';
+import type { StorageAdapter } from '@finclaw/types';
 import type { CommandRegistry } from './registry.js';
+import { createResetCommand } from './reset.js';
+import { createStatusCommand } from './status.js';
 
-/** 내장 명령어 등록 */
-export function registerBuiltInCommands(registry: CommandRegistry): void {
+export interface BuiltInCommandDeps {
+  readonly toolRegistry?: ToolRegistry;
+  readonly storage?: StorageAdapter;
+}
+
+/** 내장 명령어 등록 (deps 미제공 시 status/reset은 플레이스홀더) */
+export function registerBuiltInCommands(
+  registry: CommandRegistry,
+  deps: BuiltInCommandDeps = {},
+): void {
   // /help - 도움말
   registry.register(
     {
@@ -41,11 +53,27 @@ export function registerBuiltInCommands(registry: CommandRegistry): void {
       usage: '/reset',
       category: 'general',
     },
-    async () => ({
-      content: '대화 세션이 초기화되었습니다. 새로운 대화를 시작해 주세요.',
-      ephemeral: false,
-    }),
+    deps.storage
+      ? createResetCommand({ storage: deps.storage })
+      : async () => ({
+          content: '대화 세션이 초기화되었습니다. 새로운 대화를 시작해 주세요.',
+          ephemeral: false,
+        }),
   );
+
+  // /status - 서버 상태
+  if (deps.toolRegistry && deps.storage) {
+    registry.register(
+      {
+        name: 'status',
+        aliases: ['상태'],
+        description: 'FinClaw 서버 상태를 표시합니다',
+        usage: '/status',
+        category: 'general',
+      },
+      createStatusCommand({ toolRegistry: deps.toolRegistry, storage: deps.storage }),
+    );
+  }
 
   // /price - 시세 조회
   registry.register(
