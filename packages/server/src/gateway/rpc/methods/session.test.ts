@@ -1,11 +1,28 @@
+import type { ConversationRecord, MemoryEntry, SearchResult } from '@finclaw/types';
 import { resetEventBus } from '@finclaw/infra';
 // packages/server/src/gateway/rpc/methods/session.test.ts
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { GatewayServerContext } from '../../context.js';
 import type { GatewayServerConfig } from '../types.js';
+import { GatewayBroadcaster } from '../../broadcaster.js';
+import { ChatRegistry } from '../../registry.js';
 import { RpcErrors } from '../errors.js';
 import { dispatchRpc, clearMethods } from '../index.js';
 import { registerSessionMethods } from './session.js';
+
+function makeStorage() {
+  return {
+    saveConversation: async () => undefined,
+    upsertConversation: async () => undefined,
+    getConversation: async () => null as ConversationRecord | null,
+    deleteConversation: async () => false,
+    searchConversations: async () => [] as SearchResult[],
+    saveMemory: async () => undefined,
+    searchMemory: async () => [] as MemoryEntry[],
+    initialize: async () => undefined,
+    close: async () => undefined,
+  };
+}
 
 function makeServerCtx(): GatewayServerContext {
   const config: GatewayServerConfig = {
@@ -26,8 +43,8 @@ function makeServerCtx(): GatewayServerContext {
     httpServer: {} as GatewayServerContext['httpServer'],
     wss: {} as GatewayServerContext['wss'],
     connections: new Map(),
-    registry: { activeCount: () => 0 } as GatewayServerContext['registry'],
-    broadcaster: {} as GatewayServerContext['broadcaster'],
+    registry: new ChatRegistry(60_000),
+    broadcaster: new GatewayBroadcaster(),
     isDraining: false,
   };
 }
@@ -38,10 +55,16 @@ const tokenCtx = {
 };
 
 describe('session.* RPC methods', () => {
+  let ctx: GatewayServerContext;
+
   beforeEach(() => {
     clearMethods();
     resetEventBus();
-    registerSessionMethods();
+    ctx = makeServerCtx();
+    registerSessionMethods({
+      registry: ctx.registry,
+      storage: makeStorage(),
+    });
   });
 
   describe('schema validation', () => {
@@ -49,7 +72,7 @@ describe('session.* RPC methods', () => {
       const result = await dispatchRpc(
         { jsonrpc: '2.0', id: 1, method: 'session.get', params: {} },
         tokenCtx,
-        makeServerCtx(),
+        ctx,
       );
       expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.INVALID_PARAMS);
     });
@@ -58,19 +81,18 @@ describe('session.* RPC methods', () => {
       const result = await dispatchRpc(
         { jsonrpc: '2.0', id: 1, method: 'session.reset', params: {} },
         tokenCtx,
-        makeServerCtx(),
+        ctx,
       );
       expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.INVALID_PARAMS);
     });
 
-    it('session.list accepts empty params', async () => {
-      // session.list는 params 없이 호출 가능하나 stub이므로 INTERNAL_ERROR
+    it('session.list returns empty when no sessions exist', async () => {
       const result = await dispatchRpc(
         { jsonrpc: '2.0', id: 1, method: 'session.list', params: {} },
         tokenCtx,
-        makeServerCtx(),
+        ctx,
       );
-      expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.INTERNAL_ERROR);
+      expect((result as { result: { sessions: unknown[] } }).result.sessions).toEqual([]);
     });
   });
 
@@ -79,7 +101,7 @@ describe('session.* RPC methods', () => {
       const result = await dispatchRpc(
         { jsonrpc: '2.0', id: 1, method: 'session.get', params: { sessionId: 's1' } },
         { auth: { level: 'none', permissions: [] }, remoteAddress: '127.0.0.1' },
-        makeServerCtx(),
+        ctx,
       );
       expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.UNAUTHORIZED);
     });

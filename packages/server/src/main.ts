@@ -172,9 +172,12 @@ async function main(): Promise<void> {
   });
   logger.info('Discord adapter connected');
 
-  // 8. Gateway (기존 로직 — deps 확장은 Todo 7)
+  // 8. Gateway
   await assertPortAvailable(defaultConfig.port);
-  const gateway = createGatewayServer(defaultConfig);
+  const gateway = createGatewayServer(defaultConfig, {
+    storage,
+    defaultModel: DEFAULT_MODEL,
+  });
   lifecycle.register(() => gateway.stop());
   lifecycle.init();
   await gateway.start();

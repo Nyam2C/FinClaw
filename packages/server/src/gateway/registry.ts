@@ -1,3 +1,4 @@
+import type { ModelRef, SessionKey } from '@finclaw/types';
 // packages/server/src/gateway/registry.ts
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
@@ -22,7 +23,12 @@ export class ChatRegistry {
   }
 
   /** 새 세션 시작 */
-  startSession(params: { agentId: string; connectionId: string; model?: string }): ActiveSession {
+  startSession(params: {
+    agentId: string;
+    connectionId: string;
+    model: ModelRef;
+    sessionKey: SessionKey;
+  }): ActiveSession {
     // 동일 연결에서 이미 running 세션이 있으면 거부
     for (const session of this.sessions.values()) {
       if (session.connectionId === params.connectionId && session.status === 'running') {
@@ -37,6 +43,8 @@ export class ChatRegistry {
       startedAt: Date.now(),
       status: 'running',
       abortController: new AbortController(),
+      model: params.model,
+      sessionKey: params.sessionKey,
     };
 
     // TTL 기반 자동 타임아웃
@@ -81,6 +89,11 @@ export class ChatRegistry {
   /** 모든 세션 목록 */
   listSessions(): ActiveSession[] {
     return [...this.sessions.values()];
+  }
+
+  /** 특정 연결에 속한 세션 목록 */
+  listSessionsByConnection(connectionId: string): ActiveSession[] {
+    return [...this.sessions.values()].filter((s) => s.connectionId === connectionId);
   }
 
   /** 모든 세션 abort (shutdown 용) */

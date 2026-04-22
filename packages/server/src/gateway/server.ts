@@ -1,3 +1,4 @@
+import type { ModelRef, StorageAdapter } from '@finclaw/types';
 import { getEventBus } from '@finclaw/infra';
 import { readFileSync } from 'node:fs';
 // packages/server/src/gateway/server.ts
@@ -24,6 +25,11 @@ import { registerSystemMethods } from './rpc/methods/system.js';
 import { handleWsConnection } from './ws/connection.js';
 import { startHeartbeat } from './ws/heartbeat.js';
 
+export interface GatewayServerDeps {
+  readonly storage: StorageAdapter;
+  readonly defaultModel: ModelRef;
+}
+
 export interface GatewayServer {
   readonly httpServer: HttpServer;
   readonly wss: WebSocketServer;
@@ -32,15 +38,10 @@ export interface GatewayServer {
   stop(): Promise<void>;
 }
 
-export function createGatewayServer(config: GatewayServerConfig): GatewayServer {
-  // RPC 메서드 등록
-  registerSystemMethods();
-  registerConfigMethods();
-  registerChatMethods();
-  registerFinanceMethods();
-  registerSessionMethods();
-  registerAgentMethods();
-
+export function createGatewayServer(
+  config: GatewayServerConfig,
+  deps: GatewayServerDeps,
+): GatewayServer {
   // HTTP 서버 생성
   const httpServer = config.tls
     ? createHttpsServer({
@@ -65,6 +66,23 @@ export function createGatewayServer(config: GatewayServerConfig): GatewayServer 
     broadcaster: new GatewayBroadcaster(),
     isDraining: false,
   };
+
+  // RPC 메서드 등록 (ctx가 생성된 후 deps 주입)
+  registerSystemMethods();
+  registerConfigMethods();
+  registerChatMethods({
+    registry: ctx.registry,
+    connections: ctx.connections,
+    broadcaster: ctx.broadcaster,
+    storage: deps.storage,
+    defaultModel: deps.defaultModel,
+  });
+  registerFinanceMethods();
+  registerSessionMethods({
+    registry: ctx.registry,
+    storage: deps.storage,
+  });
+  registerAgentMethods();
 
   // HTTP 요청 처리
   httpServer.on('request', (req: IncomingMessage, res: ServerResponse) => {
