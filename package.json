@@ -11,7 +11,7 @@
     "format": "oxfmt --check .",
     "format:fix": "oxfmt --write .",
     "lint": "oxlint --config oxlintrc.json .",
-    "prepare": "lefthook install",
+    "prepare": "lefthook install || true",
     "setup": "bash scripts/setup.sh",
     "test": "vitest run",
     "test:all": "node scripts/test-parallel.mjs --all",
