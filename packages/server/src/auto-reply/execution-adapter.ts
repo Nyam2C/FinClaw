@@ -31,9 +31,21 @@ export interface ExecutionAdapter {
   execute(ctx: PipelineMsgContext, signal: AbortSignal): Promise<ExecutionResult>;
 }
 
+/** Phase 22: 도구 호출 감사용 메타데이터 — DeliverStage 출처 footer·DB 병렬 저장에서 소비 */
+export interface ToolCallRecord {
+  readonly name: string;
+  readonly input: unknown;
+  readonly output: string;
+  readonly source?: string;
+  readonly timestamp: number;
+  readonly durationMs?: number;
+  readonly isError?: boolean;
+}
+
 export interface ExecutionResult {
   readonly content: string;
   readonly usage?: { inputTokens: number; outputTokens: number };
+  readonly toolCalls?: readonly ToolCallRecord[];
 }
 
 /**
@@ -107,7 +119,9 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
       abortSignal: signal,
     };
 
+    const startedAt = Date.now();
     const result = await runner.execute(params);
+    const toolCalls = collectToolCalls(result.messages, startedAt);
 
     await this.persistHistory(ctx.sessionKey, this.defaultAgentId, result.messages);
 
@@ -117,6 +131,7 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
         inputTokens: result.usage.inputTokens,
         outputTokens: result.usage.outputTokens,
       },
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
     };
   }
 
@@ -258,4 +273,36 @@ export function extractAssistantText(messages: readonly ConversationMessage[]): 
 
 function toMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/** assistant tool_use 블록과 뒤따르는 tool tool_result 블록을 페어링해 감사 레코드 생성 */
+function collectToolCalls(
+  messages: readonly ConversationMessage[],
+  fallbackTimestamp: number,
+): ToolCallRecord[] {
+  const records: ToolCallRecord[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    if (msg?.role !== 'assistant' || !Array.isArray(msg.content)) {
+      continue;
+    }
+    for (const block of msg.content) {
+      if (block.type !== 'tool_use') {
+        continue;
+      }
+      const resultMsg = messages.slice(i + 1).find((r) => r?.role === 'tool');
+      const resultBlock =
+        resultMsg && Array.isArray(resultMsg.content)
+          ? resultMsg.content.find((b) => b.type === 'tool_result' && b.toolUseId === block.id)
+          : undefined;
+      records.push({
+        name: block.name,
+        input: block.input,
+        output: resultBlock?.type === 'tool_result' ? resultBlock.content : '',
+        timestamp: fallbackTimestamp,
+        isError: resultBlock?.type === 'tool_result' ? resultBlock.isError : undefined,
+      });
+    }
+  }
+  return records;
 }
