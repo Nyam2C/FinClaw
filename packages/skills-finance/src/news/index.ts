@@ -28,11 +28,16 @@ export interface NewsSkillConfig {
   readonly quoteService: QuoteService;
 }
 
+/** Phase 22: main.ts가 alerts 배선에 재사용할 수 있도록 aggregator 노출 */
+export interface NewsSkillHandle {
+  readonly aggregator: import('./types.js').NewsAggregator;
+}
+
 /** 스킬을 초기화하고 도구를 등록한다 */
 export async function registerNewsTools(
   registry: ToolRegistry,
   config: NewsSkillConfig,
-): Promise<void> {
+): Promise<NewsSkillHandle> {
   // 프로바이더 초기화
   const providers: NewsProvider[] = [];
 
@@ -65,6 +70,8 @@ export async function registerNewsTools(
     quoteService: config.quoteService,
     newsAggregator,
   });
+
+  return { aggregator: newsAggregator };
 }
 
 /** 스킬 메타데이터 */

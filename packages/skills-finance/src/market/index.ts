@@ -2,6 +2,7 @@ import type { RegisteredToolDefinition, ToolExecutor, ToolRegistry } from '@finc
 // packages/skills-finance/src/market/index.ts
 import type { DatabaseSync } from 'node:sqlite';
 import { createTickerSymbol } from '@finclaw/types';
+import type { QuoteService } from '../news/portfolio/tracker.js';
 import type { ProviderMarketQuote, HistoricalPeriod } from './types.js';
 import { MarketCache } from './cache.js';
 import { generateSparkline } from './charts.js';
@@ -22,11 +23,18 @@ interface MarketSkillState {
   readonly cache: MarketCache;
 }
 
+/** Phase 22: main.ts가 news/alerts 배선에 재사용할 수 있도록 내부 상태 노출 */
+export interface MarketSkillHandle {
+  readonly providers: ProviderRegistry;
+  readonly cache: MarketCache;
+  readonly quoteService: QuoteService;
+}
+
 /** 스킬을 초기화하고 도구를 등록한다 */
 export async function registerMarketTools(
   registry: ToolRegistry,
   config: MarketSkillConfig,
-): Promise<void> {
+): Promise<MarketSkillHandle> {
   const providers = await createDefaultRegistry({
     alphaVantageKey: config.alphaVantageKey,
     coinGeckoKey: config.coinGeckoKey,
@@ -38,7 +46,23 @@ export async function registerMarketTools(
   registerCryptoPriceTool(registry, state);
   registerForexRateTool(registry, state);
   registerMarketChartTool(registry, state);
+
+  const quoteService: QuoteService = {
+    async getQuote(symbol: string) {
+      const quote = await getQuoteFromState(state, symbol);
+      return {
+        price: quote.price,
+        change: quote.change ?? 0,
+        changePercent: quote.changePercent ?? 0,
+      };
+    },
+  };
+
+  return { providers, cache, quoteService };
 }
+
+export type { MarketCache } from './cache.js';
+export type { ProviderRegistry } from './provider-registry.js';
 
 // ── 내부 헬퍼 ──
 
