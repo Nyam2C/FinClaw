@@ -49,17 +49,6 @@ describe('resolveApiKeyForProvider', () => {
     expect(result.apiKey).toBe('sk-env-key');
   });
 
-  it('Step 2: OpenAI 환경변수 매핑', async () => {
-    const result = await resolveApiKeyForProvider(
-      'openai',
-      makeOptions({
-        env: { OPENAI_API_KEY: 'sk-openai-env' },
-      }),
-    );
-    expect(result.source).toBe('environment');
-    expect(result.apiKey).toBe('sk-openai-env');
-  });
-
   it('Step 3: 설정 파일에서 해석', async () => {
     const result = await resolveApiKeyForProvider(
       'anthropic',

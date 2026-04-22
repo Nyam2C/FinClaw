@@ -5,8 +5,8 @@ import { InMemoryModelCatalog } from '../src/models/catalog.js';
 describe('InMemoryModelCatalog', () => {
   const catalog = new InMemoryModelCatalog(BUILT_IN_MODELS);
 
-  it('내장 모델 6종을 모두 조회한다', () => {
-    expect(catalog.listModels()).toHaveLength(6);
+  it('내장 모델 3종을 모두 조회한다', () => {
+    expect(catalog.listModels()).toHaveLength(3);
   });
 
   it('ID로 모델을 조회한다', () => {
@@ -22,12 +22,8 @@ describe('InMemoryModelCatalog', () => {
 
   it('제공자별 필터링', () => {
     const anthropicModels = catalog.getModelsByProvider('anthropic');
-    expect(anthropicModels.length).toBeGreaterThanOrEqual(3);
+    expect(anthropicModels.length).toBe(3);
     expect(anthropicModels.every((m) => m.provider === 'anthropic')).toBe(true);
-
-    const openaiModels = catalog.getModelsByProvider('openai');
-    expect(openaiModels.length).toBeGreaterThanOrEqual(2);
-    expect(openaiModels.every((m) => m.provider === 'openai')).toBe(true);
   });
 
   it('기능 요구사항으로 필터링', () => {
@@ -38,7 +34,7 @@ describe('InMemoryModelCatalog', () => {
 
   it('numericalReasoningTier로 필터링', () => {
     const highTier = catalog.findModels({ numericalReasoningTier: 'high' });
-    expect(highTier.length).toBeGreaterThanOrEqual(2); // opus + o3
+    expect(highTier.length).toBeGreaterThanOrEqual(1);
   });
 
   it('registerModel()로 커스텀 모델 등록', () => {

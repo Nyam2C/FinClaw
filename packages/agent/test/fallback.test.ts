@@ -7,10 +7,10 @@ import { runWithModelFallback, DEFAULT_FALLBACK_TRIGGERS } from '../src/models/f
 import { resetBreakers } from '../src/providers/adapter.js';
 
 // 모킹 helpers
-function makeResolved(id: string, provider: 'anthropic' | 'openai' = 'anthropic'): ResolvedModel {
+function makeResolved(id: string): ResolvedModel {
   return {
-    entry: { id, provider } as unknown as ResolvedModel['entry'],
-    provider,
+    entry: { id, provider: 'anthropic' } as unknown as ResolvedModel['entry'],
+    provider: 'anthropic',
     modelId: id,
     resolvedFrom: 'id',
   };
@@ -40,7 +40,7 @@ describe('runWithModelFallback', () => {
 
   const resolveMap: Record<string, ResolvedModel> = {
     'model-a': makeResolved('model-a'),
-    'model-b': makeResolved('model-b', 'openai'),
+    'model-b': makeResolved('model-b'),
   };
   const resolve = (ref: { raw: string }) => resolveMap[ref.raw];
 

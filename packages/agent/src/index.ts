@@ -26,18 +26,12 @@ export { resolveModel } from './models/selection.js';
 export type { UnresolvedModelRef, ResolvedModel } from './models/selection.js';
 
 // ─── models: provider normalize ───
-export {
-  normalizers,
-  normalizeAnthropicResponse,
-  normalizeOpenAIResponse,
-  calculateEstimatedCost,
-} from './models/provider-normalize.js';
+export { normalizeAnthropicResponse, calculateEstimatedCost } from './models/provider-normalize.js';
 export type {
   NormalizedResponse,
   NormalizedUsage,
   StopReason,
   StreamChunk,
-  ResponseNormalizer,
 } from './models/provider-normalize.js';
 
 // ─── models: fallback ───
@@ -50,14 +44,9 @@ export type {
 } from './models/fallback.js';
 
 // ─── providers ───
-export {
-  createProviderAdapter,
-  getBreakerForProvider,
-  resetBreakers,
-} from './providers/adapter.js';
+export { getBreakerForProvider, resetBreakers } from './providers/adapter.js';
 export type { ProviderAdapter, ProviderRequestParams } from './providers/adapter.js';
 export { AnthropicAdapter } from './providers/anthropic.js';
-export { OpenAIAdapter } from './providers/openai.js';
 
 // ─── auth: cooldown ───
 export { CooldownTracker } from './auth/cooldown.js';
@@ -157,10 +146,6 @@ export {
   buildComplianceSection,
   buildRiskDisclaimerSection,
 } from './agents/system-prompt.js';
-
-// ── Phase 7: Skills ──
-export type { SkillDefinition, SkillManager } from './agents/skills/manager.js';
-export { InMemorySkillManager } from './agents/skills/manager.js';
 
 // ── Phase 9: Execution ──
 export {

@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import type { ModelPricing } from '../src/models/catalog.js';
 import {
   normalizeAnthropicResponse,
-  normalizeOpenAIResponse,
   calculateEstimatedCost,
 } from '../src/models/provider-normalize.js';
 
@@ -64,59 +63,6 @@ describe('normalizeAnthropicResponse', () => {
   it('raw를 보존한다', () => {
     const result = normalizeAnthropicResponse(mockResponse, pricing);
     expect(result.raw).toBe(mockResponse);
-  });
-});
-
-describe('normalizeOpenAIResponse', () => {
-  const mockResponse = {
-    id: 'chatcmpl-123',
-    model: 'gpt-4o',
-    choices: [
-      {
-        message: { content: 'Hi there' },
-        finish_reason: 'stop',
-      },
-    ],
-    usage: {
-      prompt_tokens: 80,
-      completion_tokens: 30,
-      total_tokens: 110,
-    },
-  };
-
-  it('필드를 정확히 매핑한다', () => {
-    const result = normalizeOpenAIResponse(mockResponse, pricing);
-    expect(result.content).toBe('Hi there');
-    expect(result.stopReason).toBe('end_turn'); // 'stop' → 'end_turn'
-    expect(result.modelId).toBe('gpt-4o');
-    expect(result.provider).toBe('openai');
-    expect(result.usage.inputTokens).toBe(80);
-    expect(result.usage.outputTokens).toBe(30);
-    expect(result.usage.totalTokens).toBe(110);
-  });
-
-  it('캐시 토큰은 0이다 (OpenAI N/A)', () => {
-    const result = normalizeOpenAIResponse(mockResponse, pricing);
-    expect(result.usage.cacheReadTokens).toBe(0);
-    expect(result.usage.cacheWriteTokens).toBe(0);
-  });
-
-  it('finish_reason 매핑: length → max_tokens', () => {
-    const r = { ...mockResponse, choices: [{ message: { content: '' }, finish_reason: 'length' }] };
-    expect(normalizeOpenAIResponse(r, pricing).stopReason).toBe('max_tokens');
-  });
-
-  it('finish_reason 매핑: tool_calls → tool_use', () => {
-    const r = {
-      ...mockResponse,
-      choices: [{ message: { content: '' }, finish_reason: 'tool_calls' }],
-    };
-    expect(normalizeOpenAIResponse(r, pricing).stopReason).toBe('tool_use');
-  });
-
-  it('content가 null이면 빈 문자열', () => {
-    const r = { ...mockResponse, choices: [{ message: { content: null }, finish_reason: 'stop' }] };
-    expect(normalizeOpenAIResponse(r, pricing).content).toBe('');
   });
 });
 

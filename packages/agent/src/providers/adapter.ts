@@ -3,8 +3,6 @@ import type { ConversationMessage, ToolDefinition } from '@finclaw/types';
 import { createCircuitBreaker, type CircuitBreaker } from '@finclaw/infra';
 import type { ProviderId } from '../models/catalog.js';
 import type { StreamChunk } from '../models/provider-normalize.js';
-import { AnthropicAdapter } from './anthropic.js';
-import { OpenAIAdapter } from './openai.js';
 
 /** 제공자 API 호출 파라미터 */
 export interface ProviderRequestParams {
@@ -23,22 +21,6 @@ export interface ProviderAdapter {
   chatCompletion(params: ProviderRequestParams): Promise<unknown>;
   /** 스트리밍 LLM 호출 — Phase 9 실행 엔진용 */
   streamCompletion(params: ProviderRequestParams): AsyncIterable<StreamChunk>;
-}
-
-/** 제공자 어댑터 생성 팩토리 */
-export function createProviderAdapter(
-  provider: ProviderId,
-  apiKey: string,
-  options?: { baseUrl?: string },
-): ProviderAdapter {
-  switch (provider) {
-    case 'anthropic':
-      return new AnthropicAdapter(apiKey, options?.baseUrl);
-    case 'openai':
-      return new OpenAIAdapter(apiKey, options?.baseUrl);
-    default:
-      throw new Error(`Unsupported provider: ${provider as string}`);
-  }
 }
 
 /** 제공자별 CircuitBreaker 레지스트리 */
