@@ -31,12 +31,14 @@ services:
       - server
     ports:
       - '${FINCLAW_WEB_PORT:-5173}:5173'
+    # `pnpm exec`로 vite를 직접 호출 — script layer의 `--` 구분자 문제 회피
     command:
       - pnpm
       - --filter
       - '@finclaw/web'
+      - exec
+      - vite
       - preview
-      - --
       - --host
       - 0.0.0.0
       - --port
