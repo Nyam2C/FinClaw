@@ -47,9 +47,10 @@ export async function deliverResponse(
     replyToId: ctx.messageThreadId,
   }));
 
+  const targetId = ctx.chatId ?? ctx.senderId;
   const outbound: OutboundMessage = {
     channelId: ctx.channelId,
-    targetId: ctx.senderId,
+    targetId,
     payloads,
     replyToMessageId: ctx.messageThreadId,
   };
@@ -60,7 +61,7 @@ export async function deliverResponse(
       try {
         await channel.send({
           channelId: ctx.channelId,
-          targetId: ctx.senderId,
+          targetId,
           payloads: [payload],
         });
       } catch (error) {
