@@ -1,28 +1,46 @@
-# docker-compose.yml (Phase 0 scaffold)
+# docker-compose.yml — server + web 동시 기동 (pnpm run dev:all)
 
 services:
-  finclaw:
+  server:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: finclaw
+    image: finclaw:local
+    container_name: finclaw-server
     restart: unless-stopped
     init: true
-    ports:
-      - '${FINCLAW_PORT:-3000}:3000'
+    env_file:
+      - .env
     environment:
       - NODE_ENV=production
       - FINCLAW_HOST=0.0.0.0
       - FINCLAW_PORT=3000
-      # TODO (Phase 6): AI 프로바이더
-      # - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      # TODO (Phase 12): Discord
-      # - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
-      # TODO (Phase 16): 금융 데이터
-      # - ALPHA_VANTAGE_KEY=${ALPHA_VANTAGE_KEY:-}
-      - FINCLAW_DATA_DIR=/data
+      - FINCLAW_DB_PATH=/data/db.sqlite
+    ports:
+      - '${FINCLAW_PORT:-3000}:3000'
     volumes:
       - finclaw-data:/data
+    command: ['node', 'packages/server/dist/main.js']
+
+  web:
+    image: finclaw:local
+    container_name: finclaw-web
+    restart: unless-stopped
+    init: true
+    depends_on:
+      - server
+    ports:
+      - '${FINCLAW_WEB_PORT:-5173}:5173'
+    command:
+      - pnpm
+      - --filter
+      - '@finclaw/web'
+      - preview
+      - --
+      - --host
+      - 0.0.0.0
+      - --port
+      - '5173'
 
 volumes:
   finclaw-data:
