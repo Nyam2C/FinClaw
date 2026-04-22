@@ -1,6 +1,29 @@
 // packages/server/src/gateway/registry.test.ts
+import type { ModelRef } from '@finclaw/types';
+import { createSessionKey } from '@finclaw/types';
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { ChatRegistry } from './registry.js';
+
+const TEST_MODEL: ModelRef = {
+  provider: 'anthropic',
+  model: 'claude-test',
+  contextWindow: 200_000,
+  maxOutputTokens: 8_192,
+};
+
+/** 기본 세션 파라미터 — 테스트에서 agentId/connectionId만 오버라이드. */
+function sessionParams(overrides: { readonly agentId: string; readonly connectionId: string }): {
+  readonly agentId: string;
+  readonly connectionId: string;
+  readonly model: ModelRef;
+  readonly sessionKey: ReturnType<typeof createSessionKey>;
+} {
+  return {
+    ...overrides,
+    model: TEST_MODEL,
+    sessionKey: createSessionKey(`test:${overrides.connectionId}:${overrides.agentId}`),
+  };
+}
 
 describe('ChatRegistry', () => {
   let registry: ChatRegistry;
@@ -15,10 +38,9 @@ describe('ChatRegistry', () => {
 
   describe('startSession', () => {
     it('creates a new session with running status', () => {
-      const session = registry.startSession({
-        agentId: 'agent-1',
-        connectionId: 'conn-1',
-      });
+      const session = registry.startSession(
+        sessionParams({ agentId: 'agent-1', connectionId: 'conn-1' }),
+      );
       expect(session.sessionId).toBeDefined();
       expect(session.agentId).toBe('agent-1');
       expect(session.connectionId).toBe('conn-1');
@@ -28,30 +50,30 @@ describe('ChatRegistry', () => {
 
     it('increments active count', () => {
       expect(registry.activeCount()).toBe(0);
-      registry.startSession({ agentId: 'a', connectionId: 'c1' });
+      registry.startSession(sessionParams({ agentId: 'a', connectionId: 'c1' }));
       expect(registry.activeCount()).toBe(1);
-      registry.startSession({ agentId: 'a', connectionId: 'c2' });
+      registry.startSession(sessionParams({ agentId: 'a', connectionId: 'c2' }));
       expect(registry.activeCount()).toBe(2);
     });
 
     it('throws when same connection already has running session', () => {
-      registry.startSession({ agentId: 'a', connectionId: 'c1' });
-      expect(() => registry.startSession({ agentId: 'b', connectionId: 'c1' })).toThrow(
-        'Session already active',
-      );
+      registry.startSession(sessionParams({ agentId: 'a', connectionId: 'c1' }));
+      expect(() =>
+        registry.startSession(sessionParams({ agentId: 'b', connectionId: 'c1' })),
+      ).toThrow('Session already active');
     });
 
     it('allows same connection after previous session stopped', () => {
-      const s1 = registry.startSession({ agentId: 'a', connectionId: 'c1' });
+      const s1 = registry.startSession(sessionParams({ agentId: 'a', connectionId: 'c1' }));
       registry.stopSession(s1.sessionId);
-      const s2 = registry.startSession({ agentId: 'b', connectionId: 'c1' });
+      const s2 = registry.startSession(sessionParams({ agentId: 'b', connectionId: 'c1' }));
       expect(s2.sessionId).toBeDefined();
     });
 
     it('emits session_started event', () => {
       const listener = vi.fn();
       registry.on(listener);
-      const session = registry.startSession({ agentId: 'a', connectionId: 'c1' });
+      const session = registry.startSession(sessionParams({ agentId: 'a', connectionId: 'c1' }));
       expect(listener).toHaveBeenCalledWith(
         expect.objectContaining({
           type: 'session_started',
@@ -63,7 +85,7 @@ describe('ChatRegistry', () => {
 
   describe('stopSession', () => {
     it('stops and removes existing session', () => {
-      const session = registry.startSession({ agentId: 'a', connectionId: 'c1' });
+      const session = registry.startSession(sessionParams({ agentId: 'a', connectionId: 'c1' }));
       const result = registry.stopSession(session.sessionId);
       expect(result.stopped).toBe(true);
       expect(registry.activeCount()).toBe(0);
@@ -75,7 +97,7 @@ describe('ChatRegistry', () => {
     });
 
     it('aborts the session AbortController', () => {
-      const session = registry.startSession({ agentId: 'a', connectionId: 'c1' });
+      const session = registry.startSession(sessionParams({ agentId: 'a', connectionId: 'c1' }));
       registry.stopSession(session.sessionId);
       expect(session.abortController.signal.aborted).toBe(true);
     });
@@ -83,7 +105,7 @@ describe('ChatRegistry', () => {
     it('emits session_completed event with duration', () => {
       const listener = vi.fn();
       registry.on(listener);
-      const session = registry.startSession({ agentId: 'a', connectionId: 'c1' });
+      const session = registry.startSession(sessionParams({ agentId: 'a', connectionId: 'c1' }));
       registry.stopSession(session.sessionId);
 
       const completedEvent = listener.mock.calls.find(
@@ -96,7 +118,7 @@ describe('ChatRegistry', () => {
 
   describe('getSession / listSessions', () => {
     it('getSession returns session by id', () => {
-      const session = registry.startSession({ agentId: 'a', connectionId: 'c1' });
+      const session = registry.startSession(sessionParams({ agentId: 'a', connectionId: 'c1' }));
       expect(registry.getSession(session.sessionId)).toBe(session);
     });
 
@@ -105,16 +127,16 @@ describe('ChatRegistry', () => {
     });
 
     it('listSessions returns all active sessions', () => {
-      registry.startSession({ agentId: 'a', connectionId: 'c1' });
-      registry.startSession({ agentId: 'b', connectionId: 'c2' });
+      registry.startSession(sessionParams({ agentId: 'a', connectionId: 'c1' }));
+      registry.startSession(sessionParams({ agentId: 'b', connectionId: 'c2' }));
       expect(registry.listSessions()).toHaveLength(2);
     });
   });
 
   describe('abortAll', () => {
     it('aborts all sessions and clears the map', () => {
-      const s1 = registry.startSession({ agentId: 'a', connectionId: 'c1' });
-      const s2 = registry.startSession({ agentId: 'b', connectionId: 'c2' });
+      const s1 = registry.startSession(sessionParams({ agentId: 'a', connectionId: 'c1' }));
+      const s2 = registry.startSession(sessionParams({ agentId: 'b', connectionId: 'c2' }));
       registry.abortAll();
       expect(s1.abortController.signal.aborted).toBe(true);
       expect(s2.abortController.signal.aborted).toBe(true);
@@ -126,7 +148,9 @@ describe('ChatRegistry', () => {
     it('auto-stops session after TTL via cleanup', () => {
       vi.useFakeTimers();
       const shortRegistry = new ChatRegistry(1_000);
-      const session = shortRegistry.startSession({ agentId: 'a', connectionId: 'c1' });
+      const session = shortRegistry.startSession(
+        sessionParams({ agentId: 'a', connectionId: 'c1' }),
+      );
 
       // 60초 후 cleanup 실행
       vi.advanceTimersByTime(61_000);
@@ -140,7 +164,7 @@ describe('ChatRegistry', () => {
 
   describe('dispose', () => {
     it('clears cleanup timer and aborts all', () => {
-      const session = registry.startSession({ agentId: 'a', connectionId: 'c1' });
+      const session = registry.startSession(sessionParams({ agentId: 'a', connectionId: 'c1' }));
       registry.dispose();
       expect(session.abortController.signal.aborted).toBe(true);
       expect(registry.activeCount()).toBe(0);

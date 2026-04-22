@@ -86,9 +86,14 @@ export class DiscordAdapter implements ChannelPlugin<DiscordAccount> {
     if (!this.client) {
       return;
     }
-    const channel = await this.client.channels.fetch(chatId);
-    if (channel && 'sendTyping' in channel) {
-      await (channel as unknown as { sendTyping(): Promise<void> }).sendTyping();
+    // 타이핑 인디케이터는 best-effort — 잘못된 chatId 등으로 실패해도 파이프라인을 죽이지 않음
+    try {
+      const channel = await this.client.channels.fetch(chatId);
+      if (channel && 'sendTyping' in channel) {
+        await (channel as unknown as { sendTyping(): Promise<void> }).sendTyping();
+      }
+    } catch (error) {
+      log.warn('sendTyping failed', { chatId, error });
     }
   }
 

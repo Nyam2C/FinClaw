@@ -1,9 +1,61 @@
 import type { MessageStreamEvent } from '@anthropic-ai/sdk/resources/messages/messages.js';
+import type { ConversationMessage } from '@finclaw/types';
 // packages/agent/src/providers/anthropic.ts
 import Anthropic from '@anthropic-ai/sdk';
 import type { StreamChunk } from '../models/provider-normalize.js';
 import type { ProviderAdapter, ProviderRequestParams } from './adapter.js';
 import { FailoverError } from '../errors.js';
+
+type AnthropicMessageParam = Anthropic.Messages.MessageParam;
+
+/**
+ * 내부 ConversationMessage → Anthropic MessageParam 변환.
+ *
+ * - role 'tool' → 'user' (Anthropic은 tool_result를 user 메시지 내부 블록으로 받음)
+ * - ContentBlock의 toolUseId/isError → Anthropic의 tool_use_id/is_error
+ * - system 메시지는 상위에서 제외된 뒤 이 함수에 들어옴
+ */
+function toAnthropicMessages(messages: ConversationMessage[]): AnthropicMessageParam[] {
+  return messages.map((m) => {
+    if (m.role === 'tool') {
+      const sourceBlocks = Array.isArray(m.content) ? m.content : [];
+      const blocks: Anthropic.Messages.ContentBlockParam[] = [];
+      for (const b of sourceBlocks) {
+        if (b.type === 'tool_result') {
+          blocks.push({
+            type: 'tool_result',
+            tool_use_id: b.toolUseId,
+            content: b.content,
+            ...(b.isError !== undefined ? { is_error: b.isError } : {}),
+          });
+        }
+      }
+      return { role: 'user', content: blocks };
+    }
+
+    if (m.role === 'assistant' && Array.isArray(m.content)) {
+      const blocks: Anthropic.Messages.ContentBlockParam[] = [];
+      for (const b of m.content) {
+        if (b.type === 'text') {
+          blocks.push({ type: 'text', text: b.text });
+        } else if (b.type === 'tool_use') {
+          blocks.push({
+            type: 'tool_use',
+            id: b.id,
+            name: b.name,
+            input: b.input as Record<string, unknown>,
+          });
+        }
+      }
+      return { role: 'assistant', content: blocks };
+    }
+
+    return {
+      role: m.role === 'assistant' ? 'assistant' : 'user',
+      content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+    };
+  });
+}
 
 export class AnthropicAdapter implements ProviderAdapter {
   readonly providerId = 'anthropic' as const;
@@ -29,10 +81,7 @@ export class AnthropicAdapter implements ProviderAdapter {
           model: params.model,
           max_tokens: params.maxTokens ?? 4096,
           ...(system ? { system } : {}),
-          messages: nonSystemMessages.map((m) => ({
-            role: m.role as 'user' | 'assistant',
-            content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
-          })),
+          messages: toAnthropicMessages(nonSystemMessages),
           ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
         },
         { signal: params.abortSignal },
@@ -78,10 +127,7 @@ export class AnthropicAdapter implements ProviderAdapter {
               ],
             }
           : {}),
-        messages: nonSystemMessages.map((m) => ({
-          role: m.role as 'user' | 'assistant',
-          content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
-        })),
+        messages: toAnthropicMessages(nonSystemMessages),
         ...(toolsWithCache.length ? { tools: toolsWithCache } : {}),
         ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
       });

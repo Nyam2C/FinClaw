@@ -4,7 +4,13 @@ import type { SessionKey, Timestamp, AgentId } from './common.js';
 /** 스토리지 어댑터 인터페이스 */
 export interface StorageAdapter {
   saveConversation(record: ConversationRecord): Promise<void>;
+  /**
+   * 기존 대화가 있으면 messages/updatedAt을 교체하고, 없으면 생성한다.
+   * auto-reply 파이프라인이 매 턴 이력 전체를 저장할 때 사용한다.
+   */
+  upsertConversation(record: ConversationRecord): Promise<void>;
   getConversation(sessionKey: SessionKey): Promise<ConversationRecord | null>;
+  deleteConversation(sessionKey: SessionKey): Promise<boolean>;
   searchConversations(query: SearchQuery): Promise<SearchResult[]>;
   saveMemory(entry: MemoryEntry): Promise<void>;
   searchMemory(query: string, limit?: number): Promise<MemoryEntry[]>;

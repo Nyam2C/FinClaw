@@ -18,7 +18,12 @@ import { openDatabase } from './database.js';
 import { searchFts } from './search/fts.js';
 import { mergeHybridResults } from './search/hybrid.js';
 import { searchVector } from './search/vector.js';
-import { createConversation, getConversation } from './tables/conversations.js';
+import {
+  createConversation,
+  deleteConversation as deleteConversationFromDb,
+  getConversation,
+  upsertConversation as upsertConversationInDb,
+} from './tables/conversations.js';
 import { CACHE_TTL } from './tables/market-cache.js';
 import { addMemory, getMemory, addMemoryWithEmbedding } from './tables/memories.js';
 import { chunkMarkdown } from './tables/memories.js';
@@ -42,6 +47,13 @@ export { searchFts } from './search/fts.js';
 export { searchVector } from './search/vector.js';
 export { atomicReindex } from './reindex.js';
 export {
+  createConversation,
+  getConversation,
+  deleteConversation,
+  upsertConversation,
+  listConversations,
+} from './tables/conversations.js';
+export {
   getCachedData,
   setCachedData,
   getStaleCachedData,
@@ -55,6 +67,14 @@ export interface StorageOptions {
   dbPath: string;
   enableWAL?: boolean;
   embeddingProvider?: EmbeddingProvider;
+}
+
+/**
+ * createStorage 반환 타입 — StorageAdapter 계약 + skills-finance가 필요로 하는
+ * 원시 DatabaseSync 핸들을 함께 노출한다.
+ */
+export interface FinClawStorage extends StorageAdapter {
+  readonly db: Database['db'];
 }
 
 // NOTE(review-1 R-2): duplicates conversations.ts type — will be removed with LIKE fallback
@@ -76,7 +96,7 @@ interface MemoryRow {
   metadata: string;
 }
 
-export function createStorage(options: StorageOptions): StorageAdapter {
+export function createStorage(options: StorageOptions): FinClawStorage {
   const database = openDatabase({
     path: options.dbPath,
     enableWAL: options.enableWAL,
@@ -84,6 +104,10 @@ export function createStorage(options: StorageOptions): StorageAdapter {
   const provider = options.embeddingProvider;
 
   return {
+    get db(): Database['db'] {
+      return database.db;
+    },
+
     async initialize(): Promise<void> {
       // DB already initialized in openDatabase — no-op
     },
@@ -96,8 +120,22 @@ export function createStorage(options: StorageOptions): StorageAdapter {
       createConversation(database.db, record);
     },
 
+    async upsertConversation(record: ConversationRecord): Promise<void> {
+      upsertConversationInDb(database.db, {
+        sessionKey: record.sessionKey,
+        agentId: record.agentId,
+        messages: record.messages,
+        updatedAt: record.updatedAt,
+        metadata: record.metadata,
+      });
+    },
+
     async getConversation(sessionKey: SessionKey): Promise<ConversationRecord | null> {
       return getConversation(database.db, sessionKey);
+    },
+
+    async deleteConversation(sessionKey: SessionKey): Promise<boolean> {
+      return deleteConversationFromDb(database.db, sessionKey);
     },
 
     async searchConversations(query: SearchQuery): Promise<SearchResult[]> {

@@ -49,5 +49,27 @@ async function resolveChannel(
   if (msg.threadId) {
     return client.channels.fetch(msg.threadId) as Promise<ThreadChannel>;
   }
-  return client.channels.fetch(msg.targetId) as Promise<TextChannel | DMChannel>;
+
+  // 1) targetId를 채널 ID로 간주하고 fetch
+  try {
+    const channel = await client.channels.fetch(msg.targetId);
+    if (channel) {
+      return channel as TextChannel | DMChannel;
+    }
+  } catch (error) {
+    // 2) 채널 fetch 실패 → targetId가 유저 ID일 가능성 → DM 채널 생성/조회
+    //    (현재 pipeline이 ctx.senderId를 targetId로 넘기는 설계 때문에 필수)
+    const code = (error as { code?: number }).code;
+    if (code === 10003) {
+      try {
+        const user = await client.users.fetch(msg.targetId);
+        return (await user.createDM()) as DMChannel;
+      } catch (dmError) {
+        log.warn('DM channel resolve failed', { targetId: msg.targetId, error: dmError });
+        return null;
+      }
+    }
+    throw error;
+  }
+  return null;
 }

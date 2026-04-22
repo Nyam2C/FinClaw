@@ -1,8 +1,10 @@
 import type {
+  ModelRef,
   RpcRequest,
   RpcResponse,
   JsonRpcNotification,
   BroadcastChannel,
+  SessionKey,
 } from '@finclaw/types';
 // packages/server/src/gateway/rpc/types.ts
 import type { z } from 'zod/v4';
@@ -150,6 +152,10 @@ export interface ActiveSession {
   readonly startedAt: number;
   readonly status: 'running' | 'paused' | 'stopping';
   readonly abortController: AbortController;
+  /** 선택된 모델 (session.get의 `model` 필드는 이 객체의 `.model`을 문자열로 평탄화해 반환) */
+  readonly model: ModelRef;
+  /** 대화 이력 저장 키 — storage.upsertConversation/deleteConversation에 사용 */
+  readonly sessionKey: SessionKey;
 }
 
 /** 레지스트리 이벤트 */

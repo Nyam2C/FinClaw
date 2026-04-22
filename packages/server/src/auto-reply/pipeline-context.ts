@@ -58,6 +58,35 @@ export interface FinanceContextProvider {
   getWatchlist(senderId: string): Promise<readonly string[]>;
 }
 
+/**
+ * Phase 21 Milestone A용 빈 Provider.
+ *
+ * 금융 도메인 밖 범용 비서로 동작할 때 사용. Milestone D 이후 DB 기반
+ * 실제 구현으로 교체 가능.
+ */
+export class StubFinanceContextProvider implements FinanceContextProvider {
+  async getActiveAlerts(): Promise<readonly Alert[]> {
+    return [];
+  }
+  async getPortfolio(): Promise<Portfolio | null> {
+    return null;
+  }
+  async getRecentNews(): Promise<readonly NewsItem[]> {
+    return [];
+  }
+  getMarketSession(): MarketSession {
+    return {
+      isOpen: false,
+      market: 'NONE',
+      nextOpenAt: null,
+      timezone: 'Asia/Seoul',
+    };
+  }
+  async getWatchlist(): Promise<readonly string[]> {
+    return [];
+  }
+}
+
 export interface EnrichContextDeps {
   readonly financeContextProvider: FinanceContextProvider;
   readonly channelCapabilities: ChannelCapabilities;

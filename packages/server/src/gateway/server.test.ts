@@ -1,9 +1,47 @@
+import type { ConversationRecord, MemoryEntry, ModelRef, SearchResult } from '@finclaw/types';
 import { resetEventBus } from '@finclaw/infra';
 // packages/server/src/gateway/server.test.ts
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import type { RunnerExecutionAdapter } from '../auto-reply/execution-adapter.js';
 import type { GatewayServerConfig } from './rpc/types.js';
 import { clearMethods } from './rpc/index.js';
-import { createGatewayServer, type GatewayServer } from './server.js';
+import { createGatewayServer, type GatewayServer, type GatewayServerDeps } from './server.js';
+
+const TEST_MODEL: ModelRef = {
+  provider: 'anthropic',
+  model: 'claude-test',
+  contextWindow: 200_000,
+  maxOutputTokens: 8_192,
+};
+
+function makeStubAdapter(): RunnerExecutionAdapter {
+  return {
+    execute: async () => ({ content: '', usage: { inputTokens: 0, outputTokens: 0 } }),
+    executeForTui: async () => ({
+      messageId: 'stub',
+      content: '',
+      usage: { inputTokens: 0, outputTokens: 0 },
+    }),
+  } as unknown as RunnerExecutionAdapter;
+}
+
+function makeTestDeps(): GatewayServerDeps {
+  return {
+    defaultModel: TEST_MODEL,
+    adapter: makeStubAdapter(),
+    storage: {
+      saveConversation: async () => undefined,
+      upsertConversation: async () => undefined,
+      getConversation: async () => null as ConversationRecord | null,
+      deleteConversation: async () => false,
+      searchConversations: async () => [] as SearchResult[],
+      saveMemory: async () => undefined,
+      searchMemory: async () => [] as MemoryEntry[],
+      initialize: async () => undefined,
+      close: async () => undefined,
+    },
+  };
+}
 
 /** 테스트용 설정 (포트 0 = OS 자동 할당) */
 function makeTestConfig(): GatewayServerConfig {
@@ -39,7 +77,7 @@ describe('createGatewayServer', { timeout: 15_000 }, () => {
   });
 
   it('creates server with httpServer, wss, and ctx', () => {
-    server = createGatewayServer(makeTestConfig());
+    server = createGatewayServer(makeTestConfig(), makeTestDeps());
     expect(server.httpServer).toBeDefined();
     expect(server.wss).toBeDefined();
     expect(server.ctx).toBeDefined();
@@ -47,7 +85,7 @@ describe('createGatewayServer', { timeout: 15_000 }, () => {
   });
 
   it('starts and listens on assigned port', async () => {
-    server = createGatewayServer(makeTestConfig());
+    server = createGatewayServer(makeTestConfig(), makeTestDeps());
     await server.start();
 
     const addr = server.httpServer.address();
@@ -58,7 +96,7 @@ describe('createGatewayServer', { timeout: 15_000 }, () => {
   });
 
   it('stops gracefully', async () => {
-    server = createGatewayServer(makeTestConfig());
+    server = createGatewayServer(makeTestConfig(), makeTestDeps());
     await server.start();
     await server.stop();
 
@@ -67,7 +105,7 @@ describe('createGatewayServer', { timeout: 15_000 }, () => {
   });
 
   it('responds to GET /health after start', async () => {
-    server = createGatewayServer(makeTestConfig());
+    server = createGatewayServer(makeTestConfig(), makeTestDeps());
     await server.start();
 
     const addr = server.httpServer.address();
@@ -79,7 +117,7 @@ describe('createGatewayServer', { timeout: 15_000 }, () => {
   });
 
   it('responds to POST /rpc with system.ping', async () => {
-    server = createGatewayServer(makeTestConfig());
+    server = createGatewayServer(makeTestConfig(), makeTestDeps());
     await server.start();
 
     const addr = server.httpServer.address();

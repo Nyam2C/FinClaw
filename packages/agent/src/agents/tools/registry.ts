@@ -240,10 +240,15 @@ export class InMemoryToolRegistry implements ToolRegistry {
       // ① Zod 입력 검증
       const rawSchema = tool.definition.inputSchema as {
         properties?: Record<string, Record<string, unknown>>;
+        required?: readonly string[];
       };
       if (rawSchema.properties) {
+        const requiredFields = new Set(rawSchema.required ?? []);
         const zodShape = Object.fromEntries(
-          Object.entries(rawSchema.properties).map(([k, v]) => [k, jsonSchemaToZod(v)]),
+          Object.entries(rawSchema.properties).map(([k, v]) => {
+            const base = jsonSchemaToZod(v);
+            return [k, requiredFields.has(k) ? base : base.optional()];
+          }),
         );
         const schema = z.object(zodShape);
         const parsed = schema.safeParse(input);

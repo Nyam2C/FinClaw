@@ -110,6 +110,9 @@ importers:
       '@finclaw/skills-finance':
         specifier: workspace:*
         version: link:../skills-finance
+      '@finclaw/skills-general':
+        specifier: workspace:*
+        version: link:../skills-general
       '@finclaw/storage':
         specifier: workspace:*
         version: link:../storage
@@ -168,6 +171,18 @@ importers:
       zod:
         specifier: ^4.0.0
         version: 4.3.6
+
+  packages/skills-general:
+    dependencies:
+      '@finclaw/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@finclaw/infra':
+        specifier: workspace:*
+        version: link:../infra
+      '@finclaw/types':
+        specifier: workspace:*
+        version: link:../types
 
   packages/storage:
     dependencies:
