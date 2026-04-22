@@ -1,4 +1,4 @@
-// packages/server/src/auto-reply/index.ts — barrel export
+// packages/server/src/auto-reply/index.ts — barrel export (외부 공개 API만)
 
 // Pipeline orchestrator
 export { AutoReplyPipeline } from './pipeline.js';
@@ -13,33 +13,25 @@ export type {
 export { PipelineError } from './errors.js';
 export type { PipelineErrorCode } from './errors.js';
 
-// Pipeline context
-export { enrichContext } from './pipeline-context.js';
+// Pipeline context (외부에서 주입하는 FinanceContextProvider·ctx 타입)
+export { StubFinanceContextProvider } from './pipeline-context.js';
 export type {
   PipelineMsgContext,
   MarketSession,
   FinanceContextProvider,
-  EnrichContextDeps,
 } from './pipeline-context.js';
 
-// Execution adapter
-export { MockExecutionAdapter } from './execution-adapter.js';
-export type { ExecutionAdapter, ExecutionResult } from './execution-adapter.js';
-
-// Control tokens
-export { CONTROL_TOKENS, extractControlTokens } from './control-tokens.js';
-export type { ControlToken, ControlTokenResult } from './control-tokens.js';
-
-// Response formatter
-export { formatResponse, formatFinancialNumber, splitMessage } from './response-formatter.js';
+// Execution adapter (서버가 직접 소비)
+export { RunnerExecutionAdapter } from './execution-adapter.js';
 export type {
-  FormatOptions,
-  SupportedFormat,
-  FormattedResponse,
-  ResponsePart,
-} from './response-formatter.js';
+  ExecutionAdapter,
+  ExecutionResult,
+  RunnerExecutionAdapterDeps,
+  RunnerFactory,
+  ToolCallRecord,
+} from './execution-adapter.js';
 
-// Commands
+// Commands (서버 부팅 시 registerBuiltInCommands 호출)
 export { InMemoryCommandRegistry } from './commands/registry.js';
 export { registerBuiltInCommands } from './commands/built-in.js';
 export type {
@@ -50,18 +42,3 @@ export type {
   ParsedCommand,
   CommandCategory,
 } from './commands/registry.js';
-
-// Observer
-export { DefaultPipelineObserver } from './observer.js';
-export type { PipelineObserver } from './observer.js';
-
-// Stages
-export { normalizeMessage } from './stages/normalize.js';
-export type { NormalizedMessage } from './stages/normalize.js';
-export { commandStage } from './stages/command.js';
-export { ackStage, createTypingController } from './stages/ack.js';
-export type { TypingController } from './stages/ack.js';
-export { contextStage } from './stages/context.js';
-export { executeStage } from './stages/execute.js';
-export type { ExecuteStageResult } from './stages/execute.js';
-export { deliverResponse } from './stages/deliver.js';
