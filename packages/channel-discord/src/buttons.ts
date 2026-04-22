@@ -90,7 +90,9 @@ export function setupApprovalHandler(client: Client): void {
   });
 }
 
-/** 테스트 유틸: pending 맵 초기화 */
+/**
+ * @internal 테스트 유틸: pending 승인 맵 + 모든 타임아웃 초기화
+ */
 export function _resetPendingApprovals(): void {
   for (const { timer } of pendingApprovals.values()) {
     clearTimeout(timer);
