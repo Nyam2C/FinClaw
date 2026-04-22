@@ -1,6 +1,6 @@
 // packages/server/src/auto-reply/commands/built-in.ts
-import type { ToolRegistry } from '@finclaw/agent';
-import type { StorageAdapter } from '@finclaw/types';
+import type { ProfileHealthMonitor, ToolRegistry } from '@finclaw/agent';
+import type { ModelRef, StorageAdapter } from '@finclaw/types';
 import type { CommandRegistry } from './registry.js';
 import { createResetCommand } from './reset.js';
 import { createStatusCommand } from './status.js';
@@ -8,6 +8,9 @@ import { createStatusCommand } from './status.js';
 export interface BuiltInCommandDeps {
   readonly toolRegistry?: ToolRegistry;
   readonly storage?: StorageAdapter;
+  readonly profileHealth?: ProfileHealthMonitor;
+  readonly profileId?: string;
+  readonly defaultModel?: ModelRef;
 }
 
 /** 내장 명령어 등록 (deps 미제공 시 status/reset은 플레이스홀더) */
@@ -71,7 +74,13 @@ export function registerBuiltInCommands(
         usage: '/status',
         category: 'general',
       },
-      createStatusCommand({ toolRegistry: deps.toolRegistry, storage: deps.storage }),
+      createStatusCommand({
+        toolRegistry: deps.toolRegistry,
+        storage: deps.storage,
+        profileHealth: deps.profileHealth,
+        profileId: deps.profileId,
+        defaultModel: deps.defaultModel,
+      }),
     );
   }
 

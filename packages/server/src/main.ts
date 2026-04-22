@@ -238,7 +238,13 @@ async function main(): Promise<void> {
   // 5. 파이프라인
   const financeCtxProvider = new StubFinanceContextProvider();
   const commandRegistry = new InMemoryCommandRegistry();
-  registerBuiltInCommands(commandRegistry, { toolRegistry, storage });
+  registerBuiltInCommands(commandRegistry, {
+    toolRegistry,
+    storage,
+    profileHealth,
+    profileId: 'default',
+    defaultModel: DEFAULT_MODEL,
+  });
   const channelPluginRegistry = new Map<string, ChannelPlugin>();
   const pipeline = new AutoReplyPipeline(
     {
