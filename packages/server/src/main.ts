@@ -1,12 +1,16 @@
-import type { ChannelPlugin, FinClawConfig, ModelRef } from '@finclaw/types';
+import type { ChannelPlugin, ConfigValidationIssue, FinClawConfig, ModelRef } from '@finclaw/types';
 // packages/server/src/main.ts
 import { AnthropicAdapter, InMemoryToolRegistry, Runner } from '@finclaw/agent';
 import { DiscordAccountSchema, DiscordAdapter } from '@finclaw/channel-discord';
+import { ConfigValidationError, validateConfigStrict } from '@finclaw/config';
 import {
   assertPortAvailable,
   ConcurrencyLaneManager,
   createLogger,
+  formatPortOccupant,
   getEventBus,
+  inspectPortOccupant,
+  PortInUseError,
 } from '@finclaw/infra';
 import {
   registerMarketTools,
@@ -111,6 +115,13 @@ async function main(): Promise<void> {
   const anthropicKey = requireEnv('ANTHROPIC_API_KEY');
   const discordToken = requireEnv('DISCORD_BOT_TOKEN');
   const discordAppId = requireEnv('DISCORD_APPLICATION_ID');
+
+  // 1a. GATEWAY_PORT strict 검증 (config 전면 도입 전 과도기)
+  const gatewayPortRaw = process.env.GATEWAY_PORT;
+  const gatewayPort = gatewayPortRaw ? Number(gatewayPortRaw) : defaultConfig.port;
+  validateConfigStrict({
+    gateway: { host: defaultConfig.host, port: gatewayPort },
+  });
 
   // 2. 기반 (로거, 라이프사이클, 스토리지)
   const logger = createLogger({ name: 'finclaw', level: 'info' });
@@ -245,12 +256,22 @@ async function main(): Promise<void> {
   // 8. Gateway — FINCLAW_API_KEY 환경변수로 API 키 기반 인증 활성화
   const gatewayConfig: GatewayServerConfig = {
     ...defaultConfig,
+    port: gatewayPort,
     auth: {
       ...defaultConfig.auth,
       apiKeys: process.env.FINCLAW_API_KEY ? [process.env.FINCLAW_API_KEY] : [],
     },
   };
-  await assertPortAvailable(gatewayConfig.port);
+  try {
+    await assertPortAvailable(gatewayConfig.port);
+  } catch (err) {
+    if (err instanceof PortInUseError) {
+      const occupant = await inspectPortOccupant(gatewayConfig.port);
+      console.error(`[fatal] ${formatPortOccupant(gatewayConfig.port, occupant)}`);
+      process.exit(1);
+    }
+    throw err;
+  }
   const gateway = createGatewayServer(gatewayConfig, {
     storage,
     defaultModel: DEFAULT_MODEL,
@@ -268,6 +289,12 @@ if (!process.env.VITEST) {
   main().catch((err) => {
     if (err instanceof MissingEnvError) {
       console.error(`[fatal] Missing required env: ${err.envName}`);
+    } else if (err instanceof ConfigValidationError) {
+      console.error('[fatal] Invalid configuration:');
+      const issues = (err.details?.issues as ConfigValidationIssue[] | undefined) ?? [];
+      for (const issue of issues) {
+        console.error(`  - ${issue.path}: ${issue.message}`);
+      }
     } else {
       console.error('Failed to start gateway server:', err);
     }
