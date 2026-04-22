@@ -8,12 +8,19 @@ import {
   createLogger,
   getEventBus,
 } from '@finclaw/infra';
-import { registerMarketTools } from '@finclaw/skills-finance';
+import {
+  registerMarketTools,
+  registerNewsTools,
+  registerAlertTools,
+  type MarketSkillHandle,
+  type NewsSkillHandle,
+} from '@finclaw/skills-finance';
 import { registerGeneralTools } from '@finclaw/skills-general';
 import { createStorage } from '@finclaw/storage';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { GatewayServerConfig } from './gateway/rpc/types.js';
+import { registerBuiltInCommands } from './auto-reply/commands/built-in.js';
 import { InMemoryCommandRegistry } from './auto-reply/commands/registry.js';
 import { RunnerExecutionAdapter, type RunnerFactory } from './auto-reply/execution-adapter.js';
 import { StubFinanceContextProvider } from './auto-reply/pipeline-context.js';
@@ -114,7 +121,17 @@ async function main(): Promise<void> {
     await storage.close();
   });
 
-  // 3. Agent 레이어 (툴 레지스트리 + 러너 팩토리)
+  // 3. Discord 클라이언트 먼저 로그인 (alerts가 DM 전달 핸들을 필요로 함)
+  const discordAdapter = new DiscordAdapter();
+  const discordAccount = DiscordAccountSchema.parse({
+    botToken: discordToken,
+    applicationId: discordAppId,
+  });
+  const cleanup = await discordAdapter.setup(discordAccount);
+  lifecycle.register(cleanup);
+  logger.info('Discord adapter logged in');
+
+  // 4. Agent 레이어 (툴 레지스트리 + 러너 팩토리)
   const anthropicAdapter = new AnthropicAdapter(anthropicKey);
   const lanes = new ConcurrencyLaneManager();
   const toolRegistry = new InMemoryToolRegistry();
@@ -122,8 +139,12 @@ async function main(): Promise<void> {
 
   const alphaVantageKey = process.env.ALPHA_VANTAGE_KEY;
   const coinGeckoKey = process.env.COINGECKO_API_KEY;
+
+  let marketHandle: MarketSkillHandle | undefined;
+  let newsHandle: NewsSkillHandle | undefined;
+
   if (alphaVantageKey || coinGeckoKey) {
-    await registerMarketTools(toolRegistry, {
+    marketHandle = await registerMarketTools(toolRegistry, {
       db: storage.db,
       alphaVantageKey,
       coinGeckoKey,
@@ -131,6 +152,36 @@ async function main(): Promise<void> {
     logger.info('Market tools registered');
   } else {
     logger.info('ALPHA_VANTAGE_KEY/COINGECKO_API_KEY not set — skipping market tools');
+  }
+
+  if (marketHandle && alphaVantageKey) {
+    newsHandle = await registerNewsTools(toolRegistry, {
+      db: storage.db,
+      alphaVantageKey,
+      quoteService: marketHandle.quoteService,
+      anthropicApiKey: anthropicKey,
+    });
+    logger.info('News tools registered');
+  } else if (marketHandle) {
+    logger.info('ALPHA_VANTAGE_KEY not set — skipping news tools');
+  }
+
+  if (marketHandle && newsHandle) {
+    const discordClient = discordAdapter.getClient();
+    const alertMonitor = await registerAlertTools(toolRegistry, {
+      db: storage.db,
+      cache: marketHandle.cache,
+      registry: marketHandle.providers,
+      newsAggregator: newsHandle.aggregator,
+      logger,
+      discordClient: discordClient ?? undefined,
+    });
+    lifecycle.register(async () => {
+      await alertMonitor.stop();
+    });
+    logger.info('Alert monitor started');
+  } else {
+    logger.info('market/news tools unavailable — skipping alerts');
   }
 
   const runnerFactory: RunnerFactory = (dispatcher) =>
@@ -153,6 +204,7 @@ async function main(): Promise<void> {
   // 5. 파이프라인
   const financeCtxProvider = new StubFinanceContextProvider();
   const commandRegistry = new InMemoryCommandRegistry();
+  registerBuiltInCommands(commandRegistry, { toolRegistry, storage });
   const channelPluginRegistry = new Map<string, ChannelPlugin>();
   const pipeline = new AutoReplyPipeline(
     {
@@ -179,14 +231,7 @@ async function main(): Promise<void> {
     onProcess: (ctx, match, signal) => pipeline.process(ctx, match, signal),
   });
 
-  // 7. Discord
-  const discordAdapter = new DiscordAdapter();
-  const discordAccount = DiscordAccountSchema.parse({
-    botToken: discordToken,
-    applicationId: discordAppId,
-  });
-  const cleanup = await discordAdapter.setup(discordAccount);
-  lifecycle.register(cleanup);
+  // 7. Discord onMessage 등록 (client는 이미 위에서 로그인 완료)
   channelPluginRegistry.set(discordAdapter.id as string, discordAdapter);
   discordAdapter.onMessage(async (msg) => {
     await router.route(msg);
