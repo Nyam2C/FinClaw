@@ -31,6 +31,9 @@ services:
       - server
     ports:
       - '${FINCLAW_WEB_PORT:-5173}:5173'
+    # Dockerfile의 HEALTHCHECK는 /healthz(server) 가정 — web에는 해당 엔드포인트 없으므로 비활성화
+    healthcheck:
+      disable: true
     # `pnpm exec`로 vite를 직접 호출 — script layer의 `--` 구분자 문제 회피
     command:
       - pnpm
