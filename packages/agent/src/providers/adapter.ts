@@ -11,6 +11,7 @@ export interface ProviderRequestParams {
   readonly model: string;
   readonly messages: ConversationMessage[];
   readonly tools?: ToolDefinition[];
+  readonly systemPrompt?: string;
   readonly temperature?: number;
   readonly maxTokens?: number;
   readonly abortSignal?: AbortSignal;

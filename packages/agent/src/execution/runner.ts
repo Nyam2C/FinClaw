@@ -70,7 +70,7 @@ export class Runner {
   async execute(params: AgentRunParams, listener?: StreamEventListener): Promise<ExecutionResult> {
     const tokenCounter = new TokenCounter(params.model.contextWindow);
     const startTime = Date.now();
-    const messages = [...params.messages];
+    const messages: ConversationMessage[] = [...params.messages];
 
     const handle = await this.laneManager.acquire(this.laneId, params.sessionKey as string);
 
@@ -150,6 +150,7 @@ export class Runner {
       model: params.model.model,
       messages,
       tools: params.tools,
+      systemPrompt: params.systemPrompt,
       temperature: params.temperature,
       maxTokens: params.maxTokens ?? params.model.maxOutputTokens,
       abortSignal: params.abortSignal,

@@ -17,13 +17,19 @@ export class OpenAIAdapter implements ProviderAdapter {
   // TODO(L3): params.tools를 SDK 호출에 전달해야 함 (Phase 9+ 도구 사용 기능)
   async chatCompletion(params: ProviderRequestParams): Promise<unknown> {
     try {
+      const systemMessage = params.systemPrompt
+        ? [{ role: 'system' as const, content: params.systemPrompt }]
+        : [];
       return await this.client.chat.completions.create(
         {
           model: params.model,
-          messages: params.messages.map((m) => ({
-            role: m.role as 'system' | 'user' | 'assistant',
-            content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
-          })),
+          messages: [
+            ...systemMessage,
+            ...params.messages.map((m) => ({
+              role: m.role as 'system' | 'user' | 'assistant',
+              content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+            })),
+          ],
           ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
           ...(params.maxTokens !== undefined ? { max_tokens: params.maxTokens } : {}),
         },
@@ -36,13 +42,19 @@ export class OpenAIAdapter implements ProviderAdapter {
 
   async *streamCompletion(params: ProviderRequestParams): AsyncIterable<StreamChunk> {
     try {
+      const systemMessage = params.systemPrompt
+        ? [{ role: 'system' as const, content: params.systemPrompt }]
+        : [];
       const stream = await this.client.chat.completions.create(
         {
           model: params.model,
-          messages: params.messages.map((m) => ({
-            role: m.role as 'system' | 'user' | 'assistant',
-            content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
-          })),
+          messages: [
+            ...systemMessage,
+            ...params.messages.map((m) => ({
+              role: m.role as 'system' | 'user' | 'assistant',
+              content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+            })),
+          ],
           ...(params.tools?.length
             ? {
                 tools: params.tools.map((t) => ({
