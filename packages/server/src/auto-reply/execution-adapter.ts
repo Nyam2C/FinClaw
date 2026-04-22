@@ -1,6 +1,9 @@
 // packages/server/src/auto-reply/execution-adapter.ts
 import type {
+  AliasIndex,
   ExecutionToolDispatcher,
+  ModelCatalog,
+  ProfileHealthMonitor,
   Runner,
   StreamEventListener,
   ToolRegistry,
@@ -16,7 +19,12 @@ import type {
   StorageAdapter,
   Timestamp,
 } from '@finclaw/types';
-import { ExecutionToolDispatcher as ToolDispatcherCtor } from '@finclaw/agent';
+import {
+  DEFAULT_FALLBACK_TRIGGERS,
+  ExecutionToolDispatcher as ToolDispatcherCtor,
+  resolveModel,
+  runWithModelFallback,
+} from '@finclaw/agent';
 import { createAgentId } from '@finclaw/types';
 import { randomUUID } from 'node:crypto';
 import type { PipelineMsgContext } from './pipeline-context.js';
@@ -81,6 +89,16 @@ export interface RunnerExecutionAdapterDeps {
   readonly logger?: FinClawLogger;
   /** 이력 로드 시 최근 메시지 수 (기본 20) */
   readonly historyLimit?: number;
+  /** 모델 카탈로그 — 제공 시 fallbackChain과 함께 runWithModelFallback 활성화 */
+  readonly modelCatalog?: ModelCatalog;
+  /** 별칭 색인 — modelCatalog과 함께 전달 */
+  readonly modelAliasIndex?: AliasIndex;
+  /** 폴백 모델 ID 체인 (우선순위 순) */
+  readonly fallbackChain?: readonly string[];
+  /** 프로필 건강 모니터 — API 호출 결과 기록 */
+  readonly profileHealth?: ProfileHealthMonitor;
+  /** 건강 기록용 프로필 ID (기본 'default') */
+  readonly profileId?: string;
 }
 
 /**
@@ -108,31 +126,70 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
       channelId: ctx.channelId as unknown as string,
     });
     const runner = this.deps.runnerFactory(dispatcher);
+    const profileId = this.deps.profileId ?? 'default';
+    const startedAt = Date.now();
 
-    const params: AgentRunParams = {
+    const buildParams = (model: ModelRef): AgentRunParams => ({
       agentId: this.defaultAgentId,
       sessionKey: ctx.sessionKey,
-      model: this.deps.defaultModel,
+      model,
       systemPrompt: this.deps.systemPrompt,
       messages: [...priorMessages, userMessage],
       tools: toolDefinitions.length > 0 ? [...toolDefinitions] : undefined,
       abortSignal: signal,
-    };
+    });
 
-    const startedAt = Date.now();
-    const result = await runner.execute(params);
-    const toolCalls = collectToolCalls(result.messages, startedAt);
+    try {
+      const { modelCatalog, modelAliasIndex, fallbackChain } = this.deps;
+      let result;
+      if (modelCatalog && modelAliasIndex && fallbackChain && fallbackChain.length > 0) {
+        const fallback = await runWithModelFallback(
+          {
+            models: fallbackChain.map((raw) => ({ raw })),
+            maxRetriesPerModel: 1,
+            retryBaseDelayMs: 500,
+            fallbackOn: DEFAULT_FALLBACK_TRIGGERS,
+            abortSignal: signal,
+          },
+          async (resolved) => {
+            const model: ModelRef = {
+              ...this.deps.defaultModel,
+              provider: resolved.provider,
+              model: resolved.modelId,
+              contextWindow: resolved.entry.contextWindow,
+              maxOutputTokens: Math.min(
+                resolved.entry.maxOutputTokens,
+                this.deps.defaultModel.maxOutputTokens,
+              ),
+            };
+            return runner.execute(buildParams(model));
+          },
+          (ref) => resolveModel(ref, modelCatalog, modelAliasIndex),
+        );
+        result = fallback.result;
+      } else {
+        result = await runner.execute(buildParams(this.deps.defaultModel));
+      }
 
-    await this.persistHistory(ctx.sessionKey, this.defaultAgentId, result.messages);
+      const toolCalls = collectToolCalls(result.messages, startedAt);
+      await this.persistHistory(ctx.sessionKey, this.defaultAgentId, result.messages);
 
-    return {
-      content: extractAssistantText(result.messages),
-      usage: {
-        inputTokens: result.usage.inputTokens,
-        outputTokens: result.usage.outputTokens,
-      },
-      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-    };
+      this.deps.profileHealth?.recordResult(profileId, true);
+
+      return {
+        content: extractAssistantText(result.messages),
+        usage: {
+          inputTokens: result.usage.inputTokens,
+          outputTokens: result.usage.outputTokens,
+        },
+        toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      };
+    } catch (err) {
+      if (err instanceof Error && err.name !== 'AbortError') {
+        this.deps.profileHealth?.recordResult(profileId, false);
+      }
+      throw err;
+    }
   }
 
   /**

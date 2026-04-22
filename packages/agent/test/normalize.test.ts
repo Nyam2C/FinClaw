@@ -11,7 +11,7 @@ const pricing: ModelPricing = { inputPerMillion: 15, outputPerMillion: 75 };
 describe('normalizeAnthropicResponse', () => {
   const mockResponse = {
     id: 'msg_123',
-    model: 'claude-opus-4-6',
+    model: 'claude-opus-4-7',
     content: [{ type: 'text', text: 'Hello world' }],
     stop_reason: 'end_turn',
     usage: {
@@ -26,7 +26,7 @@ describe('normalizeAnthropicResponse', () => {
     const result = normalizeAnthropicResponse(mockResponse, pricing);
     expect(result.content).toBe('Hello world');
     expect(result.stopReason).toBe('end_turn');
-    expect(result.modelId).toBe('claude-opus-4-6');
+    expect(result.modelId).toBe('claude-opus-4-7');
     expect(result.provider).toBe('anthropic');
     expect(result.usage.inputTokens).toBe(100);
     expect(result.usage.outputTokens).toBe(50);

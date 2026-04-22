@@ -10,9 +10,9 @@ describe('InMemoryModelCatalog', () => {
   });
 
   it('ID로 모델을 조회한다', () => {
-    const opus = catalog.getModel('claude-opus-4-6');
+    const opus = catalog.getModel('claude-opus-4-7');
     expect(opus).toBeDefined();
-    expect(opus?.displayName).toBe('Claude Opus 4.6');
+    expect(opus?.displayName).toBe('Claude Opus 4.7');
     expect(opus?.provider).toBe('anthropic');
   });
 

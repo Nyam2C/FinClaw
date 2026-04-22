@@ -1,6 +1,15 @@
 import type { ChannelPlugin, ConfigValidationIssue, FinClawConfig, ModelRef } from '@finclaw/types';
 // packages/server/src/main.ts
-import { AnthropicAdapter, InMemoryToolRegistry, Runner } from '@finclaw/agent';
+import {
+  AnthropicAdapter,
+  BUILT_IN_MODELS,
+  buildModelAliasIndex,
+  DEFAULT_FALLBACK_CHAIN,
+  InMemoryModelCatalog,
+  InMemoryToolRegistry,
+  ProfileHealthMonitor,
+  Runner,
+} from '@finclaw/agent';
 import { DiscordAccountSchema, DiscordAdapter } from '@finclaw/channel-discord';
 import { ConfigValidationError, validateConfigStrict } from '@finclaw/config';
 import {
@@ -206,7 +215,12 @@ async function main(): Promise<void> {
       laneManager: lanes,
     });
 
-  // 4. 실행 어댑터 (storage + toolRegistry 주입 — per-request dispatcher를 빌드)
+  // 4. 모델 카탈로그 + 폴백 체인 + 프로필 건강 모니터
+  const modelCatalog = new InMemoryModelCatalog(BUILT_IN_MODELS);
+  const modelAliasIndex = buildModelAliasIndex(modelCatalog);
+  const profileHealth = new ProfileHealthMonitor();
+
+  // 4a. 실행 어댑터 (storage + toolRegistry 주입 — per-request dispatcher를 빌드)
   const adapter = new RunnerExecutionAdapter({
     runnerFactory,
     defaultModel: DEFAULT_MODEL,
@@ -214,6 +228,11 @@ async function main(): Promise<void> {
     storage,
     toolRegistry,
     logger,
+    modelCatalog,
+    modelAliasIndex,
+    fallbackChain: DEFAULT_FALLBACK_CHAIN,
+    profileHealth,
+    profileId: 'default',
   });
 
   // 5. 파이프라인
