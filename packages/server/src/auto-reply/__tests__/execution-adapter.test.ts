@@ -12,6 +12,7 @@ import {
   MockExecutionAdapter,
   RunnerExecutionAdapter,
   extractAssistantText,
+  sliceHistoryRespectingToolPairs,
 } from '../execution-adapter.js';
 import { StubFinanceContextProvider } from '../pipeline-context.js';
 
@@ -321,5 +322,68 @@ describe('RunnerExecutionAdapter + storage', () => {
     // 최근 5개 + 새 user 메시지
     expect(calls[0]?.messages).toHaveLength(6);
     expect(calls[0]?.messages[0].content).toBe('m20');
+  });
+});
+
+describe('sliceHistoryRespectingToolPairs', () => {
+  it('limit 이하면 전부 반환', () => {
+    const msgs: ConversationMessage[] = [
+      { role: 'user', content: 'a' },
+      { role: 'assistant', content: 'b' },
+    ];
+    expect(sliceHistoryRespectingToolPairs(msgs, 5)).toEqual(msgs);
+  });
+
+  it('slice 경계가 tool_result 직전에 떨어지면 고아 tool 메시지를 드롭한다', () => {
+    // 실제 버그 재현: slice(-3)이 [tool(result), assistant, user]를 반환해 400 유발
+    const msgs: ConversationMessage[] = [
+      { role: 'user', content: 'q1' },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: 'tu_1', name: 'get_stock_price', input: {} }],
+      },
+      {
+        role: 'tool',
+        content: [{ type: 'tool_result', toolUseId: 'tu_1', content: '$187' }],
+      },
+      { role: 'assistant', content: 'done' },
+      { role: 'user', content: 'q2' },
+    ];
+    const result = sliceHistoryRespectingToolPairs(msgs, 3);
+    // 고아 tool 드롭 후 assistant('done')부터 시작
+    expect(result).toHaveLength(2);
+    expect(result[0]?.role).toBe('assistant');
+    expect(result[0]?.content).toBe('done');
+    expect(result[1]?.content).toBe('q2');
+  });
+
+  it('tool_result만으로 구성된 content를 가진 비-tool 역할 메시지도 고아 처리', () => {
+    const msgs: ConversationMessage[] = [
+      { role: 'user', content: [{ type: 'tool_result', toolUseId: 'tu_orphan', content: 'x' }] },
+      { role: 'assistant', content: 'ok' },
+      { role: 'user', content: 'next' },
+    ];
+    const result = sliceHistoryRespectingToolPairs(msgs, 3);
+    expect(result).toHaveLength(2);
+    expect(result[0]?.role).toBe('assistant');
+  });
+
+  it('선두가 assistant(tool_use)면 건드리지 않는다 (뒤따르는 tool_result가 짝)', () => {
+    const msgs: ConversationMessage[] = [
+      { role: 'user', content: 'pad' },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: 'tu_2', name: 'f', input: {} }],
+      },
+      {
+        role: 'tool',
+        content: [{ type: 'tool_result', toolUseId: 'tu_2', content: 'r' }],
+      },
+      { role: 'assistant', content: 'final' },
+    ];
+    const result = sliceHistoryRespectingToolPairs(msgs, 3);
+    expect(result).toHaveLength(3);
+    expect(result[0]?.role).toBe('assistant');
+    expect(Array.isArray(result[0]?.content)).toBe(true);
   });
 });

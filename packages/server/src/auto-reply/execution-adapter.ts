@@ -254,7 +254,7 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
       if (!record?.messages.length) {
         return [];
       }
-      return record.messages.slice(-this.historyLimit);
+      return sliceHistoryRespectingToolPairs(record.messages, this.historyLimit);
     } catch (err) {
       this.deps.logger?.warn(
         `Failed to load conversation history for ${sessionKey}: ${toMessage(err)}`,
@@ -330,6 +330,41 @@ export function extractAssistantText(messages: readonly ConversationMessage[]): 
 
 function toMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * 대화 이력을 historyLimit으로 자르되, tool_use ↔ tool_result 페어를 깨지 않게 정리한다.
+ *
+ * Anthropic API는 `tool_result` 블록이 바로 앞 메시지의 `tool_use` 블록과 1:1로 대응해야
+ * 한다(400: "unexpected tool_use_id in tool_result blocks"). 단순 slice(-N)은 페어 경계를
+ * 무시해 잘린 첫 메시지가 고아 tool_result가 될 수 있으므로, slice 후 선두의 고아 메시지를
+ * 건너뛴다.
+ *
+ * @internal 테스트 접근을 위해 export하나, 외부 소비자는 없어야 한다.
+ */
+export function sliceHistoryRespectingToolPairs(
+  messages: readonly ConversationMessage[],
+  limit: number,
+): ConversationMessage[] {
+  let start = messages.length > limit ? messages.length - limit : 0;
+  // slice 경계뿐 아니라 저장 이력이 고아 상태로 남은 경우도 방어
+  while (start < messages.length && isOrphanedToolResult(messages[start])) {
+    start++;
+  }
+  return messages.slice(start);
+}
+
+function isOrphanedToolResult(msg: ConversationMessage | undefined): boolean {
+  if (!msg) {
+    return false;
+  }
+  if (msg.role === 'tool') {
+    return true;
+  }
+  if (Array.isArray(msg.content) && msg.content.length > 0) {
+    return msg.content.every((b) => b.type === 'tool_result');
+  }
+  return false;
 }
 
 /** assistant tool_use 블록과 뒤따르는 tool tool_result 블록을 페어링해 감사 레코드 생성 */
