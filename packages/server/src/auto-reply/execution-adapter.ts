@@ -1,6 +1,9 @@
 // packages/server/src/auto-reply/execution-adapter.ts
 import type {
+  AliasIndex,
   ExecutionToolDispatcher,
+  ModelCatalog,
+  ProfileHealthMonitor,
   Runner,
   StreamEventListener,
   ToolRegistry,
@@ -16,7 +19,12 @@ import type {
   StorageAdapter,
   Timestamp,
 } from '@finclaw/types';
-import { ExecutionToolDispatcher as ToolDispatcherCtor } from '@finclaw/agent';
+import {
+  DEFAULT_FALLBACK_TRIGGERS,
+  ExecutionToolDispatcher as ToolDispatcherCtor,
+  resolveModel,
+  runWithModelFallback,
+} from '@finclaw/agent';
 import { createAgentId } from '@finclaw/types';
 import { randomUUID } from 'node:crypto';
 import type { PipelineMsgContext } from './pipeline-context.js';
@@ -31,9 +39,21 @@ export interface ExecutionAdapter {
   execute(ctx: PipelineMsgContext, signal: AbortSignal): Promise<ExecutionResult>;
 }
 
+/** Phase 22: 도구 호출 감사용 메타데이터 — DeliverStage 출처 footer·DB 병렬 저장에서 소비 */
+export interface ToolCallRecord {
+  readonly name: string;
+  readonly input: unknown;
+  readonly output: string;
+  readonly source?: string;
+  readonly timestamp: number;
+  readonly durationMs?: number;
+  readonly isError?: boolean;
+}
+
 export interface ExecutionResult {
   readonly content: string;
   readonly usage?: { inputTokens: number; outputTokens: number };
+  readonly toolCalls?: readonly ToolCallRecord[];
 }
 
 /**
@@ -69,6 +89,16 @@ export interface RunnerExecutionAdapterDeps {
   readonly logger?: FinClawLogger;
   /** 이력 로드 시 최근 메시지 수 (기본 20) */
   readonly historyLimit?: number;
+  /** 모델 카탈로그 — 제공 시 fallbackChain과 함께 runWithModelFallback 활성화 */
+  readonly modelCatalog?: ModelCatalog;
+  /** 별칭 색인 — modelCatalog과 함께 전달 */
+  readonly modelAliasIndex?: AliasIndex;
+  /** 폴백 모델 ID 체인 (우선순위 순) */
+  readonly fallbackChain?: readonly string[];
+  /** 프로필 건강 모니터 — API 호출 결과 기록 */
+  readonly profileHealth?: ProfileHealthMonitor;
+  /** 건강 기록용 프로필 ID (기본 'default') */
+  readonly profileId?: string;
 }
 
 /**
@@ -96,28 +126,70 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
       channelId: ctx.channelId as unknown as string,
     });
     const runner = this.deps.runnerFactory(dispatcher);
+    const profileId = this.deps.profileId ?? 'default';
+    const startedAt = Date.now();
 
-    const params: AgentRunParams = {
+    const buildParams = (model: ModelRef): AgentRunParams => ({
       agentId: this.defaultAgentId,
       sessionKey: ctx.sessionKey,
-      model: this.deps.defaultModel,
+      model,
       systemPrompt: this.deps.systemPrompt,
       messages: [...priorMessages, userMessage],
       tools: toolDefinitions.length > 0 ? [...toolDefinitions] : undefined,
       abortSignal: signal,
-    };
+    });
 
-    const result = await runner.execute(params);
+    try {
+      const { modelCatalog, modelAliasIndex, fallbackChain } = this.deps;
+      let result;
+      if (modelCatalog && modelAliasIndex && fallbackChain && fallbackChain.length > 0) {
+        const fallback = await runWithModelFallback(
+          {
+            models: fallbackChain.map((raw) => ({ raw })),
+            maxRetriesPerModel: 1,
+            retryBaseDelayMs: 500,
+            fallbackOn: DEFAULT_FALLBACK_TRIGGERS,
+            abortSignal: signal,
+          },
+          async (resolved) => {
+            const model: ModelRef = {
+              ...this.deps.defaultModel,
+              provider: resolved.provider,
+              model: resolved.modelId,
+              contextWindow: resolved.entry.contextWindow,
+              maxOutputTokens: Math.min(
+                resolved.entry.maxOutputTokens,
+                this.deps.defaultModel.maxOutputTokens,
+              ),
+            };
+            return runner.execute(buildParams(model));
+          },
+          (ref) => resolveModel(ref, modelCatalog, modelAliasIndex),
+        );
+        result = fallback.result;
+      } else {
+        result = await runner.execute(buildParams(this.deps.defaultModel));
+      }
 
-    await this.persistHistory(ctx.sessionKey, this.defaultAgentId, result.messages);
+      const toolCalls = collectToolCalls(result.messages, startedAt);
+      await this.persistHistory(ctx.sessionKey, this.defaultAgentId, result.messages);
 
-    return {
-      content: extractAssistantText(result.messages),
-      usage: {
-        inputTokens: result.usage.inputTokens,
-        outputTokens: result.usage.outputTokens,
-      },
-    };
+      this.deps.profileHealth?.recordResult(profileId, true);
+
+      return {
+        content: extractAssistantText(result.messages),
+        usage: {
+          inputTokens: result.usage.inputTokens,
+          outputTokens: result.usage.outputTokens,
+        },
+        toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      };
+    } catch (err) {
+      if (err instanceof Error && err.name !== 'AbortError') {
+        this.deps.profileHealth?.recordResult(profileId, false);
+      }
+      throw err;
+    }
   }
 
   /**
@@ -182,7 +254,7 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
       if (!record?.messages.length) {
         return [];
       }
-      return record.messages.slice(-this.historyLimit);
+      return sliceHistoryRespectingToolPairs(record.messages, this.historyLimit);
     } catch (err) {
       this.deps.logger?.warn(
         `Failed to load conversation history for ${sessionKey}: ${toMessage(err)}`,
@@ -258,4 +330,71 @@ export function extractAssistantText(messages: readonly ConversationMessage[]): 
 
 function toMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * 대화 이력을 historyLimit으로 자르되, tool_use ↔ tool_result 페어를 깨지 않게 정리한다.
+ *
+ * Anthropic API는 `tool_result` 블록이 바로 앞 메시지의 `tool_use` 블록과 1:1로 대응해야
+ * 한다(400: "unexpected tool_use_id in tool_result blocks"). 단순 slice(-N)은 페어 경계를
+ * 무시해 잘린 첫 메시지가 고아 tool_result가 될 수 있으므로, slice 후 선두의 고아 메시지를
+ * 건너뛴다.
+ *
+ * @internal 테스트 접근을 위해 export하나, 외부 소비자는 없어야 한다.
+ */
+export function sliceHistoryRespectingToolPairs(
+  messages: readonly ConversationMessage[],
+  limit: number,
+): ConversationMessage[] {
+  let start = messages.length > limit ? messages.length - limit : 0;
+  // slice 경계뿐 아니라 저장 이력이 고아 상태로 남은 경우도 방어
+  while (start < messages.length && isOrphanedToolResult(messages[start])) {
+    start++;
+  }
+  return messages.slice(start);
+}
+
+function isOrphanedToolResult(msg: ConversationMessage | undefined): boolean {
+  if (!msg) {
+    return false;
+  }
+  if (msg.role === 'tool') {
+    return true;
+  }
+  if (Array.isArray(msg.content) && msg.content.length > 0) {
+    return msg.content.every((b) => b.type === 'tool_result');
+  }
+  return false;
+}
+
+/** assistant tool_use 블록과 뒤따르는 tool tool_result 블록을 페어링해 감사 레코드 생성 */
+function collectToolCalls(
+  messages: readonly ConversationMessage[],
+  fallbackTimestamp: number,
+): ToolCallRecord[] {
+  const records: ToolCallRecord[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    if (msg?.role !== 'assistant' || !Array.isArray(msg.content)) {
+      continue;
+    }
+    for (const block of msg.content) {
+      if (block.type !== 'tool_use') {
+        continue;
+      }
+      const resultMsg = messages.slice(i + 1).find((r) => r?.role === 'tool');
+      const resultBlock =
+        resultMsg && Array.isArray(resultMsg.content)
+          ? resultMsg.content.find((b) => b.type === 'tool_result' && b.toolUseId === block.id)
+          : undefined;
+      records.push({
+        name: block.name,
+        input: block.input,
+        output: resultBlock?.type === 'tool_result' ? resultBlock.content : '',
+        timestamp: fallbackTimestamp,
+        isError: resultBlock?.type === 'tool_result' ? resultBlock.isError : undefined,
+      });
+    }
+  }
+  return records;
 }

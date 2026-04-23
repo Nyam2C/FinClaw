@@ -82,6 +82,11 @@ export class DiscordAdapter implements ChannelPlugin<DiscordAccount> {
     await sendOutboundMessage(this.client, msg);
   }
 
+  /** Phase 22: alerts 스킬이 DM 전달에 사용할 Discord 클라이언트 핸들 */
+  getClient(): Client | null {
+    return this.client;
+  }
+
   async sendTyping(channelId: string, chatId: string): Promise<void> {
     if (!this.client) {
       return;

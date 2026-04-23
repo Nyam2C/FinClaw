@@ -1,5 +1,5 @@
 // packages/server/src/auto-reply/stages/execute.ts
-import type { ExecutionAdapter } from '../execution-adapter.js';
+import type { ExecutionAdapter, ToolCallRecord } from '../execution-adapter.js';
 import type { PipelineMsgContext } from '../pipeline-context.js';
 import type { StageResult } from '../pipeline.js';
 import { extractControlTokens, type ControlTokenResult } from '../control-tokens.js';
@@ -8,6 +8,7 @@ export interface ExecuteStageResult {
   readonly content: string;
   readonly controlTokens: ControlTokenResult;
   readonly usage?: { inputTokens: number; outputTokens: number };
+  readonly toolCalls?: readonly ToolCallRecord[];
 }
 
 /**
@@ -36,6 +37,7 @@ export async function executeStage(
       content: tokenResult.cleanContent,
       controlTokens: tokenResult,
       usage: raw.usage,
+      toolCalls: raw.toolCalls,
     },
   };
 }

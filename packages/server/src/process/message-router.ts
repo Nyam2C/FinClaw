@@ -166,6 +166,7 @@ function buildMsgContext(
   sessionKey: SessionKey,
   _match: BindingMatch,
 ): MsgContext {
+  const discordChannelId = msg.metadata?.discordChannelId;
   return {
     body: msg.body,
     bodyForAgent: msg.body,
@@ -178,6 +179,7 @@ function buildMsgContext(
     chatType: msg.chatType,
     sessionKey,
     accountId: msg.senderId, // NOTE: InboundMessage에 accountId 없음. senderId로 대체.
+    chatId: typeof discordChannelId === 'string' ? discordChannelId : undefined,
     media: msg.media,
     timestamp: msg.timestamp,
   };

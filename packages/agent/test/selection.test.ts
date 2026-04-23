@@ -41,15 +41,15 @@ describe('resolveModel', () => {
   });
 
   it('정확한 ID로 해석', () => {
-    const result = resolveModel({ raw: 'claude-opus-4-6' }, catalog, aliasIndex);
-    expect(result.modelId).toBe('claude-opus-4-6');
+    const result = resolveModel({ raw: 'claude-opus-4-7' }, catalog, aliasIndex);
+    expect(result.modelId).toBe('claude-opus-4-7');
     expect(result.resolvedFrom).toBe('id');
     expect(result.provider).toBe('anthropic');
   });
 
   it('별칭으로 해석', () => {
     const result = resolveModel({ raw: 'opus' }, catalog, aliasIndex);
-    expect(result.modelId).toBe('claude-opus-4-6');
+    expect(result.modelId).toBe('claude-opus-4-7');
     expect(result.resolvedFrom).toBe('alias');
   });
 
@@ -79,6 +79,6 @@ describe('resolveModel', () => {
 
   it('공백 포함 입력 처리', () => {
     const result = resolveModel({ raw: '  opus  ' }, catalog, aliasIndex);
-    expect(result.modelId).toBe('claude-opus-4-6');
+    expect(result.modelId).toBe('claude-opus-4-7');
   });
 });

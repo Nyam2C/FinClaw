@@ -9,9 +9,9 @@ import type { ModelEntry } from './catalog.js';
  */
 export const BUILT_IN_MODELS: readonly ModelEntry[] = [
   {
-    id: 'claude-opus-4-6',
+    id: 'claude-opus-4-7',
     provider: 'anthropic',
-    displayName: 'Claude Opus 4.6',
+    displayName: 'Claude Opus 4.7',
     contextWindow: 200_000,
     maxOutputTokens: 32_768,
     capabilities: {
@@ -47,28 +47,9 @@ export const BUILT_IN_MODELS: readonly ModelEntry[] = [
     releaseDate: '2025-05-22',
   },
   {
-    id: 'gpt-4o',
-    provider: 'openai',
-    displayName: 'GPT-4o',
-    contextWindow: 128_000,
-    maxOutputTokens: 16_384,
-    capabilities: {
-      vision: true,
-      functionCalling: true,
-      streaming: true,
-      jsonMode: true,
-      extendedThinking: false,
-      numericalReasoningTier: 'medium',
-    },
-    pricing: { inputPerMillion: 2.5, outputPerMillion: 10 },
-    aliases: ['gpt4o', '4o'],
-    deprecated: false,
-    releaseDate: '2024-05-13',
-  },
-  {
-    id: 'claude-haiku-3.5',
+    id: 'claude-haiku-4-5-20251001',
     provider: 'anthropic',
-    displayName: 'Claude Haiku 3.5',
+    displayName: 'Claude Haiku 4.5',
     contextWindow: 200_000,
     maxOutputTokens: 8_192,
     capabilities: {
@@ -80,55 +61,15 @@ export const BUILT_IN_MODELS: readonly ModelEntry[] = [
       numericalReasoningTier: 'low',
     },
     pricing: { inputPerMillion: 0.8, outputPerMillion: 4 },
-    aliases: ['haiku', 'haiku-3.5', 'claude-haiku'],
+    aliases: ['haiku', 'haiku-4.5', 'claude-haiku'],
     deprecated: false,
-    releaseDate: '2024-10-29',
-  },
-  {
-    id: 'gpt-4o-mini',
-    provider: 'openai',
-    displayName: 'GPT-4o mini',
-    contextWindow: 128_000,
-    maxOutputTokens: 16_384,
-    capabilities: {
-      vision: true,
-      functionCalling: true,
-      streaming: true,
-      jsonMode: true,
-      extendedThinking: false,
-      numericalReasoningTier: 'low',
-    },
-    pricing: { inputPerMillion: 0.15, outputPerMillion: 0.6 },
-    aliases: ['4o-mini', 'gpt4o-mini'],
-    deprecated: false,
-    releaseDate: '2024-07-18',
-  },
-  {
-    id: 'o3',
-    provider: 'openai',
-    displayName: 'o3',
-    contextWindow: 200_000,
-    maxOutputTokens: 100_000,
-    capabilities: {
-      vision: true,
-      functionCalling: true,
-      streaming: true,
-      jsonMode: true,
-      extendedThinking: true,
-      numericalReasoningTier: 'high',
-    },
-    pricing: { inputPerMillion: 10, outputPerMillion: 40 },
-    aliases: [],
-    deprecated: false,
-    releaseDate: '2025-04-16',
+    releaseDate: '2025-10-01',
   },
 ];
 
 /** 권장 폴백 체인 순서 */
 export const DEFAULT_FALLBACK_CHAIN = [
-  'claude-opus-4-6',
+  'claude-opus-4-7',
   'claude-sonnet-4-6',
-  'claude-haiku-3.5',
-  'gpt-4o',
-  'gpt-4o-mini',
+  'claude-haiku-4-5-20251001',
 ] as const;

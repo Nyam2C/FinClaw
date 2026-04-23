@@ -45,6 +45,14 @@ export interface MsgContext {
   channelId: ChannelId;
   chatType: ChatType;
 
+  /**
+   * 플랫폼별 채널/대화방 식별자.
+   * - Discord: 채널 snowflake (DM 채널 ID 또는 서버 텍스트 채널 ID)
+   * - Telegram: chat_id
+   * 없으면 senderId로 fallback (v1 호환).
+   */
+  chatId?: string;
+
   sessionKey: SessionKey;
   parentSessionKey?: SessionKey;
   accountId: string;

@@ -10,7 +10,10 @@ export function registerHealthChecker(checker: HealthChecker): void {
   checkers.push(checker);
 }
 
-/** 테스트용: checkers 배열 초기화 */
+/**
+ * 테스트 전용: health checkers 배열을 초기화한다.
+ * @internal
+ */
 export function resetHealthCheckers(): void {
   checkers.length = 0;
 }

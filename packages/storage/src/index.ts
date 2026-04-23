@@ -60,6 +60,15 @@ export {
   purgeExpiredCache,
 } from './tables/market-cache.js';
 export { updateAlertTrigger } from './tables/alerts.js';
+export {
+  addMessage,
+  getMessages,
+  getMessageCount,
+  getToolCallHistory,
+  type Message,
+  type ToolCallRecord,
+  type GetToolCallHistoryOptions,
+} from './tables/messages.js';
 
 // ─── StorageAdapter factory ───
 

@@ -16,6 +16,7 @@ export function setOverride(path: string, value: unknown): void {
   overrides.set(path, value);
 }
 
+/** @internal 테스트에서 오버라이드 해제 검증용 */
 export function unsetOverride(path: string): void {
   overrides.delete(path);
 }
@@ -36,6 +37,7 @@ export function resetOverrides(): void {
   overrides.clear();
 }
 
+/** @internal 테스트에서 오버라이드 누적 확인용 */
 export function getOverrideCount(): number {
   return overrides.size;
 }

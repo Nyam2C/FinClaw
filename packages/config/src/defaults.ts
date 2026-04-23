@@ -57,7 +57,9 @@ export function applyDefaults(userConfig: FinClawConfig): FinClawConfig {
   ) as unknown as FinClawConfig;
 }
 
-/** 기본값 조회 (읽기 전용) */
+/**
+ * @internal 테스트에서 불변성 검증용. 실제 설정 읽기는 applyDefaults 경유.
+ */
 export function getDefaults(): Readonly<FinClawConfig> {
   return DEFAULTS;
 }

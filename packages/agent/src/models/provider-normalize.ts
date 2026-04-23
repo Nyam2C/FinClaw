@@ -55,9 +55,6 @@ export function calculateEstimatedCost(
   );
 }
 
-/** 제공자별 응답 정규화 함수 타입 */
-export type ResponseNormalizer = (raw: unknown, pricing: ModelPricing) => NormalizedResponse;
-
 /**
  * Anthropic SDK 응답 정규화
  *
@@ -120,72 +117,3 @@ export function normalizeAnthropicResponse(
     raw,
   };
 }
-
-/**
- * OpenAI SDK 응답 정규화
- *
- * 필드 매핑:
- * - usage.prompt_tokens → inputTokens
- * - usage.completion_tokens → outputTokens
- * - cacheReadTokens, cacheWriteTokens → 0 (OpenAI N/A)
- * - usage.total_tokens → totalTokens
- * - finish_reason: 'stop' → 'end_turn', 'length' → 'max_tokens', 'tool_calls' → 'tool_use'
- */
-// TODO(M5): raw를 as 캐스트 대신 런타임 검증(zod 등)으로 교체 권장.
-export function normalizeOpenAIResponse(raw: unknown, pricing: ModelPricing): NormalizedResponse {
-  const r = raw as {
-    id?: string;
-    model?: string;
-    choices?: Array<{
-      message?: { content?: string | null };
-      finish_reason?: string;
-    }>;
-    usage?: {
-      prompt_tokens?: number;
-      completion_tokens?: number;
-      total_tokens?: number;
-    };
-  };
-
-  const inputTokens = r.usage?.prompt_tokens ?? 0;
-  const outputTokens = r.usage?.completion_tokens ?? 0;
-  const content = r.choices?.[0]?.message?.content ?? '';
-
-  const openAiReason = r.choices?.[0]?.finish_reason;
-  const stopReason = mapOpenAIFinishReason(openAiReason);
-
-  return {
-    content,
-    stopReason,
-    usage: {
-      inputTokens,
-      outputTokens,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
-      totalTokens: r.usage?.total_tokens ?? inputTokens + outputTokens,
-      estimatedCostUsd: calculateEstimatedCost(inputTokens, outputTokens, pricing),
-    },
-    modelId: r.model ?? '',
-    provider: 'openai',
-    raw,
-  };
-}
-
-function mapOpenAIFinishReason(reason?: string): StopReason {
-  switch (reason) {
-    case 'stop':
-      return 'end_turn';
-    case 'length':
-      return 'max_tokens';
-    case 'tool_calls':
-      return 'tool_use';
-    default:
-      return 'end_turn';
-  }
-}
-
-/** 정규화 함수 레지스트리 */
-export const normalizers: ReadonlyMap<ProviderId, ResponseNormalizer> = new Map([
-  ['anthropic', normalizeAnthropicResponse],
-  ['openai', normalizeOpenAIResponse],
-]);

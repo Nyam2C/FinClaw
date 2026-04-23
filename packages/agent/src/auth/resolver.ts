@@ -32,14 +32,13 @@ export interface ResolverOptions {
 /** 제공자별 환경변수 이름 매핑 */
 const ENV_KEY_MAP: Record<ProviderId, string> = {
   anthropic: 'ANTHROPIC_API_KEY',
-  openai: 'OPENAI_API_KEY',
 };
 
 /**
  * 6단계 API 키 해석 체인
  *
  * 1. ManagedAuthProfile 저장소 (라운드 로빈)
- * 2. 환경변수 (ANTHROPIC_API_KEY, OPENAI_API_KEY)
+ * 2. 환경변수 (ANTHROPIC_API_KEY)
  * 3. 설정 파일 (config.providers.{provider}.apiKey)
  * 4. AWS Secrets Manager (향후 확장 — TODO)
  * 5. 기본값 (개발용, allowDefaultKeys=true일 때만)

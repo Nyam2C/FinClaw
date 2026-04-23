@@ -67,12 +67,16 @@ export class AnthropicAdapter implements ProviderAdapter {
 
   // TODO(L3): params.tools를 SDK 호출에 전달해야 함 (Phase 9+ 도구 사용 기능)
   async chatCompletion(params: ProviderRequestParams): Promise<unknown> {
-    // system 메시지 분리 (Anthropic API는 system을 별도 파라미터로 받음)
+    // system 메시지 분리 (Anthropic API는 system을 별도 파라미터로 받음).
+    // params.systemPrompt가 있으면 우선 사용하고, messages 내 system 블록도 추가로 이어붙인다.
     const systemMessages = params.messages.filter((m) => m.role === 'system');
     const nonSystemMessages = params.messages.filter((m) => m.role !== 'system');
 
-    const system = systemMessages
-      .map((m) => (typeof m.content === 'string' ? m.content : ''))
+    const system = [
+      params.systemPrompt,
+      ...systemMessages.map((m) => (typeof m.content === 'string' ? m.content : '')),
+    ]
+      .filter((s): s is string => typeof s === 'string' && s.length > 0)
       .join('\n');
 
     try {
@@ -94,8 +98,11 @@ export class AnthropicAdapter implements ProviderAdapter {
   async *streamCompletion(params: ProviderRequestParams): AsyncIterable<StreamChunk> {
     const systemMessages = params.messages.filter((m) => m.role === 'system');
     const nonSystemMessages = params.messages.filter((m) => m.role !== 'system');
-    const system = systemMessages
-      .map((m) => (typeof m.content === 'string' ? m.content : ''))
+    const system = [
+      params.systemPrompt,
+      ...systemMessages.map((m) => (typeof m.content === 'string' ? m.content : '')),
+    ]
+      .filter((s): s is string => typeof s === 'string' && s.length > 0)
       .join('\n');
 
     const convertedTools = (params.tools ?? []).map((t) => ({

@@ -47,6 +47,3 @@ export { createConfigIO, loadConfig, clearConfigCache } from './io.js';
 export { mergeSessionEntry } from './sessions/types.js';
 export { deriveSessionKey } from './sessions/session-key.js';
 export { createSessionStore, now } from './sessions/store.js';
-
-// 테스트 헬퍼
-export { withTempHome, withEnvOverride } from './test-helpers.js';

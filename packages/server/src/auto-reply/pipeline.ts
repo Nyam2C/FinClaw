@@ -133,7 +133,7 @@ export class AutoReplyPipeline {
         channel ?? noopChannel,
         '', // messageId — MsgContext에 없으므로 빈 문자열. MsgContext 확장 시 messageId 필드 추가 필요.
         ctx.channelId as string,
-        ctx.senderId,
+        ctx.chatId ?? ctx.senderId,
         this.config.enableAck,
         this.deps.logger,
       );

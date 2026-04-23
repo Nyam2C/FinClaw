@@ -2,6 +2,8 @@
 export { createChannelDock, CORE_DOCKS } from './dock.js';
 export type { CreateDockOptions } from './dock.js';
 
+export { initChannels } from './init.js';
+
 export {
   registerChannelDock,
   getChannelDock,
@@ -14,9 +16,3 @@ export { normalizeChatType, isDirect, isMultiUser } from './chat-type.js';
 
 export { startTyping } from './typing.js';
 export type { TypingHandle } from './typing.js';
-
-export { composeGates } from './gating/pipeline.js';
-export type { Gate } from './gating/pipeline.js';
-export { createMentionGate } from './gating/mention-gating.js';
-export { createCommandGate } from './gating/command-gating.js';
-export { createAllowlistGate } from './gating/allowlist.js';

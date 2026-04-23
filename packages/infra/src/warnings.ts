@@ -15,7 +15,11 @@ export function warnOnce(key: string, fn: () => void): void {
   fn();
 }
 
-/** 테스트용 상태 초기화 */
+/**
+ * 테스트 전용: 중복 경고 억제 상태(emitted Set)를 초기화한다.
+ * 프로덕션 코드에서 호출하지 말 것.
+ * @internal
+ */
 export function resetWarnings(): void {
   emitted.clear();
 }
