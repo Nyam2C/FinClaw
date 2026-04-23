@@ -28,7 +28,7 @@ export function formatAlertMessage(
     '',
     `현재값: ${evaluation.currentValue}`,
     // TODO(R14): new Date() → triggeredAt 파라미터로 통일하여 시각 불일치 해소
-    `시각: ${new Date().toLocaleString('ko-KR')}`,
+    `시각: ${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}`,
   ].join('\n');
 }
 
