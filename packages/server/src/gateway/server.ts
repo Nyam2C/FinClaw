@@ -19,7 +19,7 @@ import { handleHttpRequest } from './router.js';
 import { registerAgentMethods } from './rpc/methods/agent.js';
 import { registerChatMethods } from './rpc/methods/chat.js';
 import { registerConfigMethods } from './rpc/methods/config.js';
-import { registerFinanceMethods } from './rpc/methods/finance.js';
+import { registerFinanceMethods, type FinanceRpcDeps } from './rpc/methods/finance.js';
 import { registerSessionMethods } from './rpc/methods/session.js';
 // 메서드 등록
 import { registerSystemMethods } from './rpc/methods/system.js';
@@ -30,6 +30,8 @@ export interface GatewayServerDeps {
   readonly storage: StorageAdapter;
   readonly defaultModel: ModelRef;
   readonly adapter: RunnerExecutionAdapter;
+  /** Phase 23: finance.* RPC 배선용 의존성 (생략 시 해당 메서드는 provider_unavailable 에러) */
+  readonly financeDeps?: FinanceRpcDeps;
 }
 
 export interface GatewayServer {
@@ -80,7 +82,7 @@ export function createGatewayServer(
     defaultModel: deps.defaultModel,
     adapter: deps.adapter,
   });
-  registerFinanceMethods();
+  registerFinanceMethods(deps.financeDeps ?? {});
   registerSessionMethods({
     registry: ctx.registry,
     storage: deps.storage,

@@ -25,6 +25,7 @@ import {
   registerMarketTools,
   registerNewsTools,
   registerAlertTools,
+  type AlertSkillHandle,
   type MarketSkillHandle,
   type NewsSkillHandle,
 } from '@finclaw/skills-finance';
@@ -190,9 +191,10 @@ async function main(): Promise<void> {
     logger.info('ALPHA_VANTAGE_KEY not set — skipping news tools');
   }
 
+  let alertHandle: AlertSkillHandle | undefined;
   if (marketHandle && newsHandle) {
     const discordClient = discordAdapter.getClient();
-    const alertMonitor = await registerAlertTools(toolRegistry, {
+    alertHandle = await registerAlertTools(toolRegistry, {
       db: storage.db,
       cache: marketHandle.cache,
       registry: marketHandle.providers,
@@ -200,8 +202,9 @@ async function main(): Promise<void> {
       logger,
       discordClient: discordClient ?? undefined,
     });
+    const handle = alertHandle;
     lifecycle.register(async () => {
-      await alertMonitor.stop();
+      handle.monitor.stop();
     });
     logger.info('Alert monitor started');
   } else {
@@ -297,11 +300,22 @@ async function main(): Promise<void> {
     }
     throw err;
   }
+  const alertHandleForRpc = alertHandle;
   const gateway = createGatewayServer(gatewayConfig, {
     storage,
     defaultModel: DEFAULT_MODEL,
     adapter,
+    financeDeps: {
+      quoteService: marketHandle?.quoteService,
+      newsAggregator: newsHandle?.aggregator,
+      alertStore: alertHandleForRpc?.store,
+      portfolioStore: newsHandle?.portfolioStore,
+      evaluateAlertOnce: alertHandleForRpc
+        ? (alertId: string) => alertHandleForRpc.monitor.evaluateOnce(alertId)
+        : undefined,
+    },
   });
+  logger.info('finance.* RPC methods wired');
   lifecycle.register(() => gateway.stop());
   lifecycle.init();
   await gateway.start();

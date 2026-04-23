@@ -29,8 +29,10 @@ export interface NewsSkillConfig {
 }
 
 /** Phase 22: main.ts가 alerts 배선에 재사용할 수 있도록 aggregator 노출 */
+/** Phase 23: finance.portfolio.get RPC 배선을 위해 portfolioStore 도 함께 노출 */
 export interface NewsSkillHandle {
   readonly aggregator: import('./types.js').NewsAggregator;
+  readonly portfolioStore: PortfolioStore;
 }
 
 /** 스킬을 초기화하고 도구를 등록한다 */
@@ -71,7 +73,7 @@ export async function registerNewsTools(
     newsAggregator,
   });
 
-  return { aggregator: newsAggregator };
+  return { aggregator: newsAggregator, portfolioStore };
 }
 
 /** 스킬 메타데이터 */

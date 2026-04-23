@@ -29,8 +29,25 @@ import {
   registerGetAlertHistoryTool,
 } from './tools.js';
 
-export type { AlertStore } from './types.js';
+export type {
+  AlertStore,
+  AlertCondition,
+  AlertConditionType,
+  AlertDefinition,
+  CreateAlertInput,
+  DeliveryChannel,
+  PriceCondition,
+  ChangeCondition,
+  VolumeCondition,
+  NewsCondition,
+} from './types.js';
 export { createAlertStore } from './store.js';
+
+/** Phase 23: RPC 배선에서 alertStore 접근을 위해 monitor 와 store 를 함께 노출 */
+export interface AlertSkillHandle {
+  readonly monitor: AlertMonitor;
+  readonly store: import('./types.js').AlertStore;
+}
 
 export interface AlertSkillConfig {
   readonly db: DatabaseSync;
@@ -47,7 +64,7 @@ export interface AlertSkillConfig {
 export async function registerAlertTools(
   toolRegistry: ToolRegistry,
   config: AlertSkillConfig,
-): Promise<AlertMonitor> {
+): Promise<AlertSkillHandle> {
   const store = createAlertStore(config.db);
   const marketService = createAlertMarketService({
     cache: config.cache,
@@ -107,7 +124,7 @@ export async function registerAlertTools(
   registerGetAlertHistoryTool(toolRegistry, { store });
 
   monitor.start();
-  return monitor;
+  return { monitor, store };
 }
 
 export const ALERT_SKILL_METADATA = {
