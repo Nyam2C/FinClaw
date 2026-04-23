@@ -113,7 +113,7 @@
 - **phase22 내 (선택)**: `main.ts`에서 `InMemoryModelCatalog` 인스턴스 생성 + `config.models.definitions`의 모델 등록 + `buildModelAliasIndex` 호출
 - **phase22 내 (핵심)**: Anthropic 오류(rate-limit, overloaded) 발생 시 `runWithModelFallback`로 감싸서 자동 재시도. 현재 **Opus 단일 의존** → 429 한 방에 봇 무응답 리스크 제거
 - **소비자 위치**: `packages/agent/src/provider-anthropic.ts`의 `createMessage()` 호출 감싸기 (존재 여부 확인 후)
-- **phase23+**: 카탈로그에 GPT-4o·GPT-4o-mini까지 등록 시 멀티프로바이더 전환
+- **phase23+ 멀티프로바이더**: 본래 카탈로그에 GPT-4o·GPT-4o-mini까지 등록 시 멀티프로바이더 전환을 상정했으나, **phase22 scope narrowing으로 d2a67d9에서 OpenAI 어댑터·normalizers·3개 openai 모델·openai 의존성을 삭제**했다. phase23에서 멀티프로바이더가 필요하면 어댑터를 재구현해야 한다 (구 구현은 git history로 복원 가능).
 
 **의존성 주의**
 
@@ -204,7 +204,8 @@
 
 **보류 항목**
 
-- `formatFinancialNumber` (response-formatter.ts): 현재 호출처 없음. plan.md 시스템 프롬프트의 "불확실성 수치화" 원칙과 자연스럽게 엮임 → **`deliverResponse`에서 도구 응답 후처리로 호출 검토**. phase22에서는 플래그만 세우고 phase23에서 실제 배선.
+- ~~`formatFinancialNumber` (response-formatter.ts): 현재 호출처 없음. plan.md 시스템 프롬프트의 "불확실성 수치화" 원칙과 자연스럽게 엮임 → `deliverResponse`에서 도구 응답 후처리로 호출 검토. phase22에서는 플래그만 세우고 phase23에서 실제 배선.~~
+  - **갱신 (d2a67d9 이후)**: phase22 scope narrowing 과정에서 `formatResponse`·`formatFinancialNumber`가 0 refs 상태로 삭제됨 (`splitMessage`는 유지). deliver 스테이지는 면책 조항·출처 footer만 인라인 처리하며 **금융 수치 포매팅은 수행하지 않는다**. phase23에서 "도구 응답 후처리"가 필요하면 재작성 (~80 LOC, 구 구현은 git history로 복원 가능).
 
 ---
 
@@ -261,14 +262,20 @@ plan.md의 A~D 밀스톤에 plan_2 항목을 합친 최종 작업 순서:
 
 이번 phase에서 활성화하지 않지만 **버리지 않고** 다음 phase 후보로 남길 것:
 
-| 심볼                                     | 위치                             | 다음 활성화 시점                             |
-| ---------------------------------------- | -------------------------------- | -------------------------------------------- |
-| `InMemoryAuthProfileStore.selectNext`    | agent/src/auth/profiles.ts       | phase23: 다중 API 키 지원                    |
-| `CooldownTracker` 외부 노출              | agent/src/auth/cooldown.ts       | phase23: Alpha Vantage 레이트 리밋 자동 관리 |
-| 전체 Storage Search (`buildFtsQuery` 등) | storage/src/search               | phase23+: `!finclaw search` 명령어           |
-| `formatFinancialNumber`                  | auto-reply/response-formatter.ts | phase23: 도구 응답 후처리 파이프라인         |
-| `DefaultPipelineObserver`                | auto-reply/observer.ts           | phase23: 메트릭 대시보드                     |
-| `MockExecutionAdapter`                   | auto-reply/execution-adapter.ts  | 영구 유지 (테스트용)                         |
+| 심볼                                     | 위치                            | 다음 활성화 시점                             |
+| ---------------------------------------- | ------------------------------- | -------------------------------------------- |
+| `InMemoryAuthProfileStore.selectNext`    | agent/src/auth/profiles.ts      | phase23: 다중 API 키 지원                    |
+| `CooldownTracker` 외부 노출              | agent/src/auth/cooldown.ts      | phase23: Alpha Vantage 레이트 리밋 자동 관리 |
+| 전체 Storage Search (`buildFtsQuery` 등) | storage/src/search              | phase23+: `!finclaw search` 명령어           |
+| `DefaultPipelineObserver`                | auto-reply/observer.ts          | phase23: 메트릭 대시보드                     |
+| `MockExecutionAdapter`                   | auto-reply/execution-adapter.ts | 영구 유지 (테스트용)                         |
+
+**d2a67d9에서 scope narrowing으로 삭제된 backbone** (phase23에서 필요 시 재작성):
+
+| 심볼                                        | 구 위치                          | 삭제 근거                                                  |
+| ------------------------------------------- | -------------------------------- | ---------------------------------------------------------- |
+| `formatFinancialNumber`, `formatResponse`   | auto-reply/response-formatter.ts | 0 refs, deliver가 포매팅하지 않음 (수치 원본 전달)         |
+| OpenAI 어댑터 + normalizers + 3 openai 모델 | agent/providers/openai.ts 등     | phase22를 Anthropic-only로 확정, 멀티프로바이더는 phase23+ |
 
 ---
 
