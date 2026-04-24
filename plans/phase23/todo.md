@@ -999,7 +999,7 @@ describe('agent.* RPC', () => {
 
 ---
 
-## Todo 8: `app-gateway` 래퍼 메서드 추가
+## Todo 8: `app-gateway` 래퍼 메서드 추가 ✅
 
 ### 파일 목록
 
@@ -1108,7 +1108,7 @@ export function createAgentClient(gateway: AppGateway): AgentClient {
 
 ---
 
-## Todo 9: `market-view` 배선
+## Todo 9: `market-view` 배선 ✅
 
 ### 파일 목록
 
@@ -1279,7 +1279,7 @@ export class MarketView extends LitElement {
 
 ---
 
-## Todo 10: `portfolio-view` 배선
+## Todo 10: `portfolio-view` 배선 ✅
 
 ### 파일 목록
 
@@ -1405,7 +1405,7 @@ export class PortfolioView extends LitElement {
 
 ---
 
-## Todo 11: `alerts-view` 배선
+## Todo 11: `alerts-view` 배선 ✅
 
 ### 파일 목록
 

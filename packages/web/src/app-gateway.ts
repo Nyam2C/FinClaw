@@ -200,3 +200,123 @@ export function createAppGateway(
     },
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// Phase 23: typed RPC clients for finance.* / agent.*
+// ─────────────────────────────────────────────────────────────────────
+
+export interface FinanceQuote {
+  readonly symbol: string;
+  readonly price: number;
+  readonly change: number;
+  readonly changePercent: number;
+  readonly timestamp: number;
+}
+
+export interface FinanceNewsArticle {
+  readonly id: string;
+  readonly title: string;
+  readonly url: string;
+  readonly source: string;
+  readonly publishedAt: number;
+  readonly summary?: string;
+  readonly symbols: readonly string[];
+  readonly sentiment?: { readonly label: string; readonly score: number };
+}
+
+export interface FinanceAlert {
+  readonly id: string;
+  readonly symbol: string;
+  readonly condition: string;
+  readonly threshold?: number;
+  readonly keyword?: string;
+  readonly enabled: boolean;
+  readonly cooldownMs: number;
+  readonly createdAt: number;
+  readonly triggerCount: number;
+}
+
+export interface PortfolioSnapshot {
+  readonly portfolioId?: string;
+  readonly name?: string;
+  readonly holdings: ReadonlyArray<{
+    readonly symbol: string;
+    readonly quantity: number;
+    readonly avgPrice: number;
+    readonly currency: string;
+  }>;
+  readonly summary: {
+    readonly currency: string;
+    readonly totalHoldings?: number;
+  };
+}
+
+export type AlertConditionId = 'price_above' | 'price_below' | 'change_percent' | 'news_match';
+
+export interface FinanceClient {
+  quote(params: { symbol: string }): Promise<FinanceQuote>;
+  news(params: {
+    query?: string;
+    symbols?: string[];
+    limit?: number;
+  }): Promise<{ articles: readonly FinanceNewsArticle[]; total: number }>;
+  alertCreate(params: {
+    symbol: string;
+    condition: AlertConditionId;
+    threshold?: number;
+    keyword?: string;
+    cooldownMs?: number;
+  }): Promise<{ alertId: string; createdAt: number; immediateTrigger: boolean }>;
+  alertList(params?: {
+    symbol?: string;
+  }): Promise<{ alerts: readonly FinanceAlert[]; total: number }>;
+  portfolioGet(): Promise<PortfolioSnapshot>;
+}
+
+export interface AgentInfo {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string;
+  readonly toolCount: number;
+}
+
+export interface AgentClient {
+  list(): Promise<{ agents: readonly AgentInfo[] }>;
+  status(agentId: string): Promise<{
+    agentId: string;
+    name: string;
+    status: 'idle' | 'busy';
+    activeRuns: number;
+    totalCalls: number;
+    lastCallAt: number | null;
+    lastError: string | null;
+    health: string;
+  }>;
+  run(params: { agentId: string; prompt: string; timeoutMs?: number }): Promise<{
+    agentId: string;
+    output: string;
+    toolCalls: readonly unknown[];
+    tokenUsage: { input: number; output: number };
+    durationMs: number;
+    stopReason: string;
+    turns: number;
+  }>;
+}
+
+export function createFinanceClient(gateway: AppGateway): FinanceClient {
+  return {
+    quote: (p) => gateway.send('finance.quote', p) as Promise<FinanceQuote>,
+    news: (p) => gateway.send('finance.news', p) as never,
+    alertCreate: (p) => gateway.send('finance.alert.create', p) as never,
+    alertList: (p = {}) => gateway.send('finance.alert.list', p) as never,
+    portfolioGet: () => gateway.send('finance.portfolio.get', {}) as Promise<PortfolioSnapshot>,
+  };
+}
+
+export function createAgentClient(gateway: AppGateway): AgentClient {
+  return {
+    list: () => gateway.send('agent.list', {}) as never,
+    status: (agentId) => gateway.send('agent.status', { agentId }) as never,
+    run: (p) => gateway.send('agent.run', p) as never,
+  };
+}
