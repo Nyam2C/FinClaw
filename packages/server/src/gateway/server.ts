@@ -16,7 +16,7 @@ import type { GatewayServerConfig } from './rpc/types.js';
 import { GatewayBroadcaster } from './broadcaster.js';
 import { ChatRegistry } from './registry.js';
 import { handleHttpRequest } from './router.js';
-import { registerAgentMethods } from './rpc/methods/agent.js';
+import { registerAgentMethods, type AgentRpcDeps } from './rpc/methods/agent.js';
 import { registerChatMethods } from './rpc/methods/chat.js';
 import { registerConfigMethods } from './rpc/methods/config.js';
 import { registerFinanceMethods, type FinanceRpcDeps } from './rpc/methods/finance.js';
@@ -32,6 +32,8 @@ export interface GatewayServerDeps {
   readonly adapter: RunnerExecutionAdapter;
   /** Phase 23: finance.* RPC 배선용 의존성 (생략 시 해당 메서드는 provider_unavailable 에러) */
   readonly financeDeps?: FinanceRpcDeps;
+  /** Phase 23: agent.* RPC 배선용 의존성 (생략 시 agent.* 메서드 등록 스킵) */
+  readonly agentDeps?: AgentRpcDeps;
 }
 
 export interface GatewayServer {
@@ -87,7 +89,9 @@ export function createGatewayServer(
     registry: ctx.registry,
     storage: deps.storage,
   });
-  registerAgentMethods();
+  if (deps.agentDeps) {
+    registerAgentMethods(deps.agentDeps);
+  }
 
   // HTTP 요청 처리
   httpServer.on('request', (req: IncomingMessage, res: ServerResponse) => {

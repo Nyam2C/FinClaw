@@ -631,7 +631,7 @@ describe('finance.* RPC', () => {
 
 ---
 
-## Todo 5: `agent.ts` 3개 메서드 실구현
+## Todo 5: `agent.ts` 3개 메서드 실구현 ✅
 
 ### 파일 목록
 
@@ -857,7 +857,7 @@ export function registerAgentMethods(deps: AgentRpcDeps): void {
 
 ---
 
-## Todo 6: `main.ts` 에 agent RPC 등록
+## Todo 6: `main.ts` 에 agent RPC 등록 ✅
 
 ### 파일 목록
 
@@ -900,7 +900,7 @@ logger.info('agent.* RPC methods registered');
 
 ---
 
-## Todo 7: `agent.test.ts` 재작성
+## Todo 7: `agent.test.ts` 재작성 ✅
 
 ### 파일 목록
 

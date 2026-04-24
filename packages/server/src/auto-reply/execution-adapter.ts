@@ -368,7 +368,7 @@ function isOrphanedToolResult(msg: ConversationMessage | undefined): boolean {
 }
 
 /** assistant tool_use 블록과 뒤따르는 tool tool_result 블록을 페어링해 감사 레코드 생성 */
-function collectToolCalls(
+export function collectToolCalls(
   messages: readonly ConversationMessage[],
   fallbackTimestamp: number,
 ): ToolCallRecord[] {

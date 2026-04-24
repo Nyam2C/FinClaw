@@ -14,6 +14,7 @@ import { DiscordAccountSchema, DiscordAdapter } from '@finclaw/channel-discord';
 import { ConfigValidationError, validateConfigStrict } from '@finclaw/config';
 import {
   assertPortAvailable,
+  ConcurrencyLane,
   ConcurrencyLaneManager,
   createLogger,
   formatPortOccupant,
@@ -301,6 +302,11 @@ async function main(): Promise<void> {
     throw err;
   }
   const alertHandleForRpc = alertHandle;
+  const agentRunLane = new ConcurrencyLane({
+    maxConcurrent: 1,
+    maxQueueSize: 10,
+    waitTimeoutMs: 120_000,
+  });
   const gateway = createGatewayServer(gatewayConfig, {
     storage,
     defaultModel: DEFAULT_MODEL,
@@ -314,8 +320,18 @@ async function main(): Promise<void> {
         ? (alertId: string) => alertHandleForRpc.monitor.evaluateOnce(alertId)
         : undefined,
     },
+    agentDeps: {
+      toolRegistry,
+      runnerFactory,
+      agentRunLane,
+      profileHealth,
+      systemPrompt: DEFAULT_SYSTEM_PROMPT,
+      defaultModel: DEFAULT_MODEL,
+      logger,
+      profileId: 'default',
+    },
   });
-  logger.info('finance.* RPC methods wired');
+  logger.info('finance.* / agent.* RPC methods wired');
   lifecycle.register(() => gateway.stop());
   lifecycle.init();
   await gateway.start();
