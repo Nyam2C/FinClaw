@@ -1,6 +1,12 @@
-import type { ProfileHealthMonitor, ToolRegistry } from '@finclaw/agent';
+import type { AliasIndex, ModelCatalog, ProfileHealthMonitor, ToolRegistry } from '@finclaw/agent';
 import type { ConcurrencyLane, FinClawLogger } from '@finclaw/infra';
 import type { AgentRunParams, ConversationMessage, ModelRef } from '@finclaw/types';
+import {
+  DEFAULT_FALLBACK_TRIGGERS,
+  ModelFloorExhaustedError,
+  resolveModel,
+  runWithModelFallback,
+} from '@finclaw/agent';
 import { createAgentId, createSessionKey } from '@finclaw/types';
 // packages/server/src/gateway/rpc/methods/agent.ts
 import { randomUUID } from 'node:crypto';
@@ -31,6 +37,10 @@ export interface AgentRpcDeps {
    * 미주입 시 defaultModel 그대로 사용.
    */
   readonly router?: RouterHelper;
+  /** Phase 24 D: router 활성 시 runWithModelFallback 가 사용 (catalog + aliasIndex + chain) */
+  readonly modelCatalog?: ModelCatalog;
+  readonly modelAliasIndex?: AliasIndex;
+  readonly fallbackChain?: readonly string[];
 }
 
 interface AgentInfo {
@@ -167,38 +177,73 @@ export function registerAgentMethods(deps: AgentRpcDeps): void {
         const timeoutMs = params.timeoutMs ?? 60_000;
         const timer = setTimeout(() => abortController.abort(), timeoutMs);
 
-        // Phase 24: 라우터 주입 시 role 기반 모델 결정 + defaultModel 의 model 필드 교체.
+        // Phase 24: 라우터 주입 시 role 기반 모델 결정.
         // Zod schema 의 default('analysis') 가 채우지만 generic 타입상 optional 이므로 ?? 로 보강.
         const role = params.role ?? 'analysis';
-        let modelRef: ModelRef = deps.defaultModel;
-        if (deps.router) {
-          const toolNames = toolDefinitions.map((t) => t.name);
-          const { decision, modelId } = deps.router({
-            role,
-            toolNames,
-          });
-          modelRef = { ...deps.defaultModel, model: modelId };
+        const decision = deps.router
+          ? deps.router({ role, toolNames: toolDefinitions.map((t) => t.name) })
+          : undefined;
+        if (decision) {
           deps.logger.info('agent.run.routed', {
             event: 'agent.run.routed',
             agentId: params.agentId,
             role,
-            chosenModel: modelId,
-            floor: decision.floor,
-            reason: decision.reason,
+            chosenModel: decision.modelId,
+            floor: decision.decision.floor,
+            reason: decision.decision.reason,
           });
         }
 
         try {
-          const runParams: AgentRunParams = {
+          const buildRunParams = (model: ModelRef): AgentRunParams => ({
             agentId: agentIdBrand,
             sessionKey,
-            model: modelRef,
+            model,
             systemPrompt: deps.systemPrompt,
             messages: [userMessage],
             tools: toolDefinitions.length > 0 ? [...toolDefinitions] : undefined,
             abortSignal: abortController.signal,
-          };
-          const result = await runner.execute(runParams);
+          });
+
+          // 라우터 + catalog 모두 활성: runWithModelFallback 으로 floor 보호.
+          // 그 외: defaultModel 단일 실행 (밀스톤 D 이전 동작).
+          let result;
+          const catalog = deps.modelCatalog;
+          const aliasIndex = deps.modelAliasIndex;
+          if (decision && catalog && aliasIndex) {
+            const others = (deps.fallbackChain ?? []).filter((m) => m !== decision.modelId);
+            const chain = [decision.modelId, ...others];
+            const fallback = await runWithModelFallback(
+              {
+                models: chain.map((raw) => ({ raw })),
+                maxRetriesPerModel: 1,
+                retryBaseDelayMs: 500,
+                fallbackOn: DEFAULT_FALLBACK_TRIGGERS,
+                abortSignal: abortController.signal,
+                floor: decision.decision.floor,
+              },
+              async (resolved) => {
+                const model: ModelRef = {
+                  ...deps.defaultModel,
+                  provider: resolved.provider,
+                  model: resolved.modelId,
+                  contextWindow: resolved.entry.contextWindow,
+                  maxOutputTokens: Math.min(
+                    resolved.entry.maxOutputTokens,
+                    deps.defaultModel.maxOutputTokens,
+                  ),
+                };
+                return runner.execute(buildRunParams(model));
+              },
+              (ref) => resolveModel(ref, catalog, aliasIndex),
+            );
+            result = fallback.result;
+          } else {
+            const modelRef: ModelRef = decision
+              ? { ...deps.defaultModel, model: decision.modelId }
+              : deps.defaultModel;
+            result = await runner.execute(buildRunParams(modelRef));
+          }
 
           const output = extractAssistantText(result.messages);
           const toolCallRecords = collectToolCalls(result.messages, startedAt);
@@ -243,6 +288,19 @@ export function registerAgentMethods(deps: AgentRpcDeps): void {
           error: msg,
           durationMs: Date.now() - startedAt,
         });
+        // Phase 24 D: floor 차단은 사용자에게 한국어 안내 (chat.send 와 동일 정책).
+        if (err instanceof ModelFloorExhaustedError) {
+          deps.logger.warn('agent.run.floor_exhausted', {
+            event: 'agent.run.floor_exhausted',
+            agentId: params.agentId,
+            floor: err.floor,
+            attempted: err.chainAttempted,
+          });
+          throw new Error(
+            `요청에 필요한 모델(${err.floor} 이상)이 일시적으로 사용 불가합니다. 약 60초 후 다시 시도해 주세요.`,
+            { cause: err },
+          );
+        }
         throw err;
       } finally {
         activeRuns.set(params.agentId, Math.max(0, (activeRuns.get(params.agentId) ?? 1) - 1));

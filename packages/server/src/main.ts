@@ -371,6 +371,9 @@ async function main(): Promise<void> {
       logger,
       profileId: 'default',
       router: routerHelper,
+      modelCatalog,
+      modelAliasIndex,
+      fallbackChain: DEFAULT_FALLBACK_CHAIN,
     },
   });
   logger.info('finance.* / agent.* RPC methods wired');

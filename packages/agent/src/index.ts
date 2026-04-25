@@ -35,7 +35,11 @@ export type {
 } from './models/provider-normalize.js';
 
 // ─── models: fallback ───
-export { runWithModelFallback, DEFAULT_FALLBACK_TRIGGERS } from './models/fallback.js';
+export {
+  DEFAULT_FALLBACK_TRIGGERS,
+  ModelFloorExhaustedError,
+  runWithModelFallback,
+} from './models/fallback.js';
 export type {
   FallbackConfig,
   FallbackTrigger,

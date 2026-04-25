@@ -153,7 +153,7 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
     const startedAt = Date.now();
 
     // Phase 24: 라우터가 주입되면 매 요청마다 role 추론 + 라우팅 결정.
-    const routedChain = this.applyRouting({
+    const routed = this.applyRouting({
       message: ctx.normalizedBody,
       toolDefinitions,
       automation: false,
@@ -171,9 +171,10 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
 
     try {
       const { modelCatalog, modelAliasIndex, fallbackChain } = this.deps;
-      // 라우터 활성: 결정된 단일 모델만 사용 (밀스톤 D 에서 floor 기반 chain 재구성).
-      // 라우터 미주입: 기존 fallbackChain 동작 유지.
-      const effectiveChain = routedChain ?? fallbackChain;
+      // 라우터 활성: routed.chain (라우터 결정 모델 선두) + routed.floor 로 floor 미만 차단.
+      // 라우터 미주입: 기존 fallbackChain 동작 (floor 없음 → AggregateError).
+      const effectiveChain = routed?.chain ?? fallbackChain;
+      const effectiveFloor = routed?.floor;
       let result;
       if (modelCatalog && modelAliasIndex && effectiveChain && effectiveChain.length > 0) {
         const fallback = await runWithModelFallback(
@@ -183,6 +184,7 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
             retryBaseDelayMs: 500,
             fallbackOn: DEFAULT_FALLBACK_TRIGGERS,
             abortSignal: signal,
+            floor: effectiveFloor,
           },
           async (resolved) => {
             const model: ModelRef = {
@@ -255,24 +257,48 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
     });
     const runner = this.deps.runnerFactory(dispatcher);
 
-    // Phase 24: 라우터 주입 시 model 을 라우터 결정으로 교체.
-    // userHint 우선, 없으면 chat.start 의 input.model 에서 tier 추론.
-    const effectiveModel = this.applyTuiRouting({
-      input,
-      toolDefinitions,
-    });
+    // Phase 24: 라우터 주입 시 chain + floor 로 runWithModelFallback 사용.
+    // 미주입 시 input.model 단일 사용 (기존 동작).
+    const routed = this.applyTuiRouting({ input, toolDefinitions });
 
-    const params: AgentRunParams = {
+    const buildParams = (model: ModelRef): AgentRunParams => ({
       agentId: input.agentId,
       sessionKey: input.sessionKey,
-      model: effectiveModel,
+      model,
       systemPrompt: this.deps.systemPrompt,
       messages: [...priorMessages, userMessage],
       tools: toolDefinitions.length > 0 ? [...toolDefinitions] : undefined,
       abortSignal: signal,
-    };
+    });
 
-    const result = await runner.execute(params, listener);
+    const { modelCatalog, modelAliasIndex } = this.deps;
+    let result;
+    if (routed && modelCatalog && modelAliasIndex) {
+      const fallback = await runWithModelFallback(
+        {
+          models: routed.chain.map((raw) => ({ raw })),
+          maxRetriesPerModel: 1,
+          retryBaseDelayMs: 500,
+          fallbackOn: DEFAULT_FALLBACK_TRIGGERS,
+          abortSignal: signal,
+          floor: routed.floor,
+        },
+        async (resolved) => {
+          const model: ModelRef = {
+            ...input.model,
+            provider: resolved.provider,
+            model: resolved.modelId,
+            contextWindow: resolved.entry.contextWindow,
+            maxOutputTokens: Math.min(resolved.entry.maxOutputTokens, input.model.maxOutputTokens),
+          };
+          return runner.execute(buildParams(model), listener);
+        },
+        (ref) => resolveModel(ref, modelCatalog, modelAliasIndex),
+      );
+      result = fallback.result;
+    } else {
+      result = await runner.execute(buildParams(input.model), listener);
+    }
 
     await this.persistHistory(input.sessionKey, input.agentId, result.messages);
 
@@ -287,14 +313,17 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
   }
 
   /**
-   * Phase 24: pipeline (execute) 전용 라우팅. 메시지로 role 추론 후 라우터 호출.
-   * 라우터 미주입 시 undefined 반환 — 호출자가 기존 fallbackChain 으로 fallback.
+   * Phase 24: 라우팅 결정 → fallback chain 구성. 라우터 미주입 시 undefined.
+   *
+   * - chain: 라우터 결정 모델을 선두로, 나머지 fallbackChain 모델을 뒤에 배치.
+   *   fallback.ts 의 floor 필터가 floor 미만 제거 — 호출자는 신경쓰지 않음.
+   * - floor: routing 결정의 floor (밀스톤 D, B6).
    */
   private applyRouting(args: {
     readonly message: string;
     readonly toolDefinitions: readonly { readonly name: string }[];
     readonly automation: boolean;
-  }): readonly string[] | undefined {
+  }): { readonly chain: readonly string[]; readonly floor: ModelTier } | undefined {
     const router = this.deps.router;
     if (!router) {
       return undefined;
@@ -313,12 +342,13 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
       floor: decision.floor,
       reason: decision.reason,
     });
-    return [modelId];
+    const others = (this.deps.fallbackChain ?? []).filter((m) => m !== modelId);
+    return { chain: [modelId, ...others], floor: decision.floor };
   }
 
   /**
    * Phase 24: TUI/RPC chat.send 전용 라우팅. role='chat' 고정 + userHint 적용.
-   * 라우터 미주입 시 input.model 그대로 반환 (기존 동작).
+   * 라우터 미주입 시 undefined — 호출자가 input.model 그대로 사용.
    */
   private applyTuiRouting(args: {
     readonly input: {
@@ -327,10 +357,10 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
       readonly userHint?: ModelTier;
     };
     readonly toolDefinitions: readonly { readonly name: string }[];
-  }): ModelRef {
+  }): { readonly chain: readonly string[]; readonly floor: ModelTier } | undefined {
     const router = this.deps.router;
     if (!router) {
-      return args.input.model;
+      return undefined;
     }
     const userHint = args.input.userHint ?? modelIdToTier(args.input.model.model);
     const toolNames = args.toolDefinitions.map((t) => t.name);
@@ -346,7 +376,8 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
       floor: decision.floor,
       reason: decision.reason,
     });
-    return { ...args.input.model, model: modelId };
+    const others = (this.deps.fallbackChain ?? []).filter((m) => m !== modelId);
+    return { chain: [modelId, ...others], floor: decision.floor };
   }
 
   private async loadHistory(sessionKey: SessionKey): Promise<ConversationMessage[]> {

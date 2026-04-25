@@ -1377,7 +1377,7 @@ export async function registerNewsTools(
 
 ---
 
-## Todo 21: fallback.ts floor 파라미터 + ModelFloorExhaustedError ⬜
+## Todo 21: fallback.ts floor 파라미터 + ModelFloorExhaustedError ✅
 
 ### 파일 목록
 
@@ -1483,7 +1483,7 @@ pnpm --filter @finclaw/agent test fallback
 
 ---
 
-## Todo 22: fallback.test.ts floor 케이스 ⬜
+## Todo 22: fallback.test.ts floor 케이스 ✅
 
 ### 파일 목록
 
@@ -1566,7 +1566,7 @@ pnpm --filter @finclaw/agent test fallback
 
 ---
 
-## Todo 23: chat / agent 에러 캐치 ⬜
+## Todo 23: chat / agent 에러 캐치 ✅
 
 ### 파일 목록
 
@@ -1620,7 +1620,7 @@ try {
 
 ---
 
-## Todo 24: 스킬 내부 에러 캐치 ⬜
+## Todo 24: 스킬 내부 에러 캐치 ✅
 
 ### 파일 목록
 

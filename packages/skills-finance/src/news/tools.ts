@@ -7,6 +7,7 @@ import type {
   ToolRegistry,
 } from '@finclaw/agent';
 import type { ModelRef, TickerSymbol } from '@finclaw/types';
+import { ModelFloorExhaustedError } from '@finclaw/agent';
 import type { PortfolioStore } from './portfolio/store.js';
 import type { NewsAggregator, AnalysisOptions, NewsCategory } from './types.js';
 import { analyzeMarket } from './analysis/market-analysis.js';
@@ -158,6 +159,14 @@ export function registerAnalyzeMarketTool(
       const analysis = await analyzeMarket(deps.client, news, options, modelRef);
       return { content: JSON.stringify(analysis), isError: false };
     } catch (error) {
+      // Phase 24 D: floor 차단은 도구 실패가 아니라 인프라 일시 불가 — 외부 LLM 이
+      // 자연어로 사용자 안내 가능하도록 구조화된 한국어 메시지로 반환.
+      if (error instanceof ModelFloorExhaustedError) {
+        return {
+          content: `analyze_market 사용 불가: ${error.floor} 이상 모델이 일시적으로 응답하지 않습니다. 약 60초 후 재시도하면 분석을 다시 시도할 수 있습니다.`,
+          isError: true,
+        };
+      }
       return { content: error instanceof Error ? error.message : String(error), isError: true };
     }
   };
