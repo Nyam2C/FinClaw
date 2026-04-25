@@ -1,5 +1,5 @@
 // packages/server/src/gateway/rpc/methods/chat.ts
-import type { AgentId, ModelRef, SessionKey, StorageAdapter } from '@finclaw/types';
+import type { AgentId, ModelRef, ModelTier, SessionKey, StorageAdapter } from '@finclaw/types';
 import { createAgentId, createSessionKey } from '@finclaw/types';
 import { z } from 'zod/v4';
 import type { RunnerExecutionAdapter } from '../../../auto-reply/execution-adapter.js';
@@ -61,7 +61,7 @@ export function createChatMethods(deps: ChatMethodsDeps): readonly RpcMethodHand
     };
 
   const sendHandler: RpcMethodHandler<
-    { sessionId: string; message: string; idempotencyKey?: string },
+    { sessionId: string; message: string; idempotencyKey?: string; modelHint?: ModelTier },
     { messageId: string }
   > = {
     method: 'chat.send',
@@ -71,6 +71,8 @@ export function createChatMethods(deps: ChatMethodsDeps): readonly RpcMethodHand
       sessionId: z.string(),
       message: z.string(),
       idempotencyKey: z.string().optional(),
+      // Phase 24: 사용자가 모델 선호 표현 가능 (allowClientHint=true 일 때만 유효)
+      modelHint: z.enum(['haiku', 'sonnet', 'opus']).optional(),
     }),
     async execute(params) {
       const session = deps.registry.getSession(params.sessionId);
@@ -96,6 +98,7 @@ export function createChatMethods(deps: ChatMethodsDeps): readonly RpcMethodHand
           agentId,
           userMessage: params.message,
           model: session.model,
+          userHint: params.modelHint,
         },
         listener,
         signal,

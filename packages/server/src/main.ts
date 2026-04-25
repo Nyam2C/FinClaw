@@ -23,6 +23,9 @@ import {
   PortInUseError,
 } from '@finclaw/infra';
 import {
+  ALERT_SKILL_METADATA,
+  MARKET_SKILL_METADATA,
+  NEWS_SKILL_METADATA,
   registerMarketTools,
   registerNewsTools,
   registerAlertTools,
@@ -30,7 +33,7 @@ import {
   type MarketSkillHandle,
   type NewsSkillHandle,
 } from '@finclaw/skills-finance';
-import { registerGeneralTools } from '@finclaw/skills-general';
+import { GENERAL_SKILL_METADATA, registerGeneralTools } from '@finclaw/skills-general';
 import { createStorage } from '@finclaw/storage';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -40,6 +43,7 @@ import { InMemoryCommandRegistry } from './auto-reply/commands/registry.js';
 import { RunnerExecutionAdapter, type RunnerFactory } from './auto-reply/execution-adapter.js';
 import { StubFinanceContextProvider } from './auto-reply/pipeline-context.js';
 import { AutoReplyPipeline } from './auto-reply/pipeline.js';
+import { buildToolMetaIndex, makeRouterHelper } from './auto-reply/router-helper.js';
 import { initChannels } from './channels/index.js';
 import { createGatewayServer } from './gateway/server.js';
 import { ProcessLifecycle } from './process/lifecycle.js';
@@ -157,6 +161,20 @@ async function main(): Promise<void> {
   } else {
     logger.warn('routing config not found, using defaults', { event: 'routing.config_missing' });
   }
+
+  // Phase 24: 라우터 helper 구축 — 4개 스킬 메타에서 도구 인덱스 수집.
+  // routing 미주입 시 helper 생성하지 않음 (어댑터/agent.run 모두 fallback 동작).
+  const routerHelper = routing
+    ? makeRouterHelper(
+        routing,
+        buildToolMetaIndex([
+          MARKET_SKILL_METADATA,
+          NEWS_SKILL_METADATA,
+          ALERT_SKILL_METADATA,
+          GENERAL_SKILL_METADATA,
+        ]),
+      )
+    : undefined;
   const dbPath = process.env.FINCLAW_DB_PATH ?? join(homedir(), '.finclaw', 'db.sqlite');
   const storage = createStorage({ dbPath });
   await storage.initialize();
@@ -257,6 +275,7 @@ async function main(): Promise<void> {
     fallbackChain: DEFAULT_FALLBACK_CHAIN,
     profileHealth,
     profileId: 'default',
+    router: routerHelper,
   });
 
   // 5. 파이프라인
@@ -349,6 +368,7 @@ async function main(): Promise<void> {
       defaultModel: DEFAULT_MODEL,
       logger,
       profileId: 'default',
+      router: routerHelper,
     },
   });
   logger.info('finance.* / agent.* RPC methods wired');

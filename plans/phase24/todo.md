@@ -897,7 +897,7 @@ pnpm --filter @finclaw/agent test routing.test
 
 ---
 
-## Todo 13: gateway.ts 에 modelHint / role 파라미터 ⬜
+## Todo 13: gateway.ts 에 modelHint / role 파라미터 ✅
 
 ### 파일 목록
 
@@ -946,7 +946,7 @@ pnpm --filter @finclaw/types build
 
 ---
 
-## Todo 14: main.ts 라우터 인스턴스 주입 ⬜
+## Todo 14: main.ts 라우터 인스턴스 주입 ✅
 
 ### 파일 목록
 
@@ -1002,7 +1002,7 @@ sleep 3
 
 ---
 
-## Todo 15: chat.ts 매 메시지 라우팅 + modelHint ⬜
+## Todo 15: chat.ts 매 메시지 라우팅 + modelHint ✅
 
 ### 파일 목록
 
@@ -1064,7 +1064,7 @@ curl -X POST http://localhost:3000/rpc -d '{"jsonrpc":"2.0","method":"chat.send"
 
 ---
 
-## Todo 16: agent.ts role 파라미터 ⬜
+## Todo 16: agent.ts role 파라미터 ✅
 
 ### 파일 목록
 
@@ -1128,7 +1128,7 @@ curl -X POST http://localhost:3000/rpc -d '{"jsonrpc":"2.0","method":"agent.run"
 
 ---
 
-## Todo 17: execution-adapter 라우팅 적용 ⬜
+## Todo 17: execution-adapter 라우팅 적용 ✅
 
 ### 파일 목록
 

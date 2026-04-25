@@ -15,6 +15,7 @@ import type {
   ContentBlock,
   ConversationMessage,
   ModelRef,
+  ModelTier,
   SessionKey,
   StorageAdapter,
   Timestamp,
@@ -22,13 +23,30 @@ import type {
 import {
   DEFAULT_FALLBACK_TRIGGERS,
   ExecutionToolDispatcher as ToolDispatcherCtor,
+  modelIdToTier,
   resolveModel,
   runWithModelFallback,
+  type ModelRole,
 } from '@finclaw/agent';
 import { createAgentId } from '@finclaw/types';
 import { randomUUID } from 'node:crypto';
 import type { PipelineMsgContext } from './pipeline-context.js';
+import type { RouterHelper } from './router-helper.js';
 import { buildDispatcher } from './tool-dispatcher-adapter.js';
+
+/**
+ * 메시지 본문에서 role 추론 — 단순 키워드 휴리스틱 (Phase 24, B1).
+ * 사용자 직접 입력이라 모호하므로 분석 키워드만 'analysis' 로 승격, 그 외 'chat'.
+ */
+const ANALYSIS_KEYWORDS = ['분석', '리포트', '판단', 'analyze', 'report'];
+
+function inferRole(message: string): ModelRole {
+  const lower = message.toLowerCase();
+  if (ANALYSIS_KEYWORDS.some((kw) => lower.includes(kw))) {
+    return 'analysis';
+  }
+  return 'chat';
+}
 
 /**
  * Phase 9 AI 실행 엔진과의 브릿지 인터페이스
@@ -99,6 +117,11 @@ export interface RunnerExecutionAdapterDeps {
   readonly profileHealth?: ProfileHealthMonitor;
   /** 건강 기록용 프로필 ID (기본 'default') */
   readonly profileId?: string;
+  /**
+   * 모델 라우터 (Phase 24) — 제공 시 execute/executeForTui 가 매 요청마다
+   * 라우터 결정 모델로 fallbackChain/defaultModel 을 대체한다.
+   */
+  readonly router?: RouterHelper;
 }
 
 /**
@@ -129,6 +152,13 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
     const profileId = this.deps.profileId ?? 'default';
     const startedAt = Date.now();
 
+    // Phase 24: 라우터가 주입되면 매 요청마다 role 추론 + 라우팅 결정.
+    const routedChain = this.applyRouting({
+      message: ctx.normalizedBody,
+      toolDefinitions,
+      automation: false,
+    });
+
     const buildParams = (model: ModelRef): AgentRunParams => ({
       agentId: this.defaultAgentId,
       sessionKey: ctx.sessionKey,
@@ -141,11 +171,14 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
 
     try {
       const { modelCatalog, modelAliasIndex, fallbackChain } = this.deps;
+      // 라우터 활성: 결정된 단일 모델만 사용 (밀스톤 D 에서 floor 기반 chain 재구성).
+      // 라우터 미주입: 기존 fallbackChain 동작 유지.
+      const effectiveChain = routedChain ?? fallbackChain;
       let result;
-      if (modelCatalog && modelAliasIndex && fallbackChain && fallbackChain.length > 0) {
+      if (modelCatalog && modelAliasIndex && effectiveChain && effectiveChain.length > 0) {
         const fallback = await runWithModelFallback(
           {
-            models: fallbackChain.map((raw) => ({ raw })),
+            models: effectiveChain.map((raw) => ({ raw })),
             maxRetriesPerModel: 1,
             retryBaseDelayMs: 500,
             fallbackOn: DEFAULT_FALLBACK_TRIGGERS,
@@ -206,6 +239,8 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
       readonly agentId: AgentId;
       readonly userMessage: string;
       readonly model: ModelRef;
+      /** Phase 24: 사용자 modelHint (chat.send.modelHint 또는 chat.start.model 유래) */
+      readonly userHint?: ModelTier;
     },
     listener: StreamEventListener | undefined,
     signal: AbortSignal,
@@ -220,10 +255,17 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
     });
     const runner = this.deps.runnerFactory(dispatcher);
 
+    // Phase 24: 라우터 주입 시 model 을 라우터 결정으로 교체.
+    // userHint 우선, 없으면 chat.start 의 input.model 에서 tier 추론.
+    const effectiveModel = this.applyTuiRouting({
+      input,
+      toolDefinitions,
+    });
+
     const params: AgentRunParams = {
       agentId: input.agentId,
       sessionKey: input.sessionKey,
-      model: input.model,
+      model: effectiveModel,
       systemPrompt: this.deps.systemPrompt,
       messages: [...priorMessages, userMessage],
       tools: toolDefinitions.length > 0 ? [...toolDefinitions] : undefined,
@@ -242,6 +284,69 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
         outputTokens: result.usage.outputTokens,
       },
     };
+  }
+
+  /**
+   * Phase 24: pipeline (execute) 전용 라우팅. 메시지로 role 추론 후 라우터 호출.
+   * 라우터 미주입 시 undefined 반환 — 호출자가 기존 fallbackChain 으로 fallback.
+   */
+  private applyRouting(args: {
+    readonly message: string;
+    readonly toolDefinitions: readonly { readonly name: string }[];
+    readonly automation: boolean;
+  }): readonly string[] | undefined {
+    const router = this.deps.router;
+    if (!router) {
+      return undefined;
+    }
+    const role = inferRole(args.message);
+    const toolNames = args.toolDefinitions.map((t) => t.name);
+    const { decision, modelId } = router({
+      role,
+      toolNames,
+      automation: args.automation,
+    });
+    this.deps.logger?.info('pipeline.routed', {
+      event: 'pipeline.routed',
+      role,
+      chosenModel: modelId,
+      floor: decision.floor,
+      reason: decision.reason,
+    });
+    return [modelId];
+  }
+
+  /**
+   * Phase 24: TUI/RPC chat.send 전용 라우팅. role='chat' 고정 + userHint 적용.
+   * 라우터 미주입 시 input.model 그대로 반환 (기존 동작).
+   */
+  private applyTuiRouting(args: {
+    readonly input: {
+      readonly model: ModelRef;
+      readonly userMessage: string;
+      readonly userHint?: ModelTier;
+    };
+    readonly toolDefinitions: readonly { readonly name: string }[];
+  }): ModelRef {
+    const router = this.deps.router;
+    if (!router) {
+      return args.input.model;
+    }
+    const userHint = args.input.userHint ?? modelIdToTier(args.input.model.model);
+    const toolNames = args.toolDefinitions.map((t) => t.name);
+    const { decision, modelId } = router({
+      role: 'chat',
+      toolNames,
+      userHint,
+    });
+    this.deps.logger?.info('tui.routed', {
+      event: 'tui.routed',
+      userHint,
+      chosenModel: modelId,
+      floor: decision.floor,
+      reason: decision.reason,
+    });
+    return { ...args.input.model, model: modelId };
   }
 
   private async loadHistory(sessionKey: SessionKey): Promise<ConversationMessage[]> {

@@ -5,6 +5,7 @@ import { createAgentId, createSessionKey } from '@finclaw/types';
 // packages/server/src/gateway/rpc/methods/agent.ts
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod/v4';
+import type { RouterHelper } from '../../../auto-reply/router-helper.js';
 import type { RpcMethodHandler } from '../types.js';
 import {
   collectToolCalls,
@@ -25,6 +26,11 @@ export interface AgentRpcDeps {
   readonly defaultModel: ModelRef;
   readonly logger: FinClawLogger;
   readonly profileId?: string;
+  /**
+   * Phase 24: 모델 라우터. 주입 시 매 agent.run 마다 role 기반 모델 결정,
+   * 미주입 시 defaultModel 그대로 사용.
+   */
+  readonly router?: RouterHelper;
 }
 
 interface AgentInfo {
@@ -112,6 +118,7 @@ export function registerAgentMethods(deps: AgentRpcDeps): void {
       prompt: string;
       timeoutMs?: number;
       stream?: boolean;
+      role?: 'fetch' | 'chat' | 'analysis' | 'summarize';
     },
     unknown
   > = {
@@ -123,6 +130,8 @@ export function registerAgentMethods(deps: AgentRpcDeps): void {
       prompt: z.string().min(1).max(10_000),
       timeoutMs: z.number().int().min(1_000).max(120_000).optional(),
       stream: z.boolean().optional(),
+      // Phase 24: agent.run 은 보통 분석 성격이라 default 'analysis'.
+      role: z.enum(['fetch', 'chat', 'analysis', 'summarize']).default('analysis'),
     }),
     async execute(params) {
       if (!AGENTS.find((a) => a.id === params.agentId)) {
@@ -136,6 +145,7 @@ export function registerAgentMethods(deps: AgentRpcDeps): void {
       deps.logger.info('agent.run.started', {
         agentId: params.agentId,
         promptLength: params.prompt.length,
+        role: params.role ?? 'analysis',
       });
 
       const handle = await deps.agentRunLane.acquire(params.agentId);
@@ -157,11 +167,32 @@ export function registerAgentMethods(deps: AgentRpcDeps): void {
         const timeoutMs = params.timeoutMs ?? 60_000;
         const timer = setTimeout(() => abortController.abort(), timeoutMs);
 
+        // Phase 24: 라우터 주입 시 role 기반 모델 결정 + defaultModel 의 model 필드 교체.
+        // Zod schema 의 default('analysis') 가 채우지만 generic 타입상 optional 이므로 ?? 로 보강.
+        const role = params.role ?? 'analysis';
+        let modelRef: ModelRef = deps.defaultModel;
+        if (deps.router) {
+          const toolNames = toolDefinitions.map((t) => t.name);
+          const { decision, modelId } = deps.router({
+            role,
+            toolNames,
+          });
+          modelRef = { ...deps.defaultModel, model: modelId };
+          deps.logger.info('agent.run.routed', {
+            event: 'agent.run.routed',
+            agentId: params.agentId,
+            role,
+            chosenModel: modelId,
+            floor: decision.floor,
+            reason: decision.reason,
+          });
+        }
+
         try {
           const runParams: AgentRunParams = {
             agentId: agentIdBrand,
             sessionKey,
-            model: deps.defaultModel,
+            model: modelRef,
             systemPrompt: deps.systemPrompt,
             messages: [userMessage],
             tools: toolDefinitions.length > 0 ? [...toolDefinitions] : undefined,
