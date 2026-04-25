@@ -74,4 +74,36 @@ describe('FinClawConfigSchema', () => {
     });
     expect(result.success).toBe(true);
   });
+
+  it('routing 섹션을 허용한다', () => {
+    const result = FinClawConfigSchema.safeParse({
+      routing: {
+        roles: {
+          fetch: { preferred: 'haiku', maxTokens: 1024 },
+          analysis: { preferred: 'opus', maxTokens: 8192 },
+        },
+        automation: { strictFallback: true },
+        override: { allowClientHint: false },
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('routing 의 알 수 없는 role 을 거부한다', () => {
+    const result = FinClawConfigSchema.safeParse({
+      routing: {
+        roles: { foobar: { preferred: 'haiku', maxTokens: 512 } },
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('routing 의 잘못된 ModelTier 를 거부한다', () => {
+    const result = FinClawConfigSchema.safeParse({
+      routing: {
+        roles: { chat: { preferred: 'gpt5', maxTokens: 4096 } },
+      },
+    });
+    expect(result.success).toBe(false);
+  });
 });

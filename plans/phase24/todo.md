@@ -77,7 +77,7 @@ Phase 23 에서 진입점이 채팅·RPC·자동화·Web·TUI·스킬 내부 LLM
 
 ---
 
-## Todo 1: RoutingConfig 타입 추가 ⬜
+## Todo 1: RoutingConfig 타입 추가 ✅
 
 ### 파일 목록
 
@@ -146,7 +146,7 @@ pnpm --filter @finclaw/types build
 
 ---
 
-## Todo 2: Zod 스키마 + 기본값 ⬜
+## Todo 2: Zod 스키마 + 기본값 ✅
 
 ### 파일 목록
 
@@ -234,7 +234,7 @@ pnpm --filter @finclaw/config test
 
 ---
 
-## Todo 3: config.example.json5 라우팅 예시 ⬜
+## Todo 3: config.example.json5 라우팅 예시 ✅
 
 ### 파일 목록
 
@@ -281,7 +281,7 @@ node -e "console.log(require('json5').parse(require('fs').readFileSync('config.e
 
 ---
 
-## Todo 4: 기동 시 라우팅 테이블 로그 ⬜
+## Todo 4: 기동 시 라우팅 테이블 로그 ✅
 
 ### 파일 목록
 

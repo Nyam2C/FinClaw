@@ -11,7 +11,7 @@ import {
   Runner,
 } from '@finclaw/agent';
 import { DiscordAccountSchema, DiscordAdapter } from '@finclaw/channel-discord';
-import { ConfigValidationError, validateConfigStrict } from '@finclaw/config';
+import { ConfigValidationError, loadConfig, validateConfigStrict } from '@finclaw/config';
 import {
   assertPortAvailable,
   ConcurrencyLane,
@@ -137,6 +137,26 @@ async function main(): Promise<void> {
   // 2. 기반 (로거, 라이프사이클, 스토리지)
   const logger = createLogger({ name: 'finclaw', level: 'info' });
   const lifecycle = new ProcessLifecycle({ logger });
+
+  // 2a. 전체 config 로드 + strict 재검증 (Phase 24 — routing 등 잘못된 설정으로 기동 차단)
+  const finclawConfig = loadConfig({ logger });
+  validateConfigStrict(finclawConfig);
+  const routing = finclawConfig.routing;
+  if (routing) {
+    logger.info('Model routing table loaded', {
+      event: 'routing.loaded',
+      table: {
+        fetch: routing.roles.fetch.preferred,
+        chat: routing.roles.chat.preferred,
+        analysis: routing.roles.analysis.preferred,
+        summarize: routing.roles.summarize.preferred,
+      },
+      automation: routing.automation,
+      override: routing.override,
+    });
+  } else {
+    logger.warn('routing config not found, using defaults', { event: 'routing.config_missing' });
+  }
   const dbPath = process.env.FINCLAW_DB_PATH ?? join(homedir(), '.finclaw', 'db.sqlite');
   const storage = createStorage({ dbPath });
   await storage.initialize();
@@ -144,7 +164,7 @@ async function main(): Promise<void> {
     await storage.close();
   });
 
-  // 2a. 채널 도크 자동 등록 (discord, http-webhook)
+  // 2b. 채널 도크 자동 등록 (discord, http-webhook)
   initChannels(logger);
 
   // 3. Discord 클라이언트 먼저 로그인 (alerts가 DM 전달 핸들을 필요로 함)

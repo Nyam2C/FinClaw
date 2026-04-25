@@ -47,6 +47,16 @@ const DEFAULTS = Object.freeze({
     enabled: [] as string[],
     disabled: [] as string[],
   },
+  routing: {
+    roles: {
+      fetch: { preferred: 'haiku' as const, maxTokens: 1024 },
+      chat: { preferred: 'sonnet' as const, maxTokens: 4096 },
+      analysis: { preferred: 'opus' as const, maxTokens: 8192 },
+      summarize: { preferred: 'haiku' as const, maxTokens: 2048 },
+    },
+    automation: { strictFallback: true, logVerbose: true },
+    override: { allowClientHint: true, respectMinModel: true },
+  },
 }) satisfies FinClawConfig;
 
 /** 기본값을 유저 설정에 병합 (유저 값 우선) */
