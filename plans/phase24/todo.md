@@ -636,7 +636,7 @@ pnpm --filter @finclaw/types test
 
 ---
 
-## Todo 11: routing.ts 라우터 신설 ⬜
+## Todo 11: routing.ts 라우터 신설 ✅
 
 ### 파일 목록
 
@@ -748,7 +748,7 @@ pnpm --filter @finclaw/agent build
 
 ---
 
-## Todo 12: routing.test.ts ⬜
+## Todo 12: routing.test.ts ✅
 
 ### 파일 목록
 

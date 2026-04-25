@@ -43,6 +43,16 @@ export type {
   FallbackAttempt,
 } from './models/fallback.js';
 
+// ─── models: routing (Phase 24) ───
+export {
+  computeFloor,
+  maxTier,
+  modelIdToTier,
+  resolveModelForRequest,
+  tierToModelId,
+} from './models/routing.js';
+export type { ModelRole, RouteDecision, RouteRequest } from './models/routing.js';
+
 // ─── providers ───
 export { getBreakerForProvider, resetBreakers } from './providers/adapter.js';
 export type { ProviderAdapter, ProviderRequestParams } from './providers/adapter.js';
