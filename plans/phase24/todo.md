@@ -335,7 +335,7 @@ tsx packages/server/src/main.ts 2>&1 | grep routing.loaded
 
 ---
 
-## Todo 5: SkillMetadata / ToolMetadata 타입 신설 ⬜
+## Todo 5: SkillMetadata / ToolMetadata 타입 신설 ✅
 
 ### 파일 목록
 
@@ -395,7 +395,7 @@ pnpm --filter @finclaw/types build
 
 ---
 
-## Todo 6: market 메타 객체 배열 전환 ⬜
+## Todo 6: market 메타 객체 배열 전환 ✅
 
 ### 파일 목록
 
@@ -445,7 +445,7 @@ node -e "const m = require('./packages/skills-finance/dist/index.js'); console.l
 
 ---
 
-## Todo 7: news 메타 객체 배열 전환 ⬜
+## Todo 7: news 메타 객체 배열 전환 ✅
 
 ### 파일 목록
 
@@ -490,7 +490,7 @@ pnpm --filter @finclaw/skills-finance build && \
 
 ---
 
-## Todo 8: alerts 메타 객체 배열 전환 ⬜
+## Todo 8: alerts 메타 객체 배열 전환 ✅
 
 ### 파일 목록
 
@@ -530,7 +530,7 @@ pnpm --filter @finclaw/skills-finance build
 
 ---
 
-## Todo 9: general 메타 객체 배열 전환 ⬜
+## Todo 9: general 메타 객체 배열 전환 ✅
 
 ### 파일 목록
 
@@ -568,7 +568,7 @@ pnpm --filter @finclaw/skills-general build
 
 ---
 
-## Todo 10: 메타 파싱 단위 테스트 ⬜
+## Todo 10: 메타 파싱 단위 테스트 ✅
 
 ### 파일 목록
 

@@ -1,5 +1,6 @@
 // packages/skills-finance/src/news/index.ts
 import type { ToolRegistry } from '@finclaw/agent';
+import type { SkillMetadata } from '@finclaw/types';
 import type { DatabaseSync } from 'node:sqlite';
 import Anthropic from '@anthropic-ai/sdk';
 import type { QuoteService } from './portfolio/tracker.js';
@@ -77,7 +78,7 @@ export async function registerNewsTools(
 }
 
 /** 스킬 메타데이터 */
-export const NEWS_SKILL_METADATA = {
+export const NEWS_SKILL_METADATA: SkillMetadata = {
   name: 'news-analysis',
   description: '금융 뉴스 수집, AI 시장 분석, 포트폴리오 추적을 제공합니다.',
   version: '1.0.0',
@@ -85,5 +86,9 @@ export const NEWS_SKILL_METADATA = {
     env: [],
     optionalEnv: ['NEWSAPI_KEY', 'ALPHA_VANTAGE_KEY', 'ANTHROPIC_API_KEY'],
   },
-  tools: ['get_financial_news', 'analyze_market', 'get_portfolio_summary'],
-} as const;
+  tools: [
+    { name: 'get_financial_news', minModel: 'haiku', reason: '리스트 반환' },
+    { name: 'analyze_market', minModel: 'opus', reason: '금융 판단, 환각 방지' },
+    { name: 'get_portfolio_summary', minModel: 'sonnet', reason: '포트 요약 (판단 일부 포함)' },
+  ],
+};

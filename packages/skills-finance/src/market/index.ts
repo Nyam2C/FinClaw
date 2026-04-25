@@ -1,4 +1,5 @@
 import type { RegisteredToolDefinition, ToolExecutor, ToolRegistry } from '@finclaw/agent';
+import type { SkillMetadata } from '@finclaw/types';
 // packages/skills-finance/src/market/index.ts
 import type { DatabaseSync } from 'node:sqlite';
 import { createTickerSymbol } from '@finclaw/types';
@@ -229,7 +230,7 @@ function registerMarketChartTool(registry: ToolRegistry, state: MarketSkillState
 }
 
 /** 스킬 메타데이터 — Phase 7의 skill registry에 등록 */
-export const MARKET_SKILL_METADATA = {
+export const MARKET_SKILL_METADATA: SkillMetadata = {
   name: 'market-data',
   description: '주식, 암호화폐, 외환 시장 데이터를 조회하고 차트를 생성합니다.',
   version: '1.0.0',
@@ -237,5 +238,10 @@ export const MARKET_SKILL_METADATA = {
     env: [], // API 키는 선택사항 (무료 티어 가능)
     optionalEnv: ['ALPHA_VANTAGE_KEY', 'COINGECKO_DEMO_KEY'],
   },
-  tools: ['get_stock_price', 'get_crypto_price', 'get_forex_rate', 'get_market_chart'],
-} as const;
+  tools: [
+    { name: 'get_stock_price', minModel: 'haiku', reason: '구조화 조회' },
+    { name: 'get_crypto_price', minModel: 'haiku', reason: '구조화 조회' },
+    { name: 'get_forex_rate', minModel: 'haiku', reason: '구조화 조회' },
+    { name: 'get_market_chart', minModel: 'haiku', reason: '데이터 포매팅' },
+  ],
+};
