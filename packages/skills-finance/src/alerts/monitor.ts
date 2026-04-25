@@ -12,6 +12,8 @@ export interface AlertMonitor {
   start(): void;
   stop(): void;
   checkAlerts(): Promise<void>;
+  /** Phase 23: RPC finance.alert.create 직후 단일 알림 1회 평가 (쿨다운/레인 우회) */
+  evaluateOnce(alertId: string): Promise<boolean>;
 }
 
 export function createAlertMonitor(deps: {
@@ -73,6 +75,36 @@ export function createAlertMonitor(deps: {
     }
   }
 
+  async function evaluateOnce(alertId: string): Promise<boolean> {
+    const alert = deps.store.getById(alertId);
+    if (!alert || !alert.enabled) {
+      return false;
+    }
+    const evaluator = deps.evaluators[alert.condition.type];
+    if (!evaluator) {
+      return false;
+    }
+    try {
+      const evaluation = await evaluator.evaluate(alert.condition);
+      if (evaluation.triggered) {
+        deps.logger.info('Alert triggered (immediate evaluation)', {
+          alertId,
+          name: alert.name,
+        });
+        const results = await deps.deliveryDispatcher.dispatch(alert, evaluation);
+        deps.store.recordTrigger(alertId, evaluation, results);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      deps.logger.error('Alert immediate evaluation failed', {
+        alertId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
+  }
+
   return {
     start() {
       if (timer) {
@@ -90,5 +122,6 @@ export function createAlertMonitor(deps: {
       }
     },
     checkAlerts,
+    evaluateOnce,
   };
 }

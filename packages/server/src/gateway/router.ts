@@ -1,6 +1,7 @@
 // packages/server/src/gateway/router.ts
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { GatewayServerContext } from './context.js';
+import { authenticate } from './auth/index.js';
 import { handleCors } from './cors.js';
 import { checkLiveness, checkReadiness } from './health.js';
 import { handleChatCompletions } from './openai-compat/router.js';
@@ -97,10 +98,19 @@ async function handleRpcRequest(
     return;
   }
 
+  // Phase 23 post-ship fix: HTTP /rpc 도 WS 경로와 동일하게 authenticate.
+  // Bearer 토큰 / ?token= 쿼리 / X-API-Key 헤더 순. 헤더 없으면 level: 'none'.
+  const authResult = await authenticate(req, ctx.config.auth);
+  if (!authResult.ok) {
+    res.writeHead(authResult.code, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(createError(null, RpcErrors.UNAUTHORIZED, authResult.error)));
+    return;
+  }
+
   const response = await dispatchRpc(
     parsed as Parameters<typeof dispatchRpc>[0],
     {
-      auth: { level: 'none', permissions: [] },
+      auth: authResult.info,
       remoteAddress: req.socket.remoteAddress ?? 'unknown',
     },
     ctx,

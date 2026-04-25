@@ -270,21 +270,21 @@ export class FinClawApp extends LitElement {
         ${
           this.activeTab === 'market'
             ? html`
-                <market-view></market-view>
+                <market-view .gateway=${this.gateway}></market-view>
               `
             : ''
         }
         ${
           this.activeTab === 'portfolio'
             ? html`
-                <portfolio-view></portfolio-view>
+                <portfolio-view .gateway=${this.gateway}></portfolio-view>
               `
             : ''
         }
         ${
           this.activeTab === 'alerts'
             ? html`
-                <alerts-view></alerts-view>
+                <alerts-view .gateway=${this.gateway}></alerts-view>
               `
             : ''
         }

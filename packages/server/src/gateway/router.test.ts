@@ -155,6 +155,60 @@ describe('HTTP Router', () => {
     expect(result.error.code).toBe(-32700);
   });
 
+  it('POST /rpc requires auth for token-level methods', async () => {
+    // Phase 23 post-ship fix: HTTP /rpc authenticate() 배선 regression 가드
+    registerMethod({
+      method: 'test.secure',
+      description: 'secure',
+      authLevel: 'token',
+      schema: z.object({}),
+      async execute() {
+        return { ok: true };
+      },
+    });
+
+    const ctx = makeCtx();
+    const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'test.secure', params: {} });
+    const { req, res } = mockReqRes('POST', '/rpc', body, {
+      'content-type': 'application/json',
+      // no Authorization header → level 'none'
+    });
+    await handleHttpRequest(req, res, ctx);
+    const result = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+    expect(result.error.code).toBe(-32001); // UNAUTHORIZED
+  });
+
+  it('POST /rpc accepts valid Bearer JWT', async () => {
+    // Phase 23 post-ship fix: HTTP /rpc 가 JWT 를 인식해 token 레벨 메서드 통과
+    registerMethod({
+      method: 'test.secure',
+      description: 'secure',
+      authLevel: 'token',
+      schema: z.object({}),
+      async execute() {
+        return { ok: true };
+      },
+    });
+
+    // HS256 JWT — secret: 'test', payload: {sub:'dev',permissions:[]}
+    const { createHmac } = await import('node:crypto');
+    const b64url = (obj: unknown) => Buffer.from(JSON.stringify(obj)).toString('base64url');
+    const header = b64url({ alg: 'HS256', typ: 'JWT' });
+    const payload = b64url({ sub: 'dev', permissions: [] });
+    const sig = createHmac('sha256', 'test').update(`${header}.${payload}`).digest('base64url');
+    const token = `${header}.${payload}.${sig}`;
+
+    const ctx = makeCtx();
+    const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'test.secure', params: {} });
+    const { req, res } = mockReqRes('POST', '/rpc', body, {
+      'content-type': 'application/json',
+      authorization: `Bearer ${token}`,
+    });
+    await handleHttpRequest(req, res, ctx);
+    const result = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+    expect(result.result).toEqual({ ok: true });
+  });
+
   describe('Drain 거부', () => {
     it('isDraining=true 시 503 응답', async () => {
       const ctx = makeCtx();
