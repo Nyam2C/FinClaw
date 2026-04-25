@@ -1,403 +1,266 @@
-# Phase 25 — 기억 & 거래 시스템 (Memory & Transactions)
+# Phase 25 — 프롬프트·페르소나 외부화 (Prompt Externalization)
 
 ## Context
 
-Phase 23 에서 Web UI Portfolio 뷰는 `portfolio_holdings` 의 **현재 스냅샷만** 렌더하고, `agent.run` 결과는 **로그 파일에만** 남긴다. Phase 24 에서 모델 라우팅이 붙어도 **"FinClaw 가 과거를 기억하고 그 위에 판단한다"** 는 개인 금융 파트너의 핵심 가치는 빠져 있다.
+Phase 24 에서 모델 역할 라우팅이 붙으면 동일 사용자 요청이 모델별로 다른 진입점을 거치게 된다. 이 시점에 프롬프트·페르소나가 코드 안에 분산된 채로 남으면 다음 문제가 가시화된다.
 
-현재 상태 (2026-04-24 기준 확인):
+1. **페르소나 분산** — 코드베이스에 페르소나 정의가 **5곳**에 흩어져 있다.
+   - `packages/server/src/main.ts:81-103` `DEFAULT_SYSTEM_PROMPT` (한국어, 사용 중)
+   - `packages/server/src/gateway/rpc/methods/agent.ts:36-42` `AGENTS` 메타 (한국어, `agent.list` 응답에 사용 중)
+   - `packages/skills-finance/src/news/analysis/market-analysis.ts:65-88` `buildAnalysisSystemPrompt` (영어, `analyze_market` 내부 LLM 호출에 사용 중)
+   - `packages/skills-finance/src/news/analysis/sentiment.ts:127` 인라인 system 한 줄 (영어, sentiment 분석 내부 LLM 호출에 사용 중)
+   - `packages/agent/src/agents/system-prompt.ts:46-58` `buildIdentitySection` + L298 `buildSystemPrompt` 15+ 섹션 동적 빌더 (영어, **호출 0건**, `index.ts:142` re-export 만 존재 — 죽은 코드)
 
-1. **거래 기록 없음** — `portfolios`, `portfolio_holdings` 테이블은 존재. 하지만 매수/매도 이력 저장소(`transactions` 등) 는 **스키마에 존재하지 않음**. "3월에 AAPL 50주를 180달러에 샀다" 를 기록할 자리가 없고, `average_cost` 만 들고 있어서 언제·얼마에·몇 번 샀는지 추적 불가.
-2. **RAG 인프라 dead code** — `memories`, `memory_chunks`, `memory_chunks_vec` (1024-d 벡터), `memory_chunks_fts` (trigram FTS5), `embedding_cache`, 하이브리드 검색 함수(`searchVector`, `searchFts`, `mergeHybridResults`), 임베딩 프로바이더(`createEmbeddingProvider`) — 전부 구현됨. 그러나 `server/`, `agent/` 패키지 어디서도 호출하지 않음 (grep 결과 0건). 완전한 dead code.
-3. **대화 이력 주입 범위** — `execution-adapter.ts:137,228` 에서 `priorMessages` 주입은 **같은 sessionKey 내 최근 메시지만**. 다른 세션 / 오래된 대화 / agent.run 결과는 주입 대상 밖.
-4. **agent.run 감사 공백** — Phase 23 에서 로그 파일에만 기록. "지난주 크론 돌린 AAPL 분석 리포트" 를 다시 보려면 로그 파일 뒤져야 함.
+   "FinClaw" 이름·역할·원칙 변경 시 4-5곳 동기화 필요.
 
-본 Phase 의 목표는 **거래·기억·RAG 3축을 완성**하여 FinClaw 가:
+2. **프롬프트가 코드에 박혀 변경 비용 높음** — 23줄 자연어가 TS 문자열 배열(`['...', '', '...'].join('\n')`)에 갇혀 있다. diff 노이즈, 빌드 재실행, 마크다운·인용 처리 어색, 비기술자 수정 불가.
 
-- **쓰는 것**: 사용자가 명시한 거래·선호·철학을 DB 에 저장 (수동 입력 기반)
-- **읽는 것**: 새 대화 시작 시 관련 기억·거래를 자동 로드해 system prompt 에 주입
-- **기억하는 것**: agent.run 결과도 memories 로 저장되어 다음 대화에서 참조 가능
+3. **변형 분기가 코드 안에 있음** — `buildAnalysisSystemPrompt(depth, language)` 가 depth(brief/standard/detailed) × language(ko/en) = 6 변형을 함수 안 if-else 로 조립. 변형 추가 시 함수 안 분기 폭발.
 
-이 3축이 동작하게 만드는 것이다.
+4. **회귀 테스트 0개** — 시스템 프롬프트 / 분석 프롬프트가 바뀌어도 감지 못함. Phase 24 라우팅이 들어가면 모델 × 프롬프트 조합이 늘어 회귀 위험 ↑.
 
-**사용자 결정 사항** (2026-04-24 Q&A):
+본 Phase 의 목표는 **모든 자연어 instruction 을 `.md` 파일로 외부화**하고, **단일 페르소나 진실** 을 확립하며, **회귀 방지 골든 파일 테스트** 를 도입하는 것. 신규 기능 추가 없음. 기존 인라인 문자열을 외부 파일로 옮기고 단일 진실 1개를 확립한다.
 
-- **거래 기록·기억 시스템은 Phase 23 에서 분리** (옵션 3 선택) — Phase 23 은 배선만, Phase 25 가 이 의제 전담.
-- **포트폴리오 편집은 "거래 추가" 경로를 통해서만** — holdings 직접 수정 RPC 는 만들지 않음. trigger 로 자동 재계산.
-- **기억 추출은 "명시적 선언" 방식** — 사용자가 "기억해줘", "내 기준은 X야" 같은 패턴을 쓸 때만 저장. LLM 기반 자동 추출은 환각 위험으로 범위 외 (Phase 26+).
-- **감사 원칙 준수** — 모든 기억·거래 기록은 사용자가 조회·삭제 가능해야 함. RAG 주입 시 어떤 기억이 주입됐는지 로그에 남김.
-- **읽기 전용 원칙 유지** — 거래 기록은 "사용자가 이미 한 매매 입력" 이지 "FinClaw 가 자동으로 매매 실행" 이 아님.
+**사용자 결정 사항** (2026-04-25 Q&A):
+
+- **언어로 통일하지 않는다** — 페르소나의 본질(이름·역할·5대 원칙)만 통일하고, 표현 언어는 호출 site 의 출력 대상에 따라 결정. 외부 진입(=사용자 응답)은 한국어, 내부 LLM 호출(=구조화 JSON)은 영어 유지.
+- **`.md` 위치는 패키지별 분리** — 모노레포 정합성 + 도구별 응집도 우선. `packages/server/prompts/` 와 `packages/skills-finance/prompts/`.
+- **depth × language 분기는 파일 6개** — frontmatter 변수보다 파일 분리가 단순.
+- **`system-prompt.ts` 동적 빌더는 삭제 기본** — git log 확인 결과 `00060e5 feat(agent): ... and system prompt` 커밋에서 도입됐으나 채택되지 않음 (정적 상수가 대신 채택됨). 호출 0건 = 죽은 코드. 본 phase 에서 정리.
+- **추측성 기능 도입 금지** — hot-reload, A/B 테스트, 버전 관리, 자동 다국어 감지는 범위 외.
 
 ---
 
-## 밀스톤 A — 거래 내역 테이블 & CRUD
+## 밀스톤 A — 페르소나 통합 & 외부화
 
 ### 목표
 
-매수·매도·배당·수수료 로그를 저장하는 `transactions` 테이블 신설. `portfolio_holdings` 를 trigger 기반 자동 재계산으로 전환. RPC CRUD 제공.
+이름·역할·5대 원칙을 단일 `.md` 로 외부화. 외부 진입 시스템 프롬프트와 `agent.list` 메타가 같은 파일을 읽게 한다. 죽은 코드 정리.
 
 ### 전제
 
-- `packages/storage/src/database.ts` SCHEMA_VERSION=3. v4 마이그레이션 필요.
-- `portfolio_holdings` 는 현재 수동 직접 쓰기 구조. 이를 **"transactions 로부터 파생되는 집계"** 로 전환.
-- Phase 23 의 `finance.portfolio.get` RPC 가 이미 배선됨 — 응답 구조 확장으로 호환.
+- `packages/server/src/main.ts:81-103` 정적 `DEFAULT_SYSTEM_PROMPT` 가 모든 외부 진입(chat.send / agent.run / auto-reply / TUI / Web)에서 사용 중.
+- `packages/server/src/gateway/rpc/methods/agent.ts:36-42` `AGENTS` 메타가 `agent.list` 응답으로 사용자 UI 카드에 노출.
+- `packages/agent/src/agents/system-prompt.ts` 의 `buildSystemPrompt` 와 14개 섹션 빌더는 호출 site 0건 (`index.ts:142` re-export 만).
 
 ### 작업
 
 **파일**:
 
-- `packages/storage/src/database.ts` (수정, ~80 LOC — v4 마이그레이션)
-- `packages/storage/src/transactions.ts` (신설, ~120 LOC — CRUD + trigger)
-- `packages/storage/src/index.ts` (수정, re-export)
-- `packages/server/src/gateway/rpc/methods/finance.ts` (수정, ~150 LOC — transaction.\* RPC 추가)
-- `packages/types/src/finance.ts` (수정, ~40 LOC — Transaction 타입)
-- `packages/types/src/gateway.ts` (수정, ~20 LOC — RPC 스키마)
+- `packages/server/prompts/finclaw.identity.md` (신설, ~25 줄 — 페르소나 본질 + frontmatter)
+- `packages/server/prompts/finclaw.system.ko.md` (신설, ~30 줄 — 외부 진입용, identity 인용 + 한국어 가이드)
+- `packages/server/src/prompts/loader.ts` (신설, ~50 LOC — frontmatter 파서 + 본문 로더)
+- `packages/server/src/main.ts` (수정, ~20 LOC — `DEFAULT_SYSTEM_PROMPT` 제거, `.md` 로드)
+- `packages/server/src/gateway/rpc/methods/agent.ts` (수정, ~15 LOC — `AGENTS` 의 `name`/`description` 을 `finclaw.identity.md` frontmatter 에서 읽기)
+- `packages/agent/src/agents/system-prompt.ts` (삭제)
+- `packages/agent/src/agents/__tests__/system-prompt.test.ts` (삭제, 있다면)
+- `packages/agent/src/index.ts` (수정, line 142 re-export 제거)
+- `packages/server/package.json` (수정, `files` 에 `prompts/**/*.md` 포함)
 
-**스키마 v4 추가**:
+**`finclaw.identity.md` 형식**:
 
-```sql
-CREATE TABLE transactions (
-  id            TEXT PRIMARY KEY,
-  portfolio_id  TEXT NOT NULL,
-  symbol        TEXT NOT NULL,
-  action        TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'dividend', 'fee', 'split')),
-  quantity      REAL NOT NULL,
-  price         REAL,               -- buy/sell 필수, dividend/fee 선택
-  fee           REAL DEFAULT 0,
-  currency      TEXT NOT NULL,
-  executed_at   INTEGER NOT NULL,   -- 사용자 입력 시각 (거래 발생일)
-  source        TEXT NOT NULL CHECK (source IN ('manual', 'import')),
-  note          TEXT,
-  created_at    INTEGER NOT NULL,
-  FOREIGN KEY (portfolio_id) REFERENCES portfolios(id) ON DELETE CASCADE
-);
+```markdown
+---
+id: finclaw-partner
+name: FinClaw Personal Finance Partner
+description: 개인 금융 파트너. 시세 조회·뉴스·포트폴리오·알림 관리.
+version: 1.0
+---
 
-CREATE INDEX idx_transactions_portfolio ON transactions(portfolio_id, executed_at DESC);
-CREATE INDEX idx_transactions_symbol ON transactions(portfolio_id, symbol, executed_at DESC);
+## 정체성
+
+너는 사용자의 **개인 금융 파트너(Personal Finance Partner)** FinClaw다.
+
+## 역할
+
+- 시장 데이터 조회, 뉴스 요약, 포트폴리오 추적, 가격 알림 관리가 주 업무다.
+- 사용자 본인의 돈이 걸린 판단을 보조한다. 신중하고 정직하게 답하라.
+
+## 원칙
+
+1. **읽기 전용.** 매매 실행·자금 이체·계좌 변경은 절대 제안하지 않는다.
+2. **환각 금지.** 수치·뉴스·날짜는 반드시 도구로 확인하고 답한다.
+3. **출처 명시.** 수치 언급 시 어느 API·어느 시각 데이터인지 밝혀라.
+4. **불확실성 수치화.** 예측·전망은 숫자(범위, 확률, 신뢰도)로 표현한다.
+5. **간결한 한국어.** 불필요한 인사·군더더기 없이 핵심부터.
 ```
 
-**Holdings 재계산 trigger**:
+`finclaw.system.ko.md` 는 identity 본문을 인용(또는 빌드 시 결합) + 도구 목록·언어 가이드.
 
-```sql
-CREATE TRIGGER recalc_holdings_after_txn
-AFTER INSERT OR UPDATE OR DELETE ON transactions
-FOR EACH ROW
-BEGIN
-  -- (portfolio_id, symbol) 별로 transactions 집계
-  -- quantity = sum(buy) - sum(sell) + split adjustments
-  -- average_cost = weighted avg of buy prices
-  -- UPSERT into portfolio_holdings
-END;
-```
+**로더 형태** (의존성 추가 없음):
 
-(SQLite trigger 로직은 구현 시 세분화. 혹시 너무 복잡하면 **트리거 대신 애플리케이션 레벨 재계산** 함수로 대체 — `recomputeHoldings(portfolioId)` 를 transaction CRUD 후 동기 호출.)
+```ts
+// packages/server/src/prompts/loader.ts
+export interface PromptDocument {
+  readonly frontmatter: Record<string, string>;
+  readonly body: string;
+}
 
-**RPC 추가**:
-
-| 메서드                       | 파라미터                                                                              | 응답                                          |
-| ---------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------- |
-| `finance.transaction.add`    | `{portfolioId?, symbol, action, quantity, price?, fee?, currency, executedAt, note?}` | `{transactionId, createdAt, updatedHoldings}` |
-| `finance.transaction.list`   | `{portfolioId?, symbol?, from?, to?, limit?}`                                         | `{transactions: [...]}`                       |
-| `finance.transaction.update` | `{transactionId, ...부분 필드}`                                                       | `{updatedHoldings}`                           |
-| `finance.transaction.delete` | `{transactionId}`                                                                     | `{deleted: true, updatedHoldings}`            |
-
-**finance.portfolio.get 응답 확장** (Phase 23 호환):
-
-```json
-{
-  "holdings": [...],
-  "summary": {...},
-  "recentTransactions": [...]  // 최근 10건, 신규 필드
+export async function loadPrompt(filename: string): Promise<PromptDocument> {
+  const raw = await readFile(resolve(PROMPTS_DIR, filename), 'utf-8');
+  return parsePrompt(raw); // --- frontmatter --- 분리
 }
 ```
 
-**WebSocket notification 발신** (phase23 review.md line 104 후속):
+frontmatter 는 단순 `key: value` 라인 파서 (YAML 라이브러리 안 씀 — 의존성 회피).
 
-`finance.transaction.{add,update,delete}` RPC 성공 시 `broadcaster.broadcastToChannel('portfolio.changed', ...)` 로 알림 송출. 페이로드는 변경된 portfolioId + updatedHoldings 요약. Web UI 가 자동 갱신할 수 있게 함 (밀스톤 E 에서 구독).
+### 검증
+
+- 기동 시 로드된 시스템 프롬프트 == 기존 `DEFAULT_SYSTEM_PROMPT` 문자열과 동일 (회귀 보존)
+- `agent.list` 응답의 `name`/`description` == `finclaw.identity.md` frontmatter
+- `system-prompt.ts` 와 관련 export 완전 삭제, `pnpm typecheck` 통과
+- `prompts/finclaw.identity.md` 파일 누락 시 기동 실패 + 친절한 에러 메시지
+
+---
+
+## 밀스톤 B — 스킬 내부 LLM 프롬프트 외부화
+
+### 목표
+
+`analyze_market` 의 6 변형 시스템 프롬프트와 `sentiment` 의 시스템 프롬프트를 `.md` 파일로 외부화.
+
+### 전제
+
+- `analyze_market`: depth(brief/standard/detailed) × language(ko/en) = 6 변형. 현재 `market-analysis.ts:65-88` 함수 안 if-else.
+- `sentiment`: 한 줄 system + rule-hint 점수 동적 주입 (`sentiment.ts:127`). 점수만 `{{ruleHint}}` 변수 치환.
+- 응답 검증(`AnalysisResponseSchema`, `LlmSentimentSchema`) 은 코드에 남긴다 (Zod, 타입 안전성).
+- **모델 ID 통일은 Phase 24 책임** — 본 phase 는 프롬프트만 다룸. (Phase 24 plan 의 호출 지점 표에 스킬 내부 LLM 호출 추가 항목과 짝.)
+
+### 작업
+
+**파일**:
+
+- `packages/skills-finance/prompts/news/analyze.brief.ko.md` (신설)
+- `packages/skills-finance/prompts/news/analyze.brief.en.md` (신설)
+- `packages/skills-finance/prompts/news/analyze.standard.ko.md` (신설)
+- `packages/skills-finance/prompts/news/analyze.standard.en.md` (신설)
+- `packages/skills-finance/prompts/news/analyze.detailed.ko.md` (신설)
+- `packages/skills-finance/prompts/news/analyze.detailed.en.md` (신설)
+- `packages/skills-finance/prompts/news/sentiment.system.md` (신설, `{{ruleHint}}` 변수 1개)
+- `packages/skills-finance/src/news/analysis/prompt-loader.ts` (신설, ~40 LOC)
+- `packages/skills-finance/src/news/analysis/market-analysis.ts` (수정, ~30 LOC — `buildAnalysisSystemPrompt` 함수 제거 → `loadAnalysisPrompt` 호출)
+- `packages/skills-finance/src/news/analysis/sentiment.ts` (수정, ~15 LOC)
+- `packages/skills-finance/package.json` (수정, `files` 에 `prompts/**/*.md`)
+
+**로더 형태**:
 
 ```ts
-// finance.transaction.add 핸들러 끝부분 예시
-broadcaster.broadcastToChannel('portfolio.changed', {
-  portfolioId,
-  updatedAt: Date.now(),
-  reason: 'transaction.add',
-  transactionId,
-});
+// packages/skills-finance/src/news/analysis/prompt-loader.ts
+const PROMPTS_DIR = resolve(fileURLToPath(import.meta.url), '../../../../prompts/news');
+
+export async function loadAnalysisPrompt(
+  depth: 'brief' | 'standard' | 'detailed',
+  language: 'ko' | 'en',
+): Promise<string> {
+  return readFile(resolve(PROMPTS_DIR, `analyze.${depth}.${language}.md`), 'utf-8');
+}
+
+export async function loadSentimentPrompt(ruleHint: number): Promise<string> {
+  const tpl = await readFile(resolve(PROMPTS_DIR, 'sentiment.system.md'), 'utf-8');
+  return tpl.replaceAll('{{ruleHint}}', ruleHint.toFixed(2));
+}
+```
+
+**변수 치환 정책**: 단순 `{{key}}` → 값 치환만. 조건문/반복문 없음. 필요해지면 그때 라이브러리.
+
+**`analyze.standard.ko.md` 예시**:
+
+```markdown
+You are a professional financial market analyst. Analyze the provided news articles and generate a market analysis report.
+한국어로 분석 결과를 작성하세요.
+Provide a balanced, moderate-length analysis.
+
+Response format (strict JSON, no markdown):
+{
+"summary": "시장 전망 요약",
+"sentiment": { "score": -1.0~1.0, "label": "very_negative|negative|neutral|positive|very_positive", "confidence": 0.0~1.0 },
+"keyFactors": ["핵심 요인 1", "핵심 요인 2"],
+"risks": ["리스크 1"],
+"opportunities": ["기회 1"]
+}
 ```
 
 ### 검증
 
-- `finance.transaction.add {symbol: 'AAPL', action: 'buy', quantity: 10, price: 180, currency: 'USD', executedAt: 1710000000000}` → holdings 에 AAPL 10주 / avg 180 생성
-- 같은 AAPL 에 `buy 5주 @ 200` 추가 → avg 계산: (10*180 + 5*200) / 15 = 186.67
-- `sell 3주 @ 220` → quantity=12, avg 유지(평가손익은 별도 계산)
-- `delete` 시 holdings 재계산
-- sell > 현재 보유 수량 → 경고 (에러는 아님, short 가능성 고려)
-- 기간 필터 `from`/`to` 동작
-- **마이그레이션**: 기존 `portfolio_holdings` 레코드가 있으면 source='manual', action='buy' 로 synthetic transaction 생성 (1건씩)
-- `transaction.add` 호출 시 WebSocket 으로 `portfolio.changed` notification 도달 확인 (브라우저 dev tools 또는 별도 WS 클라이언트)
+- 6 변형 × 동일 입력 → 응답 Zod 검증 통과 (mock LLM 응답 기반)
+- 파일 누락 → 친절한 에러 (어떤 depth/language 조합이 누락됐는지)
+- `buildAnalysisSystemPrompt` / `buildAnalysisUserPrompt` 함수 완전 삭제, 호출 site 0
+- `sentiment.ts` 의 인라인 system 문자열 완전 삭제
 
 ---
 
-## 밀스톤 B — 기억 저장 파이프라인
+## 밀스톤 C — 골든 파일 테스트 & 빌드 검증
 
 ### 목표
 
-사용자 발화 중 "기억해야 할" 내용을 `memories` 테이블에 저장 + 임베딩 생성.
+프롬프트 변경 시 의도하지 않은 회귀 감지. 빌드 시 `.md` 누락 검출. 변경 시 명시적 승인 워크플로 도입.
 
 ### 전제
 
-- `packages/storage/src/memories.ts` 에 `addMemory`, `addMemoryWithEmbedding` 이미 존재.
-- `memory_chunks_vec` (1024-d), `memory_chunks_fts` 인덱스 동작 중.
-- `createEmbeddingProvider` 가 anthropic/openai 지원.
-- **추출 방식**: 명시적 선언만 (사용자 결정).
+- vitest 4-tier 구조 (`docs/00-prerequisites/testing-strategy.md`).
+- 현재 시스템 프롬프트 회귀 테스트 0개.
 
 ### 작업
 
 **파일**:
 
-- `packages/server/src/auto-reply/stages/memory-capture.ts` (신설, ~120 LOC)
-- `packages/server/src/auto-reply/pipeline.ts` (수정, ~20 LOC — 스테이지 등록)
-- `packages/server/src/auto-reply/pipeline-context.ts` (수정, ~15 LOC — memory service 주입)
-- `packages/types/src/storage.ts` (수정, ~10 LOC — MemoryType 확장)
+- `packages/server/src/prompts/__tests__/loader.test.ts` (신설, ~50 LOC)
+- `packages/server/src/prompts/__tests__/identity.test.ts` (신설, ~40 LOC — 골든 파일)
+- `packages/skills-finance/src/news/analysis/__tests__/prompt-loader.test.ts` (신설, ~80 LOC)
+- `packages/skills-finance/src/news/analysis/__tests__/analyze-prompts.test.ts` (신설, ~100 LOC — 6 변형 × Zod 검증)
 
-**명시적 선언 패턴** (정규식 + 접두어 매칭):
+**테스트 항목**:
 
-```
-/^기억해[:\s]\s*(.+)/i          → type: 'fact'
-/내 (투자 )?(기준|원칙|철학)[은는]\s*(.+)/i  → type: 'preference'
-/^선호[:\s]\s*(.+)/i             → type: 'preference'
-/^메모[:\s]\s*(.+)/i             → type: 'fact'
-!finclaw remember <내용>         → type: 'fact' (명령어, 파싱 명확)
-```
+- `finclaw.identity.md` frontmatter 가 `agent.list` 응답과 일치
+- `finclaw.system.ko.md` 가 키워드 포함: "FinClaw" / "읽기 전용" / "환각 금지" / "출처 명시" (스냅샷, 변경 시 `vitest -u` 명시 승인 필요)
+- 6 변형 `analyze.*.md` 모두 로드 가능 + 각 변형이 `AnalysisResponseSchema` 검증 통과 응답을 유도 (mock 또는 실제 LLM — live tier)
+- `sentiment.system.md` 의 `{{ruleHint}}` 치환 결과 형식 정확 (`0.42` 같은 소수점 2자리)
+- 누락 파일 시 로더가 명확한 에러 throw
 
-사용자가 위 패턴을 쓰지 **않는 한** 자동 저장 안 함. 환각 위험 회피.
+**빌드 검증**:
 
-**저장 스테이지 동작**:
-
-1. auto-reply 파이프라인에서 사용자 발화 수신
-2. MemoryCaptureStage 가 패턴 매칭
-3. 매칭 시 `addMemoryWithEmbedding({content, type, sessionKey, hash})`
-4. 중복 방지: 동일 hash 가 이미 존재하면 skip + "이미 기억 중" 로그
-5. 저장 완료 후 DeliverStage 응답에 "기억했습니다 (#memId)" 꼬리표 부착
-
-**기억 종류** (memories.type):
-
-- `preference` — 사용자 투자 선호 (장기/단기, 리스크 취향 등)
-- `fact` — 일반 사실 (주식 계좌 원화/달러 비중 등)
-- `financial` — 과거 분석 결과 (agent.run 출력, 밀스톤 D)
-- `summary` — 대화 요약 (자동 추출, 범위 외)
+- `package.json#files` 에 `prompts/**/*.md` 포함 → `pnpm pack` 결과물에 포함되는지 확인
+- ESM `import.meta.url` 기반 경로 해석이 dist 빌드 후에도 작동하는지 확인 (필요 시 `tsconfig.json` 의 `outDir` 와 `prompts/` 상대 경로 검증)
 
 ### 검증
 
-- "!finclaw remember 나는 분기별 리밸런싱 한다" → memories 에 insert, 임베딩 생성, memory_chunks_vec/fts 에 인덱싱
-- "내 투자 원칙은 배당주 중심" → type='preference' 로 저장
-- 같은 문장 재입력 → "이미 기억 중" 메시지, 중복 저장 X
-- 임베딩 프로바이더 장애 시 → 저장은 성공 (임베딩만 실패), 경고 로그 + 재시도 큐 (stretch)
-
----
-
-## 밀스톤 C — RAG 주입 파이프라인
-
-### 목표
-
-사용자 발화 시작 시 관련 기억·거래를 자동 검색해 system prompt 에 주입.
-
-### 전제
-
-- 밀스톤 A/B 완료되어 memories·transactions 에 데이터 존재.
-- `mergeHybridResults` 가 벡터+FTS top-K 반환 가능.
-- `buildSystemPrompt` 에 `buildFinanceContextSection` 존재 (Phase 22) — 여기에 "사용자 배경지식" 서브섹션 추가.
-
-### 작업
-
-**파일**:
-
-- `packages/server/src/auto-reply/stages/memory-retrieval.ts` (신설, ~150 LOC)
-- `packages/server/src/auto-reply/pipeline.ts` (수정, ~15 LOC)
-- `packages/agent/src/prompts/finance-context.ts` 또는 상응 파일 (수정, ~50 LOC)
-
-**주입 로직**:
-
-1. 사용자 발화 수신 → 발화 텍스트를 임베딩
-2. `mergeHybridResults({vectorQuery, ftsQuery, topK: 5, types: ['preference','fact','financial']})`
-3. 필터링:
-   - **유사도 임계값** 0.65 (이하 무시) — 무관한 질문에 아무 기억 주입 방지
-   - **신선도 가중치** `score *= exp(-daysOld / 90)` — 3개월 지나면 가중치 37%
-   - 상한 3개 (프롬프트 크기 제어)
-4. 거래 이력도 동시 조회 (밀스톤 A):
-   - 발화에 심볼(AAPL 등) 포함 시 해당 심볼 최근 3건 거래 로드
-5. system prompt 에 섹션 주입:
-
-```
-## 사용자 배경지식 (자동 주입)
-- [preference] 나는 분기별 리밸런싱 한다 (2025-12-02 저장)
-- [financial] 2026-03 AAPL 분석 요지: 주가 상승 여력 있으나 고평가 우려
-
-## 최근 거래 (AAPL)
-- 2026-03-15: 매수 10주 @ $180
-- 2026-03-20: 매수 5주 @ $200
-```
-
-6. 감사 로그: `{event: 'memory.injected', ids: [...], userQuery: '...', scores: [...]}`
-
-### 검증
-
-- "내 투자 철학 뭐였지?" → preference 타입 기억 검색되어 응답에 반영
-- "AAPL 얘기해줘" → 최근 AAPL 거래 주입되어 응답에 포함
-- "오늘 날씨" (무관) → 임계값 미달로 주입 0건, 로그 `injected: 0`
-- 3개월 전 기억 vs 어제 기억 동시 매칭 → 어제 것이 우선
-- 주입 기억 로그로부터 "왜 이 답이 나왔나" 추적 가능
-
----
-
-## 밀스톤 D — agent.run 결과 저장 & RAG 통합
-
-### 목표
-
-Phase 23 의 `agent.run` 을 감사+RAG 대상으로 확장. 결과를 DB 저장, memories 연결, 다음 대화에서 검색 가능.
-
-### 전제
-
-- Phase 23 에서 agent.run 은 로그 파일에만 기록 (DB 저장 없음).
-- 밀스톤 A/B/C 완료되어 memories/RAG 동작.
-
-### 작업
-
-**파일**:
-
-- `packages/storage/src/database.ts` (수정, v4 에 agent_runs 테이블 포함)
-- `packages/storage/src/agent-runs.ts` (신설, ~80 LOC)
-- `packages/server/src/gateway/rpc/methods/agent.ts` (수정, ~40 LOC — 저장 훅)
-- `packages/server/src/gateway/rpc/methods/agent-runs.ts` (신설, ~60 LOC — 조회 RPC)
-
-**스키마**:
-
-```sql
-CREATE TABLE agent_runs (
-  id              TEXT PRIMARY KEY,
-  agent_id        TEXT NOT NULL,
-  prompt          TEXT NOT NULL,
-  output          TEXT NOT NULL,
-  tool_calls_json TEXT,               -- JSON array
-  tokens_input    INTEGER,
-  tokens_output   INTEGER,
-  duration_ms     INTEGER,
-  model_used      TEXT,               -- Phase 24 routing 결과
-  role            TEXT,               -- Phase 24 role
-  memory_id       TEXT,               -- 저장된 memory 링크 (null 가능)
-  error           TEXT,
-  created_at      INTEGER NOT NULL
-);
-
-CREATE INDEX idx_agent_runs_created ON agent_runs(created_at DESC);
-CREATE INDEX idx_agent_runs_agent ON agent_runs(agent_id, created_at DESC);
-```
-
-**agent.run 실행 후 훅**:
-
-1. Runner 실행 종료 → `agent_runs` insert
-2. output 길이 > 100 자 & 오류 없으면 `memories` 에 type='financial' 로 저장 + 임베딩
-3. `agent_runs.memory_id` 에 링크 기록
-4. 실패 시 memory 저장은 skip, agent_runs 는 error 필드에 기록
-
-**신규 RPC** (밀스톤 E 에서 UI 에 쓰임):
-
-- `agent.runs.list {agentId?, from?, to?, limit?}` → 실행 이력
-- `agent.runs.get {runId}` → 전체 내용 (prompt + output + tool_calls)
-
-### 검증
-
-- `agent.run {prompt: "AAPL 분석"}` → agent_runs 에 레코드, memory_id 링크됨
-- memories 검색에서 "AAPL 분석" 관련 질의 시 해당 출력이 top 결과로 나옴
-- `agent.runs.list` → 최근 실행 목록
-- 오류 시 agent_runs.error 에 기록, memory 는 저장 안 함
-
----
-
-## 밀스톤 E — Web UI 확장 (거래 이력 + 기억 관리)
-
-### 목표
-
-Phase 23 에서 만든 뷰를 확장해 거래·기억·에이전트 실행 이력 조회·관리.
-
-### 전제
-
-- Phase 23 에서 Market/Portfolio/Alerts 뷰 배선됨. Settings 는 placeholder.
-- Phase 24 에서 Chat 뷰에 modelHint 버튼 추가됨 (Stretch).
-
-### 작업
-
-**파일**:
-
-- `packages/web/src/views/portfolio-view.ts` (수정, ~100 LOC — 거래 이력 탭 추가)
-- `packages/web/src/views/settings-view.ts` (재작성, ~150 LOC — 기억 목록 + 에이전트 실행 이력)
-- `packages/web/src/views/transaction-form.ts` (신설, ~120 LOC)
-- `packages/web/src/app-gateway.ts` (수정, ~30 LOC — 신규 RPC 래퍼)
-
-**Portfolio 뷰 확장**:
-
-- 탭 2개: "보유 종목" (기존) / "거래 이력" (신규)
-- 거래 이력: `finance.transaction.list` 호출, 테이블 렌더 (날짜 / 심볼 / 액션 / 수량 / 단가 / 금액)
-- "거래 추가" 버튼 → 폼 모달 → `finance.transaction.add`
-- 각 거래 행에 삭제 버튼 (`finance.transaction.delete`)
-- **자동 갱신** (phase23 review.md line 104 후속): 밀스톤 A 에서 송출하는 `portfolio.changed` notification 을 `gateway.subscribe('portfolio.changed', ...)` 로 구독. 다른 클라이언트(채팅, 외부 RPC) 가 거래를 추가해도 본 뷰가 즉시 재로드. 현재 Phase 23 의 portfolio-view 는 수동 새로고침 버튼만 있어 channel 간 변경이 반영 안 됨.
-
-**Settings 뷰**:
-
-- 섹션 1: "내 기억" — `memory.list` 로 목록, type 필터 (preference/fact/financial), 개별 삭제 (`memory.delete`)
-- 섹션 2: "에이전트 실행 이력" — `agent.runs.list`, 클릭 시 상세 (`agent.runs.get`)
-- 섹션 3: "라우팅 통계" (Phase 24 연동) — 최근 1시간 모델 분포
-
-**신규 RPC** (밀스톤 B 와 함께 추가):
-
-- `memory.list {type?, limit?}` → 기억 목록
-- `memory.delete {memoryId}` → 삭제 (DB + 벡터 인덱스 동시 제거)
-- `memory.search {query, limit?}` → 테스트용 수동 검색
-
-### 검증
-
-- Portfolio 뷰에서 거래 추가 → 테이블에 즉시 반영, Holdings 탭 수치 재계산
-- **자동 갱신**: 다른 터미널에서 `curl ... finance.transaction.add` 호출 → 열려있던 Web Portfolio 뷰가 수동 새로고침 없이 갱신
-- Settings 기억 목록 → 밀스톤 B 에서 저장된 기억들 표시
-- 기억 삭제 → DB + 벡터 인덱스 동시 삭제 확인 (memory.search 에서 안 나옴)
-- 에이전트 실행 이력 → Phase 23 의 agent.run 호출 모두 기록되어 표시
+- `pnpm test` 통과
+- `prompts/` 안 임의 파일 1개 삭제 시 관련 테스트 실패
+- `pnpm build && node dist/main.js` 기동 시 프롬프트 정상 로드
 
 ---
 
 ## 완료 조건 (Phase 25 Done When)
 
-- 밀스톤 A/B/C/D/E 전부 완료.
-- 스키마 v4 마이그레이션 무결성 검증 (v3 → v4 업그레이드 테스트).
-- `pnpm test` 전체 통과 (memories, transactions, agent_runs 단위 테스트 포함).
-- 전체 시나리오 수동 검증:
-  1. `finance.transaction.add` 로 거래 입력 → Portfolio 뷰 반영
-  2. `!finclaw remember 나는 배당주 선호` → memories 저장
-  3. 이후 대화에서 "내 선호가 뭐였지?" → 저장된 preference 주입 확인
-  4. `agent.run {prompt: 'AAPL 분석'}` 실행 → 결과 저장
-  5. 다음 대화에서 "저번 AAPL 분석 요약해줘" → agent_runs 의 output 이 RAG 로 주입됨
-  6. Settings 에서 해당 기억 삭제 → 이후 검색 결과에서 제외
-- `tsgo --noEmit`, `pnpm lint` 통과.
-- 감사 로그: 주입된 기억 id 들이 로그에서 추적 가능.
+- 밀스톤 A/B/C 전부 완료.
+- 페르소나 정의 위치 **5곳 → 2곳** 으로 축소 (`finclaw.identity.md` + `finclaw.system.ko.md`).
+- `system-prompt.ts` 와 14개 섹션 빌더 export 완전 삭제, `pnpm typecheck` 통과.
+- `analyze_market` 6 변형 + `sentiment` 모두 `.md` 로드, 인라인 함수 제거.
+- 골든 파일 테스트 8+ 케이스 통과.
+- `tsgo --noEmit`, `pnpm lint`, `pnpm test` 통과.
+- 실제 시나리오 3개 수동 검증:
+  1. "AAPL 뉴스 분석해줘" → 외부 한국어 응답 + 내부 영어 분석 프롬프트 정상 적용
+  2. `agent.list` → frontmatter 와 동일한 `name`/`description` 반환
+  3. `prompts/finclaw.identity.md` 임의 수정 → 재기동 후 즉시 반영 (hot-reload 아님, 재기동 필요)
 
 ---
 
 ## 범위 외 (Phase 26 이후)
 
-- **자동 기억 추출**: LLM 이 대화 보며 "기억할 만한 것" 자동 판정. 환각·개인정보 위험 크므로 별도 설계 필요.
-- **거래 자동 수집**: 증권사 API 연동 (예: 한국투자증권 OpenAPI). 법·보안 검토 필요.
-- **다중 포트폴리오**: 현재는 default 1개 전제. 계정별/전략별 분리.
-- **포트폴리오 성과 분석**: TWR/MWR, 벤치마크 대비 수익률. Phase 27+.
-- **기억 클러스터링**: 유사 기억 자동 병합.
-- **기억 export / import**: 다른 환경으로 이관.
-- **사용자 승인형 기억**: LLM 이 "이거 기억할까요?" 제안 → 사용자 승인 후 저장 (자동 추출의 보수적 버전).
+- **프롬프트 hot-reload** — dev 모드에서 `.md` 변경 시 재시작 없이 반영. 추측성, 필요해지면 추가.
+- **프롬프트 A/B 테스트 인프라** — 같은 입력 두 변형에 보내고 결과 비교. 측정 인프라 비용 > 차이.
+- **프롬프트 버전 관리** — frontmatter `version` 자동 변경 추적. git 으로 충분.
+- **`system-prompt.ts` 동적 빌더 부활** — 15+ 섹션 빌더를 정적 `.md` 위에 얹는 작업. 본 phase 는 삭제, 부활은 별 phase.
+- **다국어 자동 분기** — 사용자 발화 언어 감지 → 자동 `language` 결정. 현재는 호출 site 명시.
+- **임베딩 파일명 정리** — `packages/storage/src/embeddings/anthropic.ts` 가 실제로는 Voyage AI 호출. 파일명 `voyage.ts` 로 변경. 인지 부담 해소 작업으로 별 phase.
+- **사용자 정의 프롬프트** — 사용자가 자신의 페르소나·원칙을 추가/덮어쓸 수 있는 config 인터페이스. Phase 24 의 `customInstructions` 와 통합 검토.
 
 ---
 
 ## 오픈 질문 (Phase 25 진행 중 확정)
 
-1. **Holdings 재계산 방식** — SQLite trigger vs 애플리케이션 레벨 함수. trigger 는 SQL 복잡 (average_cost weighted avg), 함수는 트랜잭션 일관성 신경. 기본 "애플리케이션 레벨 `recomputeHoldings(portfolioId)` 함수 + 거래 CRUD 내부에서 동기 호출" 제안.
-2. **기억 TTL / 보존 정책** — 3개월 이상 미사용 기억 자동 archive? 아니면 영구 보존 + 신선도 가중치로 충분? 기본 "영구 보존, 가중치로 관리" 제안.
-3. **임베딩 프로바이더** — Anthropic embedding API 존재 여부 / OpenAI 사용 시 키 관리. 기본 "Voyage AI(Anthropic 추천) 또는 OpenAI text-embedding-3-small, 사용자 config 로 선택" 제안. 키 미설정 시 임베딩 스킵 (FTS 만 사용) fallback.
-4. **다국어 임베딩** — 한국어 질문 ↔ 영어 기억 매칭이 중요한가? Voyage AI `voyage-multilingual-2` 같은 모델 필요. 기본 "한국어+영어 혼용이므로 multilingual 모델 필수" 제안.
-5. **거래 입력 시 시세 자동 조회** — `finance.transaction.add` 호출 시 executedAt 기준 과거 시세를 `finance.quote` 로 자동 대입할지? 기본 "아니오, 사용자가 직접 price 입력. 과거 시세 조회는 API 비용·신뢰성 이슈" 제안.
-6. **Portfolio 여러 개 지원** — 기본 1개 vs 복수. 기본 "1개(default), Phase 27+ 에서 확장" 제안.
-7. **agent_runs 를 memories 에 이중 저장하는 것의 중복 위험** — 별도 테이블 + memories 링크 방식이 맞는지, 아예 agent_runs 없이 memories 에만? 기본 "별도 테이블 유지 — 감사용 raw 데이터와 RAG 용 chunked 데이터는 목적 다름" 제안.
+1. **`system-prompt.ts` 처리 최종 결정** — 본 plan 기본 = 삭제. 단, `buildIdentitySection`/`buildToolsSection` 등 잘 만들어진 섹션 빌더가 향후 동적 프롬프트에 재사용 가치가 있다면 보류 검토. git blame 확인 결과 `00060e5` 에서 도입 후 미채택. **답: 삭제.** 부활 필요 시 별 phase 에서 처음부터 재설계.
+2. **frontmatter 파서 자체 구현 vs YAML 라이브러리** — 본 plan 기본 = 자체 구현 (`key: value` 단순 라인). 현재 frontmatter 가 4-5 키만 쓰므로 라이브러리 의존성 추가 비용 > 이득.
+3. **`prompts/` 위치 확정** — 본 plan 기본 = 패키지별 분리 (`packages/server/prompts/`, `packages/skills-finance/prompts/`). root `prompts/` 단일 디렉토리는 모노레포 패키지 응집도 깨짐.
+4. **Phase 24 와의 경계 명시** — 스킬 내부 LLM 호출(`analyze_market`/`sentiment`) 의 모델 ID 구버전 통일(`claude-sonnet-4-20250514` → `claude-sonnet-4-6`)과 라우터 배선은 **Phase 24** 책임. 본 phase 는 **프롬프트 외부화** 만 담당. Phase 24 plan 밀스톤 C 호출 지점 표에 "스킬 내부 LLM 호출" 항목 추가 필요 (별도 메모로 처리).
+5. **변수 치환 범위** — `{{ruleHint}}` 외에 다른 동적 변수가 필요한가? 현재 코드 스캔 결과 `sentiment` 의 rule hint 1개만. 본 phase 에서는 1개만 지원. 추가 변수 등장 시 그때 확장.
