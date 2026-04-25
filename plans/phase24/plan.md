@@ -24,6 +24,7 @@ Phase 23 에서 `finance.*` / `agent.run` RPC 가 배선되면서 Claude 호출 
 - **chat.send 라우팅 시점**: 매 메시지마다 라우터 호출. 도구 세트가 세션 중 동적으로 변할 가능성 + in-process 비용 무시 가능. (B3 결정)
 - **스킬 내부 LLM 호출 모델 ID 통일**: `claude-sonnet-4-20250514` → `claude-sonnet-4-6` 카탈로그 동기화. 본 phase 의 밀스톤 C 안에서 시그니처 변경과 함께 처리. (B4 결정)
 - **스킬 내부 LLM 호출 라우팅 배선**: `analyzeMarket()`, sentiment 분석 함수 시그니처에 `modelRef` 주입. **단 프롬프트는 코드에 둔 채로 모델만 라우팅** — 프롬프트 외부화는 phase25 책임. (B5 결정)
+- **Fallback 도 minModel 준수 (strict)**: 라우팅으로 Opus 선택된 후 Opus 다운 시 **Sonnet/Haiku 로 내려가지 않고 명시적 에러**. 도구의 minModel 이 더 낮으면(예: `get_portfolio_summary` minModel=sonnet) 그 하한선까지만 fallback. 사용자에게는 "분석 일시 불가 — 상위 모델 사용 불가능, 잠시 후 재시도" 로 응답. 환각 금지 원칙(Haiku 로 금융 판단 절대 금지) 보존이 가용성보다 우선. (B6 결정)
 
 ---
 
@@ -256,21 +257,36 @@ export function resolveModelForRequest(req: RouteRequest, cfg: RoutingConfig): R
 
 **파일**:
 
-- `packages/agent/src/models/fallback.ts` (수정, ~60 LOC)
+- `packages/agent/src/models/fallback.ts` (수정, ~80 LOC — `floor` 파라미터, `ModelFloorExhaustedError`)
+- `packages/agent/src/models/fallback.test.ts` (수정 또는 신설, ~50 LOC — floor 절단 케이스)
 - `packages/agent/src/models/selection.ts` (수정, ~20 LOC)
+- `packages/agent/src/index.ts` (수정, `ModelFloorExhaustedError` re-export)
+- `packages/server/src/gateway/rpc/methods/chat.ts`, `agent.ts` (수정, 각 ~10 LOC — 에러 캐치 + 사용자 메시지 변환)
+- `packages/skills-finance/src/news/analysis/market-analysis.ts`, `sentiment.ts` (수정, 각 ~10 LOC — 에러 캐치 + 도구 결과 변환)
 
 **변경 내용**:
 
 - 초기 선택 = 밀스톤 C 의 `resolveModelForRequest` 결과
 - Fallback = 실행 중 에러 발생 시만 발동
-- 로그에 `selectionPath: 'routing' | 'fallback'` 필드 추가
-- `automation.strictFallback=true` 면 fallback chain 을 한 단계 좁게 (예: Opus → Sonnet 만 허용, Haiku 까지 안 내려감 — 무인 실행에서 판단 품질 보호)
+- **Fallback chain 을 도구 세트의 `max(minModel)` 으로 절단 (B6)** — 라우팅이 Opus 선택했고 도구 minModel 이 opus 이면 fallback chain 은 `[opus]` 만. Sonnet/Haiku 로 내려가지 않음.
+- `runWithModelFallback` 시그니처에 `floor: ModelTier` 파라미터 추가. 라우터가 결정한 도구 세트의 `max(minModel)` 을 floor 로 전달.
+- chain 전부 소진 시 `ModelFloorExhaustedError` throw — 호출자(chat/agent/스킬)가 사용자에게 "분석 일시 불가" 메시지로 변환.
+- `automation.strictFallback=true` 는 floor 위에서 한 단계 더 좁힘 (예: floor=sonnet 인 경우 chain `[sonnet]` 만, opus 만 가능). 일반 모드(automation=false) 는 floor 까지 자유.
+- 로그에 `selectionPath: 'routing' | 'fallback'`, `floor: ModelTier`, `chainAttempted: [...]` 필드 추가
+
+**에러 처리**:
+
+- `ModelFloorExhaustedError` → `chat.send` / `agent.run` 응답: 한국어 사용자 메시지 + 503 retry-after 힌트
+- 스킬 내부 호출(analyzeMarket/sentiment) 도 동일 에러 → 도구 결과로 `{ ok: false, reason: 'model_unavailable', retryAfterSec: 60 }` 반환
 
 ### 검증
 
 - 라우팅으로 Opus 선택 → Anthropic API 정상 응답 → 로그 `selectionPath: 'routing'`
-- Opus 과부하 → Sonnet 으로 전환 → 로그 `selectionPath: 'fallback', from: 'opus', to: 'sonnet'`
-- `automation=true` 에서 Opus → Sonnet 까지만, Haiku 로 내려가지 않음
+- Opus 과부하 + 도구 minModel=opus → Sonnet 으로 내려가지 않고 `ModelFloorExhaustedError` → 사용자에게 "분석 일시 불가" 응답 (B6)
+- Opus 과부하 + 도구 minModel=sonnet (예: get_portfolio_summary) → Sonnet 으로 fallback → 로그 `selectionPath: 'fallback', from: 'opus', to: 'sonnet'`
+- `automation=true` + floor=sonnet → Sonnet 외 시도 안 함, opus 다운 시 즉시 floor 도달 에러
+- 일반 채팅(role=chat, 일반 도구만 = floor=haiku) → Sonnet 다운 시 Haiku 까지 정상 fallback
+- `analyze_market` 호출 + Opus 다운 → 도구 결과 `{ ok: false, reason: 'model_unavailable' }` + 외부 LLM 이 사용자에게 친절히 안내
 
 ---
 
@@ -421,3 +437,8 @@ export function resolveModelForRequest(req: RouteRequest, cfg: RoutingConfig): R
   - 밀스톤 E: `ProfileState.byModel` 신설 명시, LOC ~120 → ~200
   - 밀스톤 F: `web/views/chat-view.ts` → `web/src/app-chat.ts` 정정
   - 완료 조건에 시나리오 7-8 추가 (B1/B2 검증)
+- **2026-04-26 (2차)**: B6 결정 흡수 — fallback strict 정책.
+  - `runWithModelFallback` 에 `floor` 파라미터 + `ModelFloorExhaustedError` 도입
+  - 밀스톤 D: chain 절단 로직, 에러 처리 명세 추가, LOC ~80 → ~180
+  - Opus 다운 + minModel=opus 도구 → Sonnet/Haiku 로 내려가지 않고 명시적 에러 (사용자 응답 한국어)
+  - 환각 금지 원칙(Haiku 로 금융 판단 절대 금지) 보존이 가용성보다 우선
