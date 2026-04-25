@@ -120,24 +120,27 @@ export class AnthropicAdapter implements ProviderAdapter {
     });
 
     try {
-      const stream = this.client.messages.stream({
-        model: params.model,
-        max_tokens: params.maxTokens ?? 4096,
-        ...(system
-          ? {
-              system: [
-                {
-                  type: 'text' as const,
-                  text: system,
-                  cache_control: { type: 'ephemeral' as const },
-                },
-              ],
-            }
-          : {}),
-        messages: toAnthropicMessages(nonSystemMessages),
-        ...(toolsWithCache.length ? { tools: toolsWithCache } : {}),
-        ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
-      });
+      const stream = this.client.messages.stream(
+        {
+          model: params.model,
+          max_tokens: params.maxTokens ?? 4096,
+          ...(system
+            ? {
+                system: [
+                  {
+                    type: 'text' as const,
+                    text: system,
+                    cache_control: { type: 'ephemeral' as const },
+                  },
+                ],
+              }
+            : {}),
+          messages: toAnthropicMessages(nonSystemMessages),
+          ...(toolsWithCache.length ? { tools: toolsWithCache } : {}),
+          ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
+        },
+        { signal: params.abortSignal },
+      );
 
       for await (const event of stream) {
         yield* this.mapAnthropicStreamEvent(event);
