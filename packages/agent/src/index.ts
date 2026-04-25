@@ -51,7 +51,14 @@ export {
   resolveModelForRequest,
   tierToModelId,
 } from './models/routing.js';
-export type { ModelRole, RouteDecision, RouteRequest } from './models/routing.js';
+export type {
+  ModelRole,
+  RouteDecision,
+  RouteRequest,
+  RouterHelper,
+  RouterHelperRequest,
+  RouterHelperResult,
+} from './models/routing.js';
 
 // ─── providers ───
 export { getBreakerForProvider, resetBreakers } from './providers/adapter.js';

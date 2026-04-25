@@ -1208,7 +1208,7 @@ node -e "/* simulate auto-reply with '분석해줘' message */"
 
 ---
 
-## Todo 18: market-analysis modelRef 주입 ⬜
+## Todo 18: market-analysis modelRef 주입 ✅
 
 ### 파일 목록
 
@@ -1262,7 +1262,7 @@ grep -n "claude-sonnet-4-20250514" packages/skills-finance/src/news/analysis/mar
 
 ---
 
-## Todo 19: sentiment modelRef 주입 ⬜
+## Todo 19: sentiment modelRef 주입 ✅
 
 ### 파일 목록
 
@@ -1308,7 +1308,7 @@ grep -rn "claude-sonnet-4-20250514" packages/skills-finance/
 
 ---
 
-## Todo 20: news/index 라우터 의존성 주입 ⬜
+## Todo 20: news/index 라우터 의존성 주입 ✅
 
 ### 파일 목록
 

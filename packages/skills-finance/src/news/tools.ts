@@ -1,11 +1,24 @@
 import type Anthropic from '@anthropic-ai/sdk';
 // packages/skills-finance/src/news/tools.ts
-import type { RegisteredToolDefinition, ToolExecutor, ToolRegistry } from '@finclaw/agent';
-import type { TickerSymbol } from '@finclaw/types';
+import type {
+  RegisteredToolDefinition,
+  RouterHelper,
+  ToolExecutor,
+  ToolRegistry,
+} from '@finclaw/agent';
+import type { ModelRef, TickerSymbol } from '@finclaw/types';
 import type { PortfolioStore } from './portfolio/store.js';
 import type { NewsAggregator, AnalysisOptions, NewsCategory } from './types.js';
 import { analyzeMarket } from './analysis/market-analysis.js';
 import { createPortfolioTracker, type QuoteService } from './portfolio/tracker.js';
+
+/** analyze_market 등록 시 modelRef 결정 fallback (router 미주입 시). minModel=opus 보호. */
+const ANALYZE_MARKET_FALLBACK_MODEL: ModelRef = {
+  provider: 'anthropic',
+  model: 'claude-opus-4-7',
+  contextWindow: 200_000,
+  maxOutputTokens: 8192,
+};
 
 // ─── get_financial_news ───
 
@@ -76,7 +89,12 @@ export function registerGetFinancialNewsTool(
 
 export function registerAnalyzeMarketTool(
   registry: ToolRegistry,
-  deps: { newsAggregator: NewsAggregator; client: Anthropic },
+  deps: {
+    newsAggregator: NewsAggregator;
+    client: Anthropic;
+    router?: RouterHelper;
+    defaultModel?: ModelRef;
+  },
 ): void {
   const def: RegisteredToolDefinition = {
     name: 'analyze_market',
@@ -125,7 +143,19 @@ export function registerAnalyzeMarketTool(
         return { content: '분석할 뉴스가 없습니다.', isError: false };
       }
 
-      const analysis = await analyzeMarket(deps.client, news, options);
+      // Phase 24: 도구 실행 시점에 라우터 호출 — analyze_market 의 minModel=opus 가
+      // floor 로 작용해 hint 와 무관하게 opus 이상 보장. router 미주입 시 fallback.
+      const baseModel = deps.defaultModel ?? ANALYZE_MARKET_FALLBACK_MODEL;
+      let modelRef = baseModel;
+      if (deps.router) {
+        const { modelId } = deps.router({
+          role: 'analysis',
+          toolNames: ['analyze_market'],
+        });
+        modelRef = { ...baseModel, model: modelId };
+      }
+
+      const analysis = await analyzeMarket(deps.client, news, options, modelRef);
       return { content: JSON.stringify(analysis), isError: false };
     } catch (error) {
       return { content: error instanceof Error ? error.message : String(error), isError: true };

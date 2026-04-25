@@ -1,6 +1,6 @@
 // packages/skills-finance/src/news/index.ts
-import type { ToolRegistry } from '@finclaw/agent';
-import type { SkillMetadata } from '@finclaw/types';
+import type { RouterHelper, ToolRegistry } from '@finclaw/agent';
+import type { ModelRef, SkillMetadata } from '@finclaw/types';
 import type { DatabaseSync } from 'node:sqlite';
 import Anthropic from '@anthropic-ai/sdk';
 import type { QuoteService } from './portfolio/tracker.js';
@@ -27,6 +27,16 @@ export interface NewsSkillConfig {
   readonly rssFeedUrls?: string[];
   readonly anthropicApiKey?: string;
   readonly quoteService: QuoteService;
+  /**
+   * Phase 24: 모델 라우터. analyze_market 도구 실행 시 role='analysis' 로
+   * 호출되어 modelRef 결정. 미주입 시 defaultModel 사용.
+   */
+  readonly router?: RouterHelper;
+  /**
+   * 라우터 미주입 시 fallback 으로 사용할 LLM modelRef.
+   * 주입 시에도 router 결정 외 다른 ModelRef 필드 (provider, contextWindow 등) 의 출처.
+   */
+  readonly defaultModel?: ModelRef;
 }
 
 /** Phase 22: main.ts가 alerts 배선에 재사용할 수 있도록 aggregator 노출 */
@@ -63,7 +73,12 @@ export async function registerNewsTools(
   // 도구 등록: analyze_market (Anthropic API 키가 있을 때만)
   if (config.anthropicApiKey) {
     const client = new Anthropic({ apiKey: config.anthropicApiKey });
-    registerAnalyzeMarketTool(registry, { newsAggregator, client });
+    registerAnalyzeMarketTool(registry, {
+      newsAggregator,
+      client,
+      router: config.router,
+      defaultModel: config.defaultModel,
+    });
   }
 
   // 도구 등록: get_portfolio_summary

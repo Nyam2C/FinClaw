@@ -224,6 +224,8 @@ async function main(): Promise<void> {
       alphaVantageKey,
       quoteService: marketHandle.quoteService,
       anthropicApiKey: anthropicKey,
+      router: routerHelper,
+      defaultModel: DEFAULT_MODEL,
     });
     logger.info('News tools registered');
   } else if (marketHandle) {

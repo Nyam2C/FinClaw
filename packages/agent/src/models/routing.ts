@@ -74,6 +74,27 @@ export function resolveModelForRequest(req: RouteRequest, cfg: RoutingConfig): R
   };
 }
 
+// ─── RouterHelper facade (Phase 24) ───
+//
+// 호출 site (RPC handler / 어댑터 / 스킬 내부 LLM) 가 공유하는 facade 시그니처.
+// 구현체는 server (auto-reply/router-helper.ts) 가 routingConfig + toolMetaIndex 를
+// 클로저로 묶어 만든다. 타입을 agent 에 두는 이유는 skills-finance 가 import 할 수
+// 있어야 하기 때문 (server 에 두면 의존성 역전).
+
+export interface RouterHelperRequest {
+  readonly role: ModelRole;
+  readonly toolNames: ReadonlyArray<string>;
+  readonly userHint?: ModelTier;
+  readonly automation?: boolean;
+}
+
+export interface RouterHelperResult {
+  readonly decision: RouteDecision;
+  readonly modelId: string;
+}
+
+export type RouterHelper = (req: RouterHelperRequest) => RouterHelperResult;
+
 /** ModelTier → 카탈로그 모델 ID. catalog-data.ts 의 BUILT_IN_MODELS 와 동기. */
 export function tierToModelId(tier: ModelTier): string {
   switch (tier) {

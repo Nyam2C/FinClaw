@@ -1,6 +1,6 @@
 // packages/skills-finance/src/news/analysis/market-analysis.ts
 import type Anthropic from '@anthropic-ai/sdk';
-import type { NewsItem } from '@finclaw/types';
+import type { ModelRef, NewsItem } from '@finclaw/types';
 import { z } from 'zod/v4';
 import type { MarketAnalysis, AnalysisOptions } from '../types.js';
 
@@ -20,6 +20,7 @@ export async function analyzeMarket(
   client: Anthropic,
   news: readonly NewsItem[],
   options: AnalysisOptions,
+  modelRef: ModelRef,
 ): Promise<MarketAnalysis> {
   const depth = options.depth ?? 'standard';
   const language = options.language ?? 'ko';
@@ -40,7 +41,7 @@ export async function analyzeMarket(
   );
 
   const message = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: modelRef.model,
     max_tokens: depth === 'brief' ? 500 : depth === 'detailed' ? 2000 : 1000,
     system: systemPrompt,
     messages: [{ role: 'user', content: userPrompt }],
