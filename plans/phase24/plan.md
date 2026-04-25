@@ -278,6 +278,7 @@ export function resolveModelForRequest(req: RouteRequest, cfg: RoutingConfig): R
 
 - `ModelFloorExhaustedError` → `chat.send` / `agent.run` 응답: 한국어 사용자 메시지 + 503 retry-after 힌트
 - 스킬 내부 호출(analyzeMarket/sentiment) 도 동일 에러 → 도구 결과로 `{ ok: false, reason: 'model_unavailable', retryAfterSec: 60 }` 반환
+- **시스템 프롬프트 가이드 1줄 추가** — 외부 LLM 이 도구 결과 `{ ok: false, reason: 'model_unavailable' }` 를 받으면 가짜 분석 결과를 만들지 말고 "어느 모델이 죽었고 언제 재시도 가능한지" 한국어로 안내하도록. `DEFAULT_SYSTEM_PROMPT` (`main.ts:81-103`) 의 환각 금지 원칙 아래에 명시. **phase25 (프롬프트 외부화) 와 짝** — phase24 에서 한 줄 추가, phase25 에서 `.md` 외부화 시 자연스럽게 흡수.
 
 ### 검증
 
