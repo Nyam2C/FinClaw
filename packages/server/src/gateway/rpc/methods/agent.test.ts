@@ -86,7 +86,7 @@ function makeDeps(overrides: Partial<AgentRpcDeps> = {}): AgentRpcDeps {
     systemPrompt: 'test system prompt',
     defaultModel: {
       provider: 'anthropic',
-      model: 'claude-sonnet-4-5',
+      model: 'claude-sonnet-4-6',
       contextWindow: 200_000,
       maxOutputTokens: 8_192,
     },

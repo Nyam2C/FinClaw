@@ -22,7 +22,7 @@ describe('applyDefaults', () => {
   it('빈 설정에 모든 기본값을 적용한다', () => {
     const result = applyDefaults({});
     expect(result.gateway?.port).toBe(3000);
-    expect(result.agents?.defaults?.model).toBe('claude-sonnet-4-20250514');
+    expect(result.agents?.defaults?.model).toBe('claude-sonnet-4-6');
     expect(result.logging?.redactSensitive).toBe(true);
   });
 
@@ -40,7 +40,7 @@ describe('applyDefaults', () => {
     };
     const result = applyDefaults(user);
     expect(result.agents?.defaults?.temperature).toBe(0.5);
-    expect(result.agents?.defaults?.model).toBe('claude-sonnet-4-20250514');
+    expect(result.agents?.defaults?.model).toBe('claude-sonnet-4-6');
   });
 
   it('기본값에 없는 섹션은 그대로 통과한다', () => {

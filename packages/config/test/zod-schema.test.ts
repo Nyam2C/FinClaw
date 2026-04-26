@@ -12,8 +12,8 @@ describe('FinClawConfigSchema', () => {
     const config = {
       gateway: { port: 18789, host: 'localhost' },
       agents: {
-        defaults: { model: 'claude-sonnet-4-20250514', provider: 'anthropic' },
-        entries: { main: { model: 'claude-sonnet-4-20250514' } },
+        defaults: { model: 'claude-sonnet-4-6', provider: 'anthropic' },
+        entries: { main: { model: 'claude-sonnet-4-6' } },
       },
       channels: {
         discord: { botToken: 'token', applicationId: 'app-id' },
@@ -23,7 +23,7 @@ describe('FinClawConfigSchema', () => {
       logging: { level: 'info' as const, file: true },
       models: {
         definitions: {
-          sonnet: { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
+          sonnet: { provider: 'anthropic', model: 'claude-sonnet-4-6' },
         },
         aliases: { default: 'sonnet' },
       },

@@ -2037,3 +2037,23 @@ curl -X POST http://localhost:3000/rpc \
 - **`analyze_market` 6 변형 프롬프트 외부화** — `buildAnalysisSystemPrompt` 함수 → `.md` 6 파일.
 - **sentiment 시스템 프롬프트 외부화** — `{{ruleHint}}` 변수 치환 형태로.
 - **페르소나 통합** — `agent.ts` 의 AGENTS 메타와 `DEFAULT_SYSTEM_PROMPT` 의 정체성 부분이 단일 진실에서 파생되도록.
+
+## 부록: Phase 24 후속 정리 ✅
+
+E2E 검증 직전 코드베이스 하드코딩 스캔 (sub-agent 4개 병렬) 으로 발견된 항목 처리 결과:
+
+### 처리 완료 (테스트 직전 핫픽스)
+
+- **Deprecated 모델 ID 일괄 교체** ✅
+  - `claude-sonnet-4-20250514` → `claude-sonnet-4-6` (catalog 와 일치)
+  - `claude-sonnet-4-5` → `claude-sonnet-4-6`
+  - `claude-haiku-4-20250414` → `claude-haiku-4-5-20251001`
+  - 영향: `config/defaults.ts`, `server/main.ts`, `gateway/openai-compat/adapter.ts`, `config.example.json5`, 그리고 5개 테스트 파일.
+  - 라우터 활성 시 model 필드는 항상 router 결정으로 덮어쓰지만, fallback 경로(routing config 미설정 시) 가 카탈로그 미존재 ID 로 503 에러 나는 것을 방지.
+
+### 향후 정리 후보 (별도 PR 권장 — 기능에는 영향 없음)
+
+- **TIER_RANK 3곳 중복** — `agent/models/routing.ts`, `agent/models/fallback.ts`, `server/auto-reply/commands/status.ts`. routing.ts 에서 export 하여 통합.
+- **ModelRole 타입 중복** — `routing.ts` TS 유니온 vs `agent.ts` Zod 리터럴. 단일 진실 출처 통합.
+- **fallback 파라미터 중복** — `execution-adapter.ts` 의 `maxRetriesPerModel: 1`, `retryBaseDelayMs: 500` 이 execute / executeForTui 두 블록에 동일.
+- **`'dev-secret'` JWT fallback** — `main.ts:62`. 로컬 테스트엔 무영향이나, production 배포 전 환경변수 강제화 또는 production-mode 검증 로직 필요.
