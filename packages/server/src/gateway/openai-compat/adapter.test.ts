@@ -4,20 +4,20 @@ import { mapModelId, adaptRequest, adaptResponse, adaptStreamChunk } from './ada
 
 describe('mapModelId', () => {
   it('gpt-4o → claude-sonnet-4', () => {
-    expect(mapModelId('gpt-4o')).toBe('claude-sonnet-4-20250514');
+    expect(mapModelId('gpt-4o')).toBe('claude-sonnet-4-6');
   });
 
   it('gpt-4o-mini → claude-haiku-4', () => {
-    expect(mapModelId('gpt-4o-mini')).toBe('claude-haiku-4-20250414');
+    expect(mapModelId('gpt-4o-mini')).toBe('claude-haiku-4-5-20251001');
   });
 
   it('gpt-3.5-turbo → claude-haiku-4', () => {
-    expect(mapModelId('gpt-3.5-turbo')).toBe('claude-haiku-4-20250414');
+    expect(mapModelId('gpt-3.5-turbo')).toBe('claude-haiku-4-5-20251001');
   });
 
   it('claude-* passthrough', () => {
-    expect(mapModelId('claude-sonnet-4-20250514')).toBe('claude-sonnet-4-20250514');
-    expect(mapModelId('claude-haiku-4-20250414')).toBe('claude-haiku-4-20250414');
+    expect(mapModelId('claude-sonnet-4-6')).toBe('claude-sonnet-4-6');
+    expect(mapModelId('claude-haiku-4-5-20251001')).toBe('claude-haiku-4-5-20251001');
   });
 
   it('미지원 모델 → undefined', () => {
@@ -36,7 +36,7 @@ describe('adaptRequest', () => {
           { role: 'user', content: 'Hello' },
         ],
       },
-      'claude-sonnet-4-20250514',
+      'claude-sonnet-4-6',
     );
 
     expect(result.systemPrompt).toBe('You are helpful.');
@@ -50,7 +50,7 @@ describe('adaptRequest', () => {
         model: 'gpt-4o',
         messages: [{ role: 'user', content: 'Hi' }],
       },
-      'claude-sonnet-4-20250514',
+      'claude-sonnet-4-6',
     );
 
     expect(result.model.maxTokens).toBe(4096);
@@ -63,7 +63,7 @@ describe('adaptRequest', () => {
         messages: [{ role: 'user', content: 'Hi' }],
         max_tokens: 1024,
       },
-      'claude-sonnet-4-20250514',
+      'claude-sonnet-4-6',
     );
 
     expect(result.model.maxTokens).toBe(1024);
@@ -76,7 +76,7 @@ describe('adaptRequest', () => {
         messages: [{ role: 'user', content: 'Hi' }],
         temperature: 0.7,
       },
-      'claude-sonnet-4-20250514',
+      'claude-sonnet-4-6',
     );
 
     expect(result.model.temperature).toBe(0.7);

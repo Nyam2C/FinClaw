@@ -93,6 +93,41 @@ const PortfolioSchema = z.strictObject({
   holdings: z.array(HoldingSchema),
 });
 
+/** 모델 라우팅 설정 스키마 (Phase 24) */
+const ModelTierSchema = z.enum(['haiku', 'sonnet', 'opus']);
+
+const RoleProfileSchema = z.strictObject({
+  preferred: ModelTierSchema,
+  maxTokens: z.number().int().positive(),
+});
+
+const RoutingRolesSchema = z
+  .strictObject({
+    fetch: RoleProfileSchema,
+    chat: RoleProfileSchema,
+    analysis: RoleProfileSchema,
+    summarize: RoleProfileSchema,
+  })
+  .partial();
+
+const RoutingConfigSchema = z.strictObject({
+  roles: RoutingRolesSchema.optional(),
+  automation: z
+    .strictObject({
+      strictFallback: z.boolean(),
+      logVerbose: z.boolean(),
+    })
+    .partial()
+    .optional(),
+  override: z
+    .strictObject({
+      allowClientHint: z.boolean(),
+      respectMinModel: z.boolean(),
+    })
+    .partial()
+    .optional(),
+});
+
 /** 금융 설정 스키마 */
 const FinanceSchema = z.strictObject({
   dataProviders: z.array(DataProviderSchema).optional(),
@@ -154,6 +189,7 @@ export const FinClawConfigSchema = z.strictObject({
     })
     .optional(),
   finance: FinanceSchema.optional(),
+  routing: RoutingConfigSchema.optional(),
   meta: z
     .strictObject({
       lastTouchedVersion: z.string().optional(),

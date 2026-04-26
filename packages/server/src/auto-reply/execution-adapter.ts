@@ -3,6 +3,7 @@ import type {
   AliasIndex,
   ExecutionToolDispatcher,
   ModelCatalog,
+  ModelPricing,
   ProfileHealthMonitor,
   Runner,
   StreamEventListener,
@@ -15,20 +16,60 @@ import type {
   ContentBlock,
   ConversationMessage,
   ModelRef,
+  ModelTier,
   SessionKey,
   StorageAdapter,
   Timestamp,
 } from '@finclaw/types';
 import {
+  calculateEstimatedCost,
   DEFAULT_FALLBACK_TRIGGERS,
   ExecutionToolDispatcher as ToolDispatcherCtor,
+  modelIdToTier,
   resolveModel,
   runWithModelFallback,
+  type ModelRole,
 } from '@finclaw/agent';
 import { createAgentId } from '@finclaw/types';
 import { randomUUID } from 'node:crypto';
 import type { PipelineMsgContext } from './pipeline-context.js';
+import type { RouterHelper } from './router-helper.js';
 import { buildDispatcher } from './tool-dispatcher-adapter.js';
+
+/**
+ * 메시지 본문에서 role 추론 — 단순 키워드 휴리스틱 (Phase 24).
+ *
+ * 우선순위: analysis > fetch > chat
+ * - analysis: 명시적 분석/판단 요청 → Opus + 모든 도구 (analyze_market 포함)
+ * - fetch: 단순 시세/가격/환율/차트 조회 → Haiku + haiku-min 도구 11개
+ * - chat: 그 외 일반 대화 → Sonnet + sonnet-min 이하 도구 13개
+ *
+ * 사용자 직접 입력이라 모호하므로 키워드 명시 시에만 fetch/analysis 로 승격.
+ */
+const ANALYSIS_KEYWORDS = ['분석', '리포트', '판단', 'analyze', 'report'];
+const FETCH_KEYWORDS = [
+  '얼마',
+  '가격',
+  '시세',
+  '주가',
+  '환율',
+  '차트',
+  'price',
+  'quote',
+  'rate',
+  'chart',
+];
+
+function inferRole(message: string): ModelRole {
+  const lower = message.toLowerCase();
+  if (ANALYSIS_KEYWORDS.some((kw) => lower.includes(kw))) {
+    return 'analysis';
+  }
+  if (FETCH_KEYWORDS.some((kw) => lower.includes(kw))) {
+    return 'fetch';
+  }
+  return 'chat';
+}
 
 /**
  * Phase 9 AI 실행 엔진과의 브릿지 인터페이스
@@ -99,6 +140,11 @@ export interface RunnerExecutionAdapterDeps {
   readonly profileHealth?: ProfileHealthMonitor;
   /** 건강 기록용 프로필 ID (기본 'default') */
   readonly profileId?: string;
+  /**
+   * 모델 라우터 (Phase 24) — 제공 시 execute/executeForTui 가 매 요청마다
+   * 라우터 결정 모델로 fallbackChain/defaultModel 을 대체한다.
+   */
+  readonly router?: RouterHelper;
 }
 
 /**
@@ -129,27 +175,49 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
     const profileId = this.deps.profileId ?? 'default';
     const startedAt = Date.now();
 
+    // Phase 24: 라우터가 주입되면 매 요청마다 role 추론 + 라우팅 결정.
+    const routed = this.applyRouting({
+      message: ctx.normalizedBody,
+      toolDefinitions,
+      automation: false,
+    });
+
+    // Phase 24 보정: 라우터가 결정한 allowedToolNames 만 LLM 에 노출.
+    // minModel 미충족 도구는 자동 제외되어 chat → Opus 부작용 방지.
+    const exposedTools = routed
+      ? toolDefinitions.filter((t) => routed.allowedToolNames.includes(t.name))
+      : toolDefinitions;
+
     const buildParams = (model: ModelRef): AgentRunParams => ({
       agentId: this.defaultAgentId,
       sessionKey: ctx.sessionKey,
       model,
       systemPrompt: this.deps.systemPrompt,
       messages: [...priorMessages, userMessage],
-      tools: toolDefinitions.length > 0 ? [...toolDefinitions] : undefined,
+      tools: exposedTools.length > 0 ? [...exposedTools] : undefined,
       abortSignal: signal,
     });
 
     try {
       const { modelCatalog, modelAliasIndex, fallbackChain } = this.deps;
+      // 라우터 활성: routed.chain (라우터 결정 모델 선두) + routed.floor 로 floor 미만 차단.
+      // 라우터 미주입: 기존 fallbackChain 동작 (floor 없음 → AggregateError).
+      const effectiveChain = routed?.chain ?? fallbackChain;
+      const effectiveFloor = routed?.floor;
       let result;
-      if (modelCatalog && modelAliasIndex && fallbackChain && fallbackChain.length > 0) {
+      // Phase 24 E: byModel 집계용 — fallback path 에서만 정확한 modelId/pricing 확보.
+      let usedModelId: string | undefined;
+      let usedPricing: ModelPricing | undefined;
+      let usedIsFallback = false;
+      if (modelCatalog && modelAliasIndex && effectiveChain && effectiveChain.length > 0) {
         const fallback = await runWithModelFallback(
           {
-            models: fallbackChain.map((raw) => ({ raw })),
+            models: effectiveChain.map((raw) => ({ raw })),
             maxRetriesPerModel: 1,
             retryBaseDelayMs: 500,
             fallbackOn: DEFAULT_FALLBACK_TRIGGERS,
             abortSignal: signal,
+            floor: effectiveFloor,
           },
           async (resolved) => {
             const model: ModelRef = {
@@ -167,6 +235,9 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
           (ref) => resolveModel(ref, modelCatalog, modelAliasIndex),
         );
         result = fallback.result;
+        usedModelId = fallback.modelUsed.modelId;
+        usedPricing = fallback.modelUsed.entry.pricing;
+        usedIsFallback = fallback.modelUsed.modelId !== effectiveChain[0];
       } else {
         result = await runner.execute(buildParams(this.deps.defaultModel));
       }
@@ -174,7 +245,21 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
       const toolCalls = collectToolCalls(result.messages, startedAt);
       await this.persistHistory(ctx.sessionKey, this.defaultAgentId, result.messages);
 
-      this.deps.profileHealth?.recordResult(profileId, true);
+      if (usedModelId && usedPricing) {
+        this.deps.profileHealth?.recordResult(profileId, {
+          success: true,
+          modelId: usedModelId,
+          tokens: { input: result.usage.inputTokens, output: result.usage.outputTokens },
+          costUsd: calculateEstimatedCost(
+            result.usage.inputTokens,
+            result.usage.outputTokens,
+            usedPricing,
+          ),
+          isFallback: usedIsFallback,
+        });
+      } else {
+        this.deps.profileHealth?.recordResult(profileId, true);
+      }
 
       return {
         content: extractAssistantText(result.messages),
@@ -206,6 +291,8 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
       readonly agentId: AgentId;
       readonly userMessage: string;
       readonly model: ModelRef;
+      /** Phase 24: 사용자 modelHint (chat.send.modelHint 또는 chat.start.model 유래) */
+      readonly userHint?: ModelTier;
     },
     listener: StreamEventListener | undefined,
     signal: AbortSignal,
@@ -220,19 +307,80 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
     });
     const runner = this.deps.runnerFactory(dispatcher);
 
-    const params: AgentRunParams = {
+    // Phase 24: 라우터 주입 시 chain + floor 로 runWithModelFallback 사용.
+    // 미주입 시 input.model 단일 사용 (기존 동작).
+    const routed = this.applyTuiRouting({ input, toolDefinitions });
+
+    // Phase 24 보정: 라우터 결정 allowedToolNames 만 LLM 노출.
+    const exposedTools = routed
+      ? toolDefinitions.filter((t) => routed.allowedToolNames.includes(t.name))
+      : toolDefinitions;
+
+    const buildParams = (model: ModelRef): AgentRunParams => ({
       agentId: input.agentId,
       sessionKey: input.sessionKey,
-      model: input.model,
+      model,
       systemPrompt: this.deps.systemPrompt,
       messages: [...priorMessages, userMessage],
-      tools: toolDefinitions.length > 0 ? [...toolDefinitions] : undefined,
+      tools: exposedTools.length > 0 ? [...exposedTools] : undefined,
       abortSignal: signal,
-    };
+    });
 
-    const result = await runner.execute(params, listener);
+    const { modelCatalog, modelAliasIndex } = this.deps;
+    let result;
+    // Phase 24 E: byModel 집계용 — fallback path 에서만 정확한 modelId/pricing.
+    let usedModelId: string | undefined;
+    let usedPricing: ModelPricing | undefined;
+    let usedIsFallback = false;
+    if (routed && modelCatalog && modelAliasIndex) {
+      const fallback = await runWithModelFallback(
+        {
+          models: routed.chain.map((raw) => ({ raw })),
+          maxRetriesPerModel: 1,
+          retryBaseDelayMs: 500,
+          fallbackOn: DEFAULT_FALLBACK_TRIGGERS,
+          abortSignal: signal,
+          floor: routed.floor,
+        },
+        async (resolved) => {
+          const model: ModelRef = {
+            ...input.model,
+            provider: resolved.provider,
+            model: resolved.modelId,
+            contextWindow: resolved.entry.contextWindow,
+            maxOutputTokens: Math.min(resolved.entry.maxOutputTokens, input.model.maxOutputTokens),
+          };
+          return runner.execute(buildParams(model), listener);
+        },
+        (ref) => resolveModel(ref, modelCatalog, modelAliasIndex),
+      );
+      result = fallback.result;
+      usedModelId = fallback.modelUsed.modelId;
+      usedPricing = fallback.modelUsed.entry.pricing;
+      usedIsFallback = fallback.modelUsed.modelId !== routed.chain[0];
+    } else {
+      result = await runner.execute(buildParams(input.model), listener);
+    }
 
     await this.persistHistory(input.sessionKey, input.agentId, result.messages);
+
+    // Phase 24 E: TUI/chat.send 도 모델 분포에 기록 (execute() 와 동일 정책).
+    const profileId = this.deps.profileId ?? 'default';
+    if (usedModelId && usedPricing) {
+      this.deps.profileHealth?.recordResult(profileId, {
+        success: true,
+        modelId: usedModelId,
+        tokens: { input: result.usage.inputTokens, output: result.usage.outputTokens },
+        costUsd: calculateEstimatedCost(
+          result.usage.inputTokens,
+          result.usage.outputTokens,
+          usedPricing,
+        ),
+        isFallback: usedIsFallback,
+      });
+    } else {
+      this.deps.profileHealth?.recordResult(profileId, true);
+    }
 
     return {
       messageId: randomUUID(),
@@ -242,6 +390,92 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
         outputTokens: result.usage.outputTokens,
       },
     };
+  }
+
+  /**
+   * Phase 24: 라우팅 결정 → fallback chain + allowedToolNames 구성. 라우터 미주입 시 undefined.
+   *
+   * - chain: 라우터 결정 모델을 선두로, 나머지 fallbackChain 모델을 뒤에 배치.
+   * - floor: routing 결정의 floor (밀스톤 D, B6).
+   * - allowedToolNames: effectiveTier 보다 minModel 이 높은 도구를 LLM 노출에서 제외 (Phase 24 보정).
+   */
+  private applyRouting(args: {
+    readonly message: string;
+    readonly toolDefinitions: readonly { readonly name: string }[];
+    readonly automation: boolean;
+  }):
+    | {
+        readonly chain: readonly string[];
+        readonly floor: ModelTier;
+        readonly allowedToolNames: ReadonlyArray<string>;
+      }
+    | undefined {
+    const router = this.deps.router;
+    if (!router) {
+      return undefined;
+    }
+    const role = inferRole(args.message);
+    const toolNames = args.toolDefinitions.map((t) => t.name);
+    const { decision, modelId, allowedToolNames } = router({
+      role,
+      toolNames,
+      automation: args.automation,
+    });
+    this.deps.logger?.info('pipeline.routed', {
+      event: 'pipeline.routed',
+      role,
+      chosenModel: modelId,
+      floor: decision.floor,
+      reason: decision.reason,
+      filteredCount: toolNames.length - allowedToolNames.length,
+    });
+    const others = (this.deps.fallbackChain ?? []).filter((m) => m !== modelId);
+    return { chain: [modelId, ...others], floor: decision.floor, allowedToolNames };
+  }
+
+  /**
+   * Phase 24: TUI/RPC chat.send 전용 라우팅. 메시지로 role 추론 + userHint 적용.
+   * 라우터 미주입 시 undefined — 호출자가 input.model 그대로 사용.
+   */
+  private applyTuiRouting(args: {
+    readonly input: {
+      readonly model: ModelRef;
+      readonly userMessage: string;
+      readonly userHint?: ModelTier;
+    };
+    readonly toolDefinitions: readonly { readonly name: string }[];
+  }):
+    | {
+        readonly chain: readonly string[];
+        readonly floor: ModelTier;
+        readonly allowedToolNames: ReadonlyArray<string>;
+      }
+    | undefined {
+    const router = this.deps.router;
+    if (!router) {
+      return undefined;
+    }
+    // Phase 24 보정: chat.send 도 메시지 키워드로 role 추론 — "분석해줘" 같은 분석 요청을
+    // chat 세션에서도 처리. role='chat' 강제는 의도 무시 가능성.
+    const role = inferRole(args.input.userMessage);
+    const userHint = args.input.userHint ?? modelIdToTier(args.input.model.model);
+    const toolNames = args.toolDefinitions.map((t) => t.name);
+    const { decision, modelId, allowedToolNames } = router({
+      role,
+      toolNames,
+      userHint,
+    });
+    this.deps.logger?.info('tui.routed', {
+      event: 'tui.routed',
+      role,
+      userHint,
+      chosenModel: modelId,
+      floor: decision.floor,
+      reason: decision.reason,
+      filteredCount: toolNames.length - allowedToolNames.length,
+    });
+    const others = (this.deps.fallbackChain ?? []).filter((m) => m !== modelId);
+    return { chain: [modelId, ...others], floor: decision.floor, allowedToolNames };
   }
 
   private async loadHistory(sessionKey: SessionKey): Promise<ConversationMessage[]> {

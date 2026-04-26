@@ -1,9 +1,33 @@
+import type { ModelTier } from '@finclaw/types';
 // packages/agent/src/models/fallback.ts
 import { sleepWithAbort, computeBackoff, getEventBus } from '@finclaw/infra';
 import type { FallbackReason } from '../errors.js';
 import type { UnresolvedModelRef, ResolvedModel } from './selection.js';
 import { classifyFallbackError } from '../errors.js';
 import { getBreakerForProvider } from '../providers/adapter.js';
+import { modelIdToTier } from './routing.js';
+
+/**
+ * 라우터 결정 floor 미만으로 fallback 이 차단된 경우 throw 되는 에러 (Phase 24, B6).
+ *
+ * 예: analyze_market 도구 (minModel=opus) 가 활성화된 요청에서 Opus 가 503 일 때,
+ * Sonnet/Haiku 로 다운그레이드하면 도구 동작이 보장되지 않으므로 차단하고 사용자에게
+ * 한국어 안내 ("Opus 모델 일시 불가, 약 60초 후 재시도") 를 반환한다.
+ */
+export class ModelFloorExhaustedError extends Error {
+  constructor(
+    public readonly floor: ModelTier,
+    public readonly chainAttempted: ReadonlyArray<string>,
+    public readonly lastError: Error,
+  ) {
+    super(
+      `No model at or above tier ${floor} succeeded. Attempted: ${chainAttempted.join(', ') || '(none — chain empty after floor filter)'}`,
+    );
+    this.name = 'ModelFloorExhaustedError';
+  }
+}
+
+const TIER_RANK: Record<ModelTier, number> = { haiku: 0, sonnet: 1, opus: 2 };
 
 /** FallbackReason의 별칭 (fallback 컨텍스트 가독성용) */
 export type FallbackTrigger = FallbackReason;
@@ -20,6 +44,16 @@ export interface FallbackConfig {
   readonly fallbackOn: readonly FallbackTrigger[];
   /** 취소 시그널 */
   readonly abortSignal?: AbortSignal;
+  /**
+   * Phase 24: 라우터 floor 하한선 — 이 tier 미만 모델은 chain 에서 제거되고
+   * 모두 실패 시 ModelFloorExhaustedError throw. 미설정 시 기존 동작
+   * (AggregateError) 유지.
+   */
+  readonly floor?: ModelTier;
+  /** Phase 24: 자동화 컨텍스트 — strictFallback 와 함께 floor tier 외 시도 차단 */
+  readonly automation?: boolean;
+  /** Phase 24: 자동화 시 동일 tier 만 시도 (escalation/degradation 모두 차단) */
+  readonly strictFallback?: boolean;
 }
 
 /** 폴백 실행 결과 */
@@ -65,9 +99,30 @@ export async function runWithModelFallback<T>(
   const attempts: FallbackAttempt[] = [];
   const bus = getEventBus();
 
+  // Phase 24: floor 가 지정되면 chain 사전 필터링.
+  // - floor 미만 모델 제거 (ex: floor=opus → sonnet/haiku 제거)
+  // - automation + strictFallback: 동일 tier 만 (ex: floor=sonnet 이고 chain=[opus,sonnet] → [sonnet])
+  let effectiveModels: readonly UnresolvedModelRef[] = config.models;
+  if (config.floor !== undefined) {
+    const floorRank = TIER_RANK[config.floor];
+    effectiveModels = config.models.filter((m) => TIER_RANK[modelIdToTier(m.raw)] >= floorRank);
+    if (config.automation && config.strictFallback) {
+      effectiveModels = effectiveModels.filter(
+        (m) => TIER_RANK[modelIdToTier(m.raw)] === floorRank,
+      );
+    }
+    if (effectiveModels.length === 0) {
+      throw new ModelFloorExhaustedError(
+        config.floor,
+        [],
+        new Error('chain is empty after floor filter'),
+      );
+    }
+  }
+
   let previousModelId: string | undefined;
 
-  for (const modelRef of config.models) {
+  for (const modelRef of effectiveModels) {
     const resolved = resolve(modelRef);
 
     // CircuitBreaker: open 상태면 이 제공자 건너뛰기
@@ -133,12 +188,19 @@ export async function runWithModelFallback<T>(
 
   // 모든 모델 소진
   const lastError = attempts.at(-1)?.error ?? new Error('All models exhausted');
-  const modelIds = config.models.map((m) => m.raw);
+  const modelIds = effectiveModels.map((m) => m.raw);
   bus.emit('model:exhausted', modelIds, lastError.message);
+
+  // Phase 24: floor 가 지정된 경우 ModelFloorExhaustedError 로 wrap
+  // (caller 가 user-facing 한국어 메시지로 변환).
+  if (config.floor !== undefined) {
+    throw new ModelFloorExhaustedError(config.floor, modelIds, lastError);
+  }
+
   throw new AggregateError(
     attempts
       .filter((a): a is FallbackAttempt & { error: Error } => a.error !== undefined)
       .map((a) => a.error),
-    `All ${config.models.length} models failed: ${lastError.message}`,
+    `All ${effectiveModels.length} models failed: ${lastError.message}`,
   );
 }

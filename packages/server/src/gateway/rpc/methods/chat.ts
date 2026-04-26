@@ -1,5 +1,7 @@
+import type { FinClawLogger } from '@finclaw/infra';
+import type { AgentId, ModelRef, ModelTier, SessionKey, StorageAdapter } from '@finclaw/types';
 // packages/server/src/gateway/rpc/methods/chat.ts
-import type { AgentId, ModelRef, SessionKey, StorageAdapter } from '@finclaw/types';
+import { ModelFloorExhaustedError } from '@finclaw/agent';
 import { createAgentId, createSessionKey } from '@finclaw/types';
 import { z } from 'zod/v4';
 import type { RunnerExecutionAdapter } from '../../../auto-reply/execution-adapter.js';
@@ -21,7 +23,16 @@ export interface ChatMethodsDeps {
   readonly storage: StorageAdapter;
   readonly defaultModel: ModelRef;
   readonly adapter: RunnerExecutionAdapter;
+  /** Phase 24 D: ModelFloorExhaustedError 캐치 시 구조화 로그용 (선택). */
+  readonly logger?: FinClawLogger;
 }
+
+/**
+ * Phase 24 D: 사용자에게 보이는 한국어 에러 메시지 (B6 — minModel 보호).
+ * RPC dispatcher 가 INTERNAL_ERROR 코드로 wrap, message 만 client 에 노출됨.
+ */
+const FLOOR_EXHAUSTED_MESSAGE = (tier: string): string =>
+  `요청에 필요한 모델(${tier} 이상)이 일시적으로 사용 불가합니다. 약 60초 후 다시 시도해 주세요.`;
 
 /**
  * 세션 키 유도 — TUI 사용자 + 에이전트 단위로 대화 이력을 공유.
@@ -61,7 +72,7 @@ export function createChatMethods(deps: ChatMethodsDeps): readonly RpcMethodHand
     };
 
   const sendHandler: RpcMethodHandler<
-    { sessionId: string; message: string; idempotencyKey?: string },
+    { sessionId: string; message: string; idempotencyKey?: string; modelHint?: ModelTier },
     { messageId: string }
   > = {
     method: 'chat.send',
@@ -71,6 +82,8 @@ export function createChatMethods(deps: ChatMethodsDeps): readonly RpcMethodHand
       sessionId: z.string(),
       message: z.string(),
       idempotencyKey: z.string().optional(),
+      // Phase 24: 사용자가 모델 선호 표현 가능 (allowClientHint=true 일 때만 유효)
+      modelHint: z.enum(['haiku', 'sonnet', 'opus']).optional(),
     }),
     async execute(params) {
       const session = deps.registry.getSession(params.sessionId);
@@ -90,17 +103,31 @@ export function createChatMethods(deps: ChatMethodsDeps): readonly RpcMethodHand
       ]);
 
       const agentId: AgentId = createAgentId(session.agentId);
-      const result = await deps.adapter.executeForTui(
-        {
-          sessionKey: session.sessionKey,
-          agentId,
-          userMessage: params.message,
-          model: session.model,
-        },
-        listener,
-        signal,
-      );
-      return { messageId: result.messageId };
+      try {
+        const result = await deps.adapter.executeForTui(
+          {
+            sessionKey: session.sessionKey,
+            agentId,
+            userMessage: params.message,
+            model: session.model,
+            userHint: params.modelHint,
+          },
+          listener,
+          signal,
+        );
+        return { messageId: result.messageId };
+      } catch (err) {
+        if (err instanceof ModelFloorExhaustedError) {
+          deps.logger?.warn('chat.send.floor_exhausted', {
+            event: 'chat.send.floor_exhausted',
+            sessionId: session.sessionId,
+            floor: err.floor,
+            attempted: err.chainAttempted,
+          });
+          throw new Error(FLOOR_EXHAUSTED_MESSAGE(err.floor), { cause: err });
+        }
+        throw err;
+      }
     },
   };
 

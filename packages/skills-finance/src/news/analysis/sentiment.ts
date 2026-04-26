@@ -1,6 +1,6 @@
 // packages/skills-finance/src/news/analysis/sentiment.ts
 import type Anthropic from '@anthropic-ai/sdk';
-import type { NewsItem, NewsSentiment } from '@finclaw/types';
+import type { ModelRef, NewsItem, NewsSentiment } from '@finclaw/types';
 import { z } from 'zod/v4';
 
 const LlmSentimentSchema = z.object({
@@ -13,14 +13,15 @@ const LlmSentimentSchema = z.object({
 export async function analyzeSentiment(
   news: readonly NewsItem[],
   client?: Anthropic,
+  modelRef?: ModelRef,
 ): Promise<NewsSentiment> {
   // 1단계: 규칙 기반 빠른 분석
   const ruleBasedScore = computeRuleBasedSentiment(news);
 
   // 2단계: LLM 사용 가능하면 정밀 분석
-  if (client) {
+  if (client && modelRef) {
     try {
-      return await computeLlmSentiment(client, news, ruleBasedScore);
+      return await computeLlmSentiment(client, news, ruleBasedScore, modelRef);
     } catch {
       // LLM 실패 시 규칙 기반 폴백
     }
@@ -115,6 +116,7 @@ async function computeLlmSentiment(
   client: Anthropic,
   news: readonly NewsItem[],
   ruleBasedHint: number,
+  modelRef: ModelRef,
 ): Promise<NewsSentiment> {
   const digest = news
     .slice(0, 15)
@@ -122,7 +124,7 @@ async function computeLlmSentiment(
     .join('\n');
 
   const message = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: modelRef.model,
     max_tokens: 200,
     system: `You are a financial sentiment analyzer. Analyze news headlines and return JSON: {"score": -1.0~1.0, "label": "very_negative|negative|neutral|positive|very_positive", "confidence": 0.0~1.0}. Rule-based hint score: ${ruleBasedHint.toFixed(2)}.`,
     messages: [{ role: 'user', content: `Analyze sentiment of these headlines:\n${digest}` }],

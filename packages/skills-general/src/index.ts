@@ -1,4 +1,5 @@
 import type { ToolRegistry } from '@finclaw/agent';
+import type { SkillMetadata } from '@finclaw/types';
 // packages/skills-general/src/index.ts
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -35,7 +36,7 @@ export function registerGeneralTools(
   });
 }
 
-export const GENERAL_SKILL_METADATA = {
+export const GENERAL_SKILL_METADATA: SkillMetadata = {
   name: 'general',
   description: '타임존 시각, 웹 콘텐츠 조회, 로컬 파일 읽기 등 범용 도구 모음.',
   version: '1.0.0',
@@ -43,8 +44,12 @@ export const GENERAL_SKILL_METADATA = {
     env: [],
     optionalEnv: ['FINCLAW_FILE_ROOT'],
   },
-  tools: ['get_current_datetime', 'web_fetch', 'read_local_file'],
-} as const;
+  tools: [
+    { name: 'get_current_datetime', minModel: 'haiku', reason: '순수 함수' },
+    { name: 'web_fetch', minModel: 'haiku', reason: '단순 fetch' },
+    { name: 'read_local_file', minModel: 'haiku', reason: '단순 fetch' },
+  ],
+};
 
 function resolveDefaultFileRoot(): string {
   return process.env.FINCLAW_FILE_ROOT ?? join(homedir(), '.finclaw', 'workspace');

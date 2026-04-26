@@ -18,3 +18,6 @@ export { RPC_ERROR_CODES } from './gateway.js';
 export { createTimestamp, createSessionKey, createAgentId, createChannelId } from './common.js';
 
 export { createTickerSymbol, createCurrencyCode } from './finance.js';
+
+// 스킬 메타 정규화 (Phase 24)
+export { normalizeSkillMetadata } from './skill.js';

@@ -10,7 +10,35 @@ export interface FinClawConfig {
   models?: ModelsConfig;
   plugins?: PluginsConfig;
   finance?: FinanceConfig;
+  routing?: RoutingConfig;
   meta?: ConfigMeta;
+}
+
+/** 모델 티어 — 라우팅 결정의 단위 (Phase 24) */
+export type ModelTier = 'haiku' | 'sonnet' | 'opus';
+
+/** role 별 모델 선호 + 출력 토큰 상한 */
+export interface RoleProfile {
+  readonly preferred: ModelTier;
+  readonly maxTokens: number;
+}
+
+/** 모델 역할 라우팅 설정 — 요청 role(A) + 도구 minModel(C) → max(A,C) */
+export interface RoutingConfig {
+  readonly roles: {
+    readonly fetch: RoleProfile;
+    readonly chat: RoleProfile;
+    readonly analysis: RoleProfile;
+    readonly summarize: RoleProfile;
+  };
+  readonly automation: {
+    readonly strictFallback: boolean;
+    readonly logVerbose: boolean;
+  };
+  readonly override: {
+    readonly allowClientHint: boolean;
+    readonly respectMinModel: boolean;
+  };
 }
 
 export interface GatewayConfig {

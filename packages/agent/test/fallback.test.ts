@@ -3,7 +3,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { FallbackConfig } from '../src/models/fallback.js';
 import type { ResolvedModel } from '../src/models/selection.js';
 import { FailoverError } from '../src/errors.js';
-import { runWithModelFallback, DEFAULT_FALLBACK_TRIGGERS } from '../src/models/fallback.js';
+import {
+  runWithModelFallback,
+  DEFAULT_FALLBACK_TRIGGERS,
+  ModelFloorExhaustedError,
+} from '../src/models/fallback.js';
 import { resetBreakers } from '../src/providers/adapter.js';
 
 // 모킹 helpers
@@ -132,4 +136,132 @@ describe('runWithModelFallback', () => {
     expect(result.modelUsed.modelId).toBe('model-b');
     expect(fn).toHaveBeenCalledTimes(2);
   });
+});
+
+// Phase 24 (B6) — floor 기반 fallback 차단
+describe('runWithModelFallback — floor (B6)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    resetBreakers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    resetEventBus();
+    resetBreakers();
+  });
+
+  // 실제 모델 ID 를 사용해야 modelIdToTier 가 'opus'/'sonnet'/'haiku' 키워드를 감지.
+  const tieredResolveMap: Record<string, ResolvedModel> = {
+    'claude-opus-4-7': makeResolved('claude-opus-4-7'),
+    'claude-sonnet-4-6': makeResolved('claude-sonnet-4-6'),
+    'claude-haiku-4-5-20251001': makeResolved('claude-haiku-4-5-20251001'),
+  };
+  const tieredResolve = (ref: { raw: string }) => tieredResolveMap[ref.raw];
+
+  function tieredConfig(overrides: Partial<FallbackConfig>): FallbackConfig {
+    return {
+      models: [
+        { raw: 'claude-opus-4-7' },
+        { raw: 'claude-sonnet-4-6' },
+        { raw: 'claude-haiku-4-5-20251001' },
+      ],
+      maxRetriesPerModel: 0,
+      retryBaseDelayMs: 10,
+      fallbackOn: [...DEFAULT_FALLBACK_TRIGGERS],
+      ...overrides,
+    };
+  }
+
+  it('floor=opus + Opus 503 → ModelFloorExhaustedError, Sonnet/Haiku 시도 안 함', async () => {
+    const err = new FailoverError('503', 'server-error', { statusCode: 503 });
+    const fn = vi.fn().mockRejectedValue(err);
+
+    await expect(
+      runWithModelFallback(tieredConfig({ floor: 'opus' }), fn, tieredResolve),
+    ).rejects.toThrow(ModelFloorExhaustedError);
+    expect(fn).toHaveBeenCalledTimes(1); // Opus 만 시도
+  });
+
+  it('floor=opus 차단 시 ModelFloorExhaustedError.floor 와 chainAttempted 보존', async () => {
+    const err = new FailoverError('503', 'server-error', { statusCode: 503 });
+    const fn = vi.fn().mockRejectedValue(err);
+
+    try {
+      await runWithModelFallback(tieredConfig({ floor: 'opus' }), fn, tieredResolve);
+      expect.fail('should have thrown');
+    } catch (e) {
+      expect(e).toBeInstanceOf(ModelFloorExhaustedError);
+      const fe = e as ModelFloorExhaustedError;
+      expect(fe.floor).toBe('opus');
+      expect(fe.chainAttempted).toEqual(['claude-opus-4-7']);
+      expect(fe.lastError.message).toContain('503');
+    }
+  });
+
+  it('floor=sonnet + Opus 503 → Sonnet 으로 fallback 후 성공', async () => {
+    const err = new FailoverError('503', 'server-error', { statusCode: 503 });
+    const fn = vi.fn().mockRejectedValueOnce(err).mockResolvedValueOnce('sonnet-ok');
+
+    const promise = runWithModelFallback(tieredConfig({ floor: 'sonnet' }), fn, tieredResolve);
+    await vi.advanceTimersByTimeAsync(100);
+    const result = await promise;
+
+    expect(result.result).toBe('sonnet-ok');
+    expect(result.modelUsed.modelId).toBe('claude-sonnet-4-6');
+    expect(fn).toHaveBeenCalledTimes(2); // Opus → Sonnet
+  });
+
+  it('floor=haiku + Opus/Sonnet 503 → Haiku 까지 정상 fallback', async () => {
+    const err = new FailoverError('503', 'server-error', { statusCode: 503 });
+    const fn = vi
+      .fn()
+      .mockRejectedValueOnce(err)
+      .mockRejectedValueOnce(err)
+      .mockResolvedValueOnce('haiku-ok');
+
+    const promise = runWithModelFallback(tieredConfig({ floor: 'haiku' }), fn, tieredResolve);
+    await vi.advanceTimersByTimeAsync(200);
+    const result = await promise;
+
+    expect(result.result).toBe('haiku-ok');
+    expect(result.modelUsed.modelId).toBe('claude-haiku-4-5-20251001');
+    expect(fn).toHaveBeenCalledTimes(3);
+  });
+
+  it('floor=opus 인데 chain 에 opus 가 없으면 즉시 ModelFloorExhaustedError (chain 빈)', async () => {
+    const fn = vi.fn();
+
+    await expect(
+      runWithModelFallback(
+        {
+          models: [{ raw: 'claude-haiku-4-5-20251001' }],
+          maxRetriesPerModel: 0,
+          retryBaseDelayMs: 10,
+          fallbackOn: [...DEFAULT_FALLBACK_TRIGGERS],
+          floor: 'opus',
+        },
+        fn,
+        tieredResolve,
+      ),
+    ).rejects.toThrow(ModelFloorExhaustedError);
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  it('automation=true + strictFallback + floor=sonnet → Sonnet 만 시도, Opus/Haiku 무시', async () => {
+    const err = new FailoverError('503', 'server-error', { statusCode: 503 });
+    const fn = vi.fn().mockRejectedValue(err);
+
+    await expect(
+      runWithModelFallback(
+        tieredConfig({ floor: 'sonnet', automation: true, strictFallback: true }),
+        fn,
+        tieredResolve,
+      ),
+    ).rejects.toThrow(ModelFloorExhaustedError);
+    expect(fn).toHaveBeenCalledTimes(1); // Sonnet 만
+  });
+
+  // floor 미설정 시 AggregateError 동작은 위 'runWithModelFallback' 그룹의
+  // '모든 모델 소진 → AggregateError' 케이스로 커버됨 — 중복 회피.
 });
