@@ -19,6 +19,12 @@ export interface RouteDecision {
   readonly floor: ModelTier;
   readonly reason: string;
   readonly overriddenBy: 'role' | 'tool_min' | 'hint';
+  /**
+   * effectiveTier(role + hint) 보다 minModel 이 높아 LLM 에 노출하지 않는 도구를
+   * 제외한 결과. respectMinModel=true (기본) 일 때 활성. 호출자는 이 목록만 LLM 에
+   * 전달해 minModel 미충족 도구 호출을 원천 차단한다.
+   */
+  readonly allowedTools: ReadonlyArray<ToolMetadata>;
 }
 
 export function maxTier(...tiers: ReadonlyArray<ModelTier | undefined>): ModelTier {
@@ -45,15 +51,30 @@ export function computeFloor(tools: ReadonlyArray<ToolMetadata>): ModelTier {
 
 /**
  * 역할(A) + 도구 최대 minModel(C) + 사용자 hint → 모델 결정.
- * - hint 미지정: max(A, C)
- * - hint 지정: max(hint, C) — hint 가 C 미만이면 C 가 승리 (B6 결정: respectMinModel)
- * - cfg.override.allowClientHint=false → hint 무시
+ *
+ * Phase 24 보정 (chat → Opus 부작용 해결):
+ * - effectiveTier = hint ?? role.preferred (도구 무관)
+ * - respectMinModel=true (기본): effectiveTier 보다 minModel 이 높은 도구는 **필터** 하여
+ *   LLM 에 노출하지 않음. 결과적으로 floor ≤ effectiveTier 가 보장되어 chosen=effectiveTier.
+ *   "안녕" 같은 일반 채팅에서 analyze_market(opus) 가 등록되어도 sonnet 으로 라우팅됨.
+ * - respectMinModel=false: 필터 없이 모든 도구가 LLM 에 노출되고, 도구 minModel 이 높으면
+ *   chosen 이 그 tier 로 승격 (이전 B6 동작 — 안전 우선, 비용 ↑).
+ * - cfg.override.allowClientHint=false → hint 무시.
  */
 export function resolveModelForRequest(req: RouteRequest, cfg: RoutingConfig): RouteDecision {
   const a = cfg.roles[req.role].preferred;
-  const c = computeFloor(req.availableTools);
   const hintAllowed = cfg.override.allowClientHint;
   const hint = hintAllowed ? req.userHint : undefined;
+  const effectiveTier = hint ?? a;
+
+  // Phase 24 보정: respectMinModel=true 면 effectiveTier 보다 높은 minModel 도구를 필터.
+  // false 면 기존 동작 (도구 그대로, tier 가 도구 minModel 로 승격 가능).
+  const respectMinModel = cfg.override.respectMinModel;
+  const allowedTools = respectMinModel
+    ? req.availableTools.filter((t) => TIER_RANK[t.minModel ?? 'haiku'] <= TIER_RANK[effectiveTier])
+    : req.availableTools;
+
+  const c = computeFloor(allowedTools);
 
   let chosen: ModelTier;
   let overriddenBy: 'role' | 'tool_min' | 'hint';
@@ -71,6 +92,7 @@ export function resolveModelForRequest(req: RouteRequest, cfg: RoutingConfig): R
     floor: c,
     reason: `A=${a}, C=${c}, hint=${hint ?? 'none'} → ${chosen} (${overriddenBy})`,
     overriddenBy,
+    allowedTools,
   };
 }
 
@@ -91,6 +113,11 @@ export interface RouterHelperRequest {
 export interface RouterHelperResult {
   readonly decision: RouteDecision;
   readonly modelId: string;
+  /**
+   * decision.allowedTools 의 이름 배열 (호출자 편의). adapter / agent.ts 가 LLM 에 전달할
+   * 도구 정의를 이 목록으로 필터하면 minModel 미충족 도구가 LLM 에 노출되지 않음.
+   */
+  readonly allowedToolNames: ReadonlyArray<string>;
 }
 
 export type RouterHelper = (req: RouterHelperRequest) => RouterHelperResult;

@@ -25,7 +25,11 @@ export function makeRouterHelper(
       },
       routingConfig,
     );
-    return { decision, modelId: tierToModelId(decision.tier) };
+    return {
+      decision,
+      modelId: tierToModelId(decision.tier),
+      allowedToolNames: decision.allowedTools.map((t) => t.name),
+    };
   };
 }
 

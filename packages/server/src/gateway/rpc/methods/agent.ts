@@ -192,8 +192,14 @@ export function registerAgentMethods(deps: AgentRpcDeps): void {
             chosenModel: decision.modelId,
             floor: decision.decision.floor,
             reason: decision.decision.reason,
+            filteredCount: toolDefinitions.length - decision.allowedToolNames.length,
           });
         }
+
+        // Phase 24 보정: 라우터 결정 allowedToolNames 만 LLM 노출.
+        const exposedTools = decision
+          ? toolDefinitions.filter((t) => decision.allowedToolNames.includes(t.name))
+          : toolDefinitions;
 
         try {
           const buildRunParams = (model: ModelRef): AgentRunParams => ({
@@ -202,7 +208,7 @@ export function registerAgentMethods(deps: AgentRpcDeps): void {
             model,
             systemPrompt: deps.systemPrompt,
             messages: [userMessage],
-            tools: toolDefinitions.length > 0 ? [...toolDefinitions] : undefined,
+            tools: exposedTools.length > 0 ? [...exposedTools] : undefined,
             abortSignal: abortController.signal,
           });
 

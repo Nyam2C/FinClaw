@@ -90,56 +90,82 @@ describe('resolveModelForRequest — 기본 (role 단독)', () => {
   });
 });
 
-describe('resolveModelForRequest — 도구 minModel 승격 (B6)', () => {
-  it('role=fetch + analyze_market → opus (tool_min 승리)', () => {
+describe('resolveModelForRequest — 도구 필터링 (Phase 24 보정)', () => {
+  it('role=fetch + analyze_market → analyze_market 필터, tier=haiku', () => {
     const r = resolveModelForRequest(
       { role: 'fetch', availableTools: [PRICE_TOOL, ANALYZE_TOOL] },
       DEFAULT_CFG,
     );
-    expect(r.tier).toBe('opus');
-    expect(r.floor).toBe('opus');
-    expect(r.overriddenBy).toBe('tool_min');
+    expect(r.tier).toBe('haiku');
+    expect(r.floor).toBe('haiku');
+    expect(r.overriddenBy).toBe('role');
+    expect(r.allowedTools.map((t) => t.name)).toEqual(['get_stock_price']);
   });
 
-  it('role=chat + portfolio → sonnet (role 과 동률, role 표기)', () => {
+  it('role=chat + portfolio → 둘 다 통과, tier=sonnet', () => {
     const r = resolveModelForRequest(
       { role: 'chat', availableTools: [PORTFOLIO_TOOL] },
       DEFAULT_CFG,
     );
     expect(r.tier).toBe('sonnet');
     expect(r.overriddenBy).toBe('role');
+    expect(r.allowedTools).toHaveLength(1);
   });
 
-  it('role=fetch + portfolio → sonnet (tool_min)', () => {
+  it('role=fetch + portfolio → portfolio 필터, tier=haiku', () => {
     const r = resolveModelForRequest(
       { role: 'fetch', availableTools: [PORTFOLIO_TOOL] },
       DEFAULT_CFG,
     );
-    expect(r.tier).toBe('sonnet');
+    expect(r.tier).toBe('haiku');
+    expect(r.overriddenBy).toBe('role');
+    expect(r.allowedTools).toEqual([]);
+  });
+
+  it('role=analysis + 모든 도구 → 필터 없음, tier=opus', () => {
+    const r = resolveModelForRequest(
+      { role: 'analysis', availableTools: [PRICE_TOOL, PORTFOLIO_TOOL, ANALYZE_TOOL] },
+      DEFAULT_CFG,
+    );
+    expect(r.tier).toBe('opus');
+    expect(r.allowedTools).toHaveLength(3);
+  });
+
+  it('respectMinModel=false: 필터 비활성, tool_min 승격 (legacy 동작)', () => {
+    const cfg = { ...DEFAULT_CFG, override: { ...DEFAULT_CFG.override, respectMinModel: false } };
+    const r = resolveModelForRequest(
+      { role: 'fetch', availableTools: [PRICE_TOOL, ANALYZE_TOOL] },
+      cfg,
+    );
+    expect(r.tier).toBe('opus');
+    expect(r.floor).toBe('opus');
     expect(r.overriddenBy).toBe('tool_min');
+    expect(r.allowedTools).toHaveLength(2); // 필터 X
   });
 });
 
 describe('resolveModelForRequest — userHint (B2)', () => {
-  it('hint=opus + role=chat → opus (hint 승리)', () => {
+  it('hint=opus + role=chat → opus (hint 승리, 모든 도구 통과)', () => {
     const r = resolveModelForRequest(
-      { role: 'chat', availableTools: [PRICE_TOOL], userHint: 'opus' },
+      { role: 'chat', availableTools: [PRICE_TOOL, ANALYZE_TOOL], userHint: 'opus' },
       DEFAULT_CFG,
     );
     expect(r.tier).toBe('opus');
     expect(r.overriddenBy).toBe('hint');
+    expect(r.allowedTools).toHaveLength(2); // hint=opus 가 모든 도구 허용
   });
 
-  it('hint=haiku + analyze_market → opus (C 승리, hint 무시)', () => {
+  it('hint=haiku + analyze_market → analyze_market 필터, tier=haiku', () => {
     const r = resolveModelForRequest(
       { role: 'chat', availableTools: [ANALYZE_TOOL], userHint: 'haiku' },
       DEFAULT_CFG,
     );
-    expect(r.tier).toBe('opus');
-    expect(r.overriddenBy).toBe('tool_min');
+    expect(r.tier).toBe('haiku');
+    expect(r.overriddenBy).toBe('hint');
+    expect(r.allowedTools).toEqual([]); // analyze_market 노출 차단
   });
 
-  it('hint=haiku + role=analysis (A=opus) + 도구 없음 → haiku (hint 가 A 보다 약하지만 hint 승리)', () => {
+  it('hint=haiku + role=analysis (A=opus) + 도구 없음 → haiku (hint 승리)', () => {
     const r = resolveModelForRequest(
       { role: 'analysis', availableTools: [], userHint: 'haiku' },
       DEFAULT_CFG,
@@ -156,9 +182,20 @@ describe('resolveModelForRequest — userHint (B2)', () => {
   });
 });
 
-describe('resolveModelForRequest — floor 반환 (밀스톤 D 준비)', () => {
-  it('analyze_market → floor=opus', () => {
+describe('resolveModelForRequest — floor 반환 (밀스톤 D 연계)', () => {
+  it('analyze_market 만 + role=chat → 필터 후 floor=haiku (analyze_market 제외)', () => {
     const r = resolveModelForRequest({ role: 'chat', availableTools: [ANALYZE_TOOL] }, DEFAULT_CFG);
+    expect(r.tier).toBe('sonnet');
+    expect(r.floor).toBe('haiku');
+    expect(r.allowedTools).toEqual([]);
+  });
+
+  it('analyze_market + role=analysis → 필터 X, floor=opus (Opus 503 시 chain 차단)', () => {
+    const r = resolveModelForRequest(
+      { role: 'analysis', availableTools: [ANALYZE_TOOL] },
+      DEFAULT_CFG,
+    );
+    expect(r.tier).toBe('opus');
     expect(r.floor).toBe('opus');
   });
 
@@ -167,13 +204,13 @@ describe('resolveModelForRequest — floor 반환 (밀스톤 D 준비)', () => {
     expect(r.floor).toBe('haiku');
   });
 
-  it('floor 는 chosen tier 와 무관하게 도구 minModel 만 반영', () => {
+  it('floor 는 필터 후 도구 minModel 의 max', () => {
     const r = resolveModelForRequest(
       { role: 'analysis', availableTools: [PRICE_TOOL], userHint: 'opus' },
       DEFAULT_CFG,
     );
     expect(r.tier).toBe('opus');
-    expect(r.floor).toBe('haiku');
+    expect(r.floor).toBe('haiku'); // PRICE_TOOL.minModel='haiku'
   });
 });
 
@@ -213,16 +250,16 @@ describe('tierToModelId / modelIdToTier 왕복', () => {
 });
 
 describe('reason 문자열 — 감사 로그용', () => {
-  it('A/C/hint 모두 포함', () => {
+  it('A/C/hint 모두 포함 (필터 후 C 는 allowedTools 기반)', () => {
     const r = resolveModelForRequest(
       { role: 'chat', availableTools: [ANALYZE_TOOL], userHint: 'haiku' },
       DEFAULT_CFG,
     );
     expect(r.reason).toContain('A=sonnet');
-    expect(r.reason).toContain('C=opus');
+    expect(r.reason).toContain('C=haiku'); // analyze_market 필터됐으므로 floor=haiku
     expect(r.reason).toContain('hint=haiku');
-    expect(r.reason).toContain('opus');
-    expect(r.reason).toContain('tool_min');
+    expect(r.reason).toContain('haiku');
+    expect(r.reason).toContain('hint');
   });
 
   it('hint 미지정 시 hint=none', () => {
