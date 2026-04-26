@@ -834,6 +834,190 @@ node -e "
 
 ---
 
+## 밀스톤 D — 분석 프롬프트 강화 (Lv.2)
+
+### D1. EDIT `packages/skills-finance/src/news/types.ts` — 타입 확장
+
+기존 `MarketAnalysis` 인터페이스 (line 45-54) 를 다음 블록으로 교체:
+
+```ts
+export type RiskCategory = 'regulatory' | 'market' | 'company' | 'macro';
+export type Probability = 'low' | 'medium' | 'high';
+export type Impact = 'high' | 'medium' | 'low';
+export type TimeHorizon = 'short_term' | 'medium_term' | 'long_term';
+
+export interface AnalysisFactor {
+  readonly factor: string;
+  readonly impact: Impact;
+  readonly evidence: readonly number[];
+}
+export interface AnalysisRisk {
+  readonly risk: string;
+  readonly category: RiskCategory;
+  readonly probability: Probability;
+  readonly evidence: readonly number[];
+}
+export interface AnalysisOpportunity {
+  readonly opportunity: string;
+  readonly impact: Impact;
+  readonly evidence: readonly number[];
+}
+export interface AnalysisSentiment {
+  readonly score: number;
+  readonly label: NewsSentiment['label'];
+  readonly confidence: number;
+  readonly rationale: string;
+  readonly evidence: readonly number[];
+}
+
+export interface MarketAnalysis {
+  readonly summary: string;
+  readonly summaryEvidence: readonly number[];
+  readonly sentiment: AnalysisSentiment;
+  readonly keyFactors: readonly AnalysisFactor[];
+  readonly risks: readonly AnalysisRisk[];
+  readonly opportunities: readonly AnalysisOpportunity[];
+  readonly timeHorizon: TimeHorizon;
+  readonly dataGaps: readonly string[];
+  readonly analyzedAt: Date;
+  readonly newsCount: number;
+  readonly symbols: readonly TickerSymbol[];
+}
+```
+
+검증: `pnpm typecheck` (D1 단독 시 market-analysis.ts 컴파일 오류 — D2 에서 동시 해결).
+
+### D2. EDIT `packages/skills-finance/src/news/analysis/market-analysis.ts` — Zod 스키마 갱신
+
+`AnalysisResponseSchema` (line 17-27) 를 새 스키마로 교체:
+
+```ts
+const EvidenceSchema = z.array(z.number().int().min(1)).default([]);
+const ImpactSchema = z.enum(['high', 'medium', 'low']);
+const ProbabilitySchema = z.enum(['low', 'medium', 'high']);
+const RiskCategorySchema = z.enum(['regulatory', 'market', 'company', 'macro']);
+const TimeHorizonSchema = z.enum(['short_term', 'medium_term', 'long_term']);
+
+const AnalysisResponseSchema = z.object({
+  summary: z.string(),
+  summaryEvidence: EvidenceSchema,
+  sentiment: z.object({
+    score: z.number().min(-1).max(1),
+    label: z.enum(['very_negative', 'negative', 'neutral', 'positive', 'very_positive']),
+    confidence: z.number().min(0).max(1),
+    rationale: z.string(),
+    evidence: EvidenceSchema,
+  }),
+  keyFactors: z.array(
+    z.object({ factor: z.string(), impact: ImpactSchema, evidence: EvidenceSchema }),
+  ),
+  risks: z.array(
+    z.object({
+      risk: z.string(),
+      category: RiskCategorySchema,
+      probability: ProbabilitySchema,
+      evidence: EvidenceSchema,
+    }),
+  ),
+  opportunities: z.array(
+    z.object({ opportunity: z.string(), impact: ImpactSchema, evidence: EvidenceSchema }),
+  ),
+  timeHorizon: TimeHorizonSchema,
+  dataGaps: z.array(z.string()).default([]),
+});
+```
+
+검증: `pnpm typecheck` (D1+D2 후 0 errors).
+
+### D3. REWRITE `packages/skills-finance/prompts/news/analyze.{depth}.{lang}.md` × 6
+
+일괄 생성 스크립트:
+
+```sh
+node <<'NODE'
+const fs = require('fs');
+const HEADER = `You are FinClaw's market analyst. You operate under these principles:
+1. CITE EVERY CLAIM. Every factor/risk/opportunity must include an \`evidence\` array of article numbers (1-indexed) from the input. If a claim has no article support, do not include it.
+2. NO HALLUCINATION. If insufficient news to support a field, return an empty array. Add an explanatory entry to \`dataGaps\` (e.g., "earnings_guidance_missing").
+3. QUANTIFY UNCERTAINTY. Use \`confidence\` (0.0-1.0) and explicit probability labels (low|medium|high). Avoid vague language ("might", "perhaps").
+4. SCOPE STRICTLY READ-ONLY. Describe market state and factors only. Never recommend buy/sell actions.
+5. CONCISE. No greetings, no preamble, no markdown around the JSON.`;
+
+const FOOTER = `Response format (strict JSON, no markdown, no code fences):
+{
+  "summary": "전체 시장 전망 요약 (출력 언어로)",
+  "summaryEvidence": [1, 3, 7],
+  "sentiment": {
+    "score": -1.0~1.0,
+    "label": "very_negative|negative|neutral|positive|very_positive",
+    "confidence": 0.0~1.0,
+    "rationale": "왜 이 점수인지 1-2 문장 (출력 언어로)",
+    "evidence": [2, 5]
+  },
+  "keyFactors": [
+    { "factor": "핵심 요인 텍스트", "impact": "high|medium|low", "evidence": [1] }
+  ],
+  "risks": [
+    { "risk": "리스크 텍스트", "category": "regulatory|market|company|macro", "probability": "low|medium|high", "evidence": [3] }
+  ],
+  "opportunities": [
+    { "opportunity": "기회 텍스트", "impact": "high|medium|low", "evidence": [4] }
+  ],
+  "timeHorizon": "short_term|medium_term|long_term",
+  "dataGaps": ["부족한 정보 영역 식별자 (예: earnings_guidance_missing)"]
+}`;
+
+const lang = { ko: 'Output language: 한국어', en: 'Output language: English' };
+const depth = {
+  brief: 'Detail level: brief — 1-2 sentences per text field. keyFactors/risks/opportunities ≤ 3 each.',
+  standard: 'Detail level: standard — moderate paragraphs. keyFactors/risks/opportunities ≤ 5 each.',
+  detailed: 'Detail level: detailed — multiple paragraphs in summary. keyFactors/risks/opportunities ≤ 8 each.',
+};
+
+const dir = 'packages/skills-finance/prompts/news';
+for (const d of ['brief','standard','detailed']) for (const l of ['ko','en']) {
+  const body = HEADER + '\n\n' + lang[l] + '\n' + depth[d] + '\n\n' + FOOTER + '\n';
+  fs.writeFileSync(`${dir}/analyze.${d}.${l}.md`, body);
+  console.log('wrote', `analyze.${d}.${l}.md`, Buffer.byteLength(body));
+}
+NODE
+```
+
+### D4. EDIT `packages/skills-finance/src/news/analysis/__tests__/analyze-prompts.test.ts`
+
+기존 C 버전 (5 필드 회귀 가드) 을 신규 schema 검증으로 전체 교체:
+
+- 6 변형 × 페르소나 5대 원칙 헤더 키워드 (`CITE EVERY CLAIM`, `NO HALLUCINATION`, `QUANTIFY UNCERTAINTY`, `READ-ONLY`, `CONCISE`)
+- 6 변형 × 신규 schema 필드명 명세 (`summary`, `summaryEvidence`, `sentiment`, `keyFactors`, `risks`, `opportunities`, `timeHorizon`, `dataGaps`, `rationale`, `evidence`, `impact`, `category`, `probability`)
+- mock 응답이 신규 Zod 통과
+- 잘못된 risk category 거부
+- flat string `keyFactors` (옛 schema) 거부 — 회귀 가드
+- `rationale` 누락 / `timeHorizon` 누락 거부
+
+또한 D 가 directive 문구를 바꿨으므로 `prompt-loader.test.ts` 의 다음 두 케이스 갱신:
+
+- `language directive switches per language`: `'한국어로'` → `'Output language: 한국어'`, `'Write analysis results in English'` → `'Output language: English'`
+- `depth directive switches per depth`: `'1-2 sentences'` → `'Detail level: brief'`, `'thorough analysis'` → `'Detail level: detailed'`, `'moderate-length'` → `'Detail level: standard'`
+
+### D5. 밀스톤 D 검증
+
+```sh
+pnpm typecheck                                  # 0 errors
+pnpm lint                                       # 0 warnings
+pnpm test                                       # 모든 테스트 통과
+bash scripts/verify-pack-includes-prompts.sh    # tarball 검증 (파일 수 동일)
+node -e "
+import('./packages/skills-finance/dist/news/analysis/prompt-loader.js').then(async (m) => {
+  const text = await m.loadAnalysisPrompt('standard', 'ko');
+  if (!text.includes('CITE EVERY CLAIM')) throw new Error('persona header missing');
+  if (!text.includes('summaryEvidence')) throw new Error('new schema field missing');
+  console.log('OK: enriched prompt loaded');
+});
+"
+```
+
+---
+
 ## 최종 완료 체크리스트 (plan.md 완료 조건 매핑)
 
 ```sh

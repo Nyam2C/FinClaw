@@ -14,16 +14,46 @@ export interface AnalysisRecordDeps {
   readonly modelCatalog?: ModelCatalog;
 }
 
+const EvidenceSchema = z.array(z.number().int().min(1)).default([]);
+const ImpactSchema = z.enum(['high', 'medium', 'low']);
+const ProbabilitySchema = z.enum(['low', 'medium', 'high']);
+const RiskCategorySchema = z.enum(['regulatory', 'market', 'company', 'macro']);
+const TimeHorizonSchema = z.enum(['short_term', 'medium_term', 'long_term']);
+
 const AnalysisResponseSchema = z.object({
   summary: z.string(),
+  summaryEvidence: EvidenceSchema,
   sentiment: z.object({
     score: z.number().min(-1).max(1),
     label: z.enum(['very_negative', 'negative', 'neutral', 'positive', 'very_positive']),
     confidence: z.number().min(0).max(1),
+    rationale: z.string(),
+    evidence: EvidenceSchema,
   }),
-  keyFactors: z.array(z.string()),
-  risks: z.array(z.string()),
-  opportunities: z.array(z.string()),
+  keyFactors: z.array(
+    z.object({
+      factor: z.string(),
+      impact: ImpactSchema,
+      evidence: EvidenceSchema,
+    }),
+  ),
+  risks: z.array(
+    z.object({
+      risk: z.string(),
+      category: RiskCategorySchema,
+      probability: ProbabilitySchema,
+      evidence: EvidenceSchema,
+    }),
+  ),
+  opportunities: z.array(
+    z.object({
+      opportunity: z.string(),
+      impact: ImpactSchema,
+      evidence: EvidenceSchema,
+    }),
+  ),
+  timeHorizon: TimeHorizonSchema,
+  dataGaps: z.array(z.string()).default([]),
 });
 
 export async function analyzeMarket(

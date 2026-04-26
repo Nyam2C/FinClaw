@@ -22,16 +22,14 @@ describe('loadAnalysisPrompt', () => {
   }
 
   it('language directive switches per language', async () => {
-    expect(await loadAnalysisPrompt('standard', 'ko')).toContain('한국어로');
-    expect(await loadAnalysisPrompt('standard', 'en')).toContain(
-      'Write analysis results in English',
-    );
+    expect(await loadAnalysisPrompt('standard', 'ko')).toContain('Output language: 한국어');
+    expect(await loadAnalysisPrompt('standard', 'en')).toContain('Output language: English');
   });
 
   it('depth directive switches per depth', async () => {
-    expect(await loadAnalysisPrompt('brief', 'ko')).toContain('1-2 sentences');
-    expect(await loadAnalysisPrompt('detailed', 'ko')).toContain('thorough analysis');
-    expect(await loadAnalysisPrompt('standard', 'ko')).toContain('moderate-length');
+    expect(await loadAnalysisPrompt('brief', 'ko')).toContain('Detail level: brief');
+    expect(await loadAnalysisPrompt('detailed', 'ko')).toContain('Detail level: detailed');
+    expect(await loadAnalysisPrompt('standard', 'ko')).toContain('Detail level: standard');
   });
 });
 
