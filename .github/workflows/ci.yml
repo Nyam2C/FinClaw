@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         # packageManager 필드에서 pnpm 버전 자동 감지
 
       - uses: actions/setup-node@v4

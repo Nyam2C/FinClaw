@@ -17,7 +17,7 @@ jobs:
           fetch-depth: 0
 
       # ── 빌드 검증 (ci.yml과 동일 파이프라인) ──
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v4
         with:
