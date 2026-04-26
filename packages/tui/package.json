@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@finclaw/types": "workspace:*",
-    "ink": "^6.0.0",
+    "ink": "^7.0.1",
     "ink-text-input": "^6.0.0",
     "react": "^19.0.0",
     "ws": "^8.19.0"
