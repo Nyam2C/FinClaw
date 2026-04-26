@@ -75,7 +75,12 @@ export type { CooldownEntry } from './auth/cooldown.js';
 
 // ─── auth: health ───
 export { ProfileHealthMonitor } from './auth/health.js';
-export type { ProfileHealthStatus, HealthThresholds } from './auth/health.js';
+export type {
+  HealthThresholds,
+  ModelStats,
+  ProfileHealthStatus,
+  RecordOptions,
+} from './auth/health.js';
 
 // ─── auth: profiles ───
 export { InMemoryAuthProfileStore } from './auth/profiles.js';

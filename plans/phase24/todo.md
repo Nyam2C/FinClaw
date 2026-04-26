@@ -1669,7 +1669,7 @@ executor: async (newsItems, options) => {
 
 ---
 
-## Todo 25: recordResult 시그니처 영향 범위 사전 측정 ⬜
+## Todo 25: recordResult 시그니처 영향 범위 사전 측정 ✅
 
 ### 파일 목록
 
@@ -1697,7 +1697,7 @@ grep -rn "recordResult\|\.recordResult(" packages/ --include="*.ts" --exclude-di
 
 ---
 
-## Todo 26: ProfileState.byModel 신설 + recordResult 시그니처 ⬜
+## Todo 26: ProfileState.byModel 신설 + recordResult 시그니처 ✅
 
 ### 파일 목록
 
@@ -1777,7 +1777,7 @@ pnpm --filter @finclaw/agent test health
 
 ---
 
-## Todo 27: runner.ts 구조화 로그 + 시스템 프롬프트 가이드 ⬜
+## Todo 27: runner.ts 구조화 로그 + 시스템 프롬프트 가이드 ✅
 
 ### 파일 목록
 
@@ -1832,7 +1832,7 @@ pnpm --filter @finclaw/agent test health
 
 ---
 
-## Todo 28: status-command 모델 분포 출력 ⬜
+## Todo 28: status-command 모델 분포 출력 ✅
 
 ### 파일 목록
 
@@ -1870,7 +1870,7 @@ return [, /* 기존 출력 */ modelLines].join('\n');
 
 ---
 
-## Todo 29: 스킬 recordResult 호출 추가 ⬜
+## Todo 29: 스킬 recordResult 호출 추가 ✅
 
 ### 파일 목록
 

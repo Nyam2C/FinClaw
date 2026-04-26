@@ -1,6 +1,7 @@
 // packages/server/src/auto-reply/commands/status.ts
-import type { ProfileHealthMonitor, ToolRegistry } from '@finclaw/agent';
+import type { ModelStats, ProfileHealthMonitor, ToolRegistry } from '@finclaw/agent';
 import type { ModelRef, StorageAdapter } from '@finclaw/types';
+import { modelIdToTier } from '@finclaw/agent';
 import type { CommandExecutor } from './registry.js';
 import { getAllChannelDocks } from '../../channels/index.js';
 
@@ -25,7 +26,12 @@ export function createStatusCommand(deps: StatusCommandDeps): CommandExecutor {
         .map((d) => d.id as string)
         .join(', ') || 'none';
     const modelId = deps.defaultModel?.model ?? 'unknown';
-    const healthLabel = deps.profileHealth?.getHealth(deps.profileId ?? 'default') ?? 'unknown';
+    const profileId = deps.profileId ?? 'default';
+    const healthLabel = deps.profileHealth?.getHealth(profileId) ?? 'unknown';
+
+    // Phase 24 E: 최근 1시간 모델 분포 + fallback 카운트.
+    const breakdown = deps.profileHealth?.getModelBreakdown(profileId, 60 * 60 * 1000);
+    const breakdownLines = formatBreakdown(breakdown);
 
     return {
       content: [
@@ -36,8 +42,34 @@ export function createStatusCommand(deps: StatusCommandDeps): CommandExecutor {
         `- 지원 채널: ${channelIds}`,
         `- 현재 모델: ${modelId}`,
         `- API 상태: ${healthLabel}`,
+        ...breakdownLines,
       ].join('\n'),
       ephemeral: false,
     };
   };
+}
+
+function formatBreakdown(breakdown: Map<string, ModelStats> | undefined): string[] {
+  if (!breakdown || breakdown.size === 0) {
+    return [];
+  }
+  const lines: string[] = ['', '**최근 1시간 모델 분포**'];
+  let totalFallbacks = 0;
+  // tier 순서대로 (haiku → sonnet → opus) 정렬.
+  const tierRank: Record<string, number> = { haiku: 0, sonnet: 1, opus: 2 };
+  const sorted = [...breakdown.entries()].toSorted(
+    ([a], [b]) => tierRank[modelIdToTier(a)] - tierRank[modelIdToTier(b)],
+  );
+  for (const [modelId, stats] of sorted) {
+    const tier = modelIdToTier(modelId);
+    const bar = '▓'.repeat(Math.min(10, Math.max(1, Math.round(stats.calls / 5))));
+    lines.push(
+      `- ${tier.padEnd(7)} ${bar.padEnd(10)} ${stats.calls}회 ($${stats.totalCostUsd.toFixed(4)})`,
+    );
+    totalFallbacks += stats.fallbacks;
+  }
+  if (totalFallbacks > 0) {
+    lines.push(`- Fallback 발동: ${totalFallbacks}회`);
+  }
+  return lines;
 }

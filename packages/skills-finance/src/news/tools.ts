@@ -1,6 +1,8 @@
 import type Anthropic from '@anthropic-ai/sdk';
 // packages/skills-finance/src/news/tools.ts
 import type {
+  ModelCatalog,
+  ProfileHealthMonitor,
   RegisteredToolDefinition,
   RouterHelper,
   ToolExecutor,
@@ -95,6 +97,10 @@ export function registerAnalyzeMarketTool(
     client: Anthropic;
     router?: RouterHelper;
     defaultModel?: ModelRef;
+    /** Phase 24 E: 스킬 내부 LLM 비용·건강 기록용 (선택) */
+    profileHealth?: ProfileHealthMonitor;
+    profileId?: string;
+    modelCatalog?: ModelCatalog;
   },
 ): void {
   const def: RegisteredToolDefinition = {
@@ -156,7 +162,11 @@ export function registerAnalyzeMarketTool(
         modelRef = { ...baseModel, model: modelId };
       }
 
-      const analysis = await analyzeMarket(deps.client, news, options, modelRef);
+      const analysis = await analyzeMarket(deps.client, news, options, modelRef, {
+        profileHealth: deps.profileHealth,
+        profileId: deps.profileId,
+        modelCatalog: deps.modelCatalog,
+      });
       return { content: JSON.stringify(analysis), isError: false };
     } catch (error) {
       // Phase 24 D: floor 차단은 도구 실패가 아니라 인프라 일시 불가 — 외부 LLM 이

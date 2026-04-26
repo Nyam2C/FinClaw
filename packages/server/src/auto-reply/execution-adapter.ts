@@ -3,6 +3,7 @@ import type {
   AliasIndex,
   ExecutionToolDispatcher,
   ModelCatalog,
+  ModelPricing,
   ProfileHealthMonitor,
   Runner,
   StreamEventListener,
@@ -21,6 +22,7 @@ import type {
   Timestamp,
 } from '@finclaw/types';
 import {
+  calculateEstimatedCost,
   DEFAULT_FALLBACK_TRIGGERS,
   ExecutionToolDispatcher as ToolDispatcherCtor,
   modelIdToTier,
@@ -176,6 +178,10 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
       const effectiveChain = routed?.chain ?? fallbackChain;
       const effectiveFloor = routed?.floor;
       let result;
+      // Phase 24 E: byModel 집계용 — fallback path 에서만 정확한 modelId/pricing 확보.
+      let usedModelId: string | undefined;
+      let usedPricing: ModelPricing | undefined;
+      let usedIsFallback = false;
       if (modelCatalog && modelAliasIndex && effectiveChain && effectiveChain.length > 0) {
         const fallback = await runWithModelFallback(
           {
@@ -202,6 +208,9 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
           (ref) => resolveModel(ref, modelCatalog, modelAliasIndex),
         );
         result = fallback.result;
+        usedModelId = fallback.modelUsed.modelId;
+        usedPricing = fallback.modelUsed.entry.pricing;
+        usedIsFallback = fallback.modelUsed.modelId !== effectiveChain[0];
       } else {
         result = await runner.execute(buildParams(this.deps.defaultModel));
       }
@@ -209,7 +218,21 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
       const toolCalls = collectToolCalls(result.messages, startedAt);
       await this.persistHistory(ctx.sessionKey, this.defaultAgentId, result.messages);
 
-      this.deps.profileHealth?.recordResult(profileId, true);
+      if (usedModelId && usedPricing) {
+        this.deps.profileHealth?.recordResult(profileId, {
+          success: true,
+          modelId: usedModelId,
+          tokens: { input: result.usage.inputTokens, output: result.usage.outputTokens },
+          costUsd: calculateEstimatedCost(
+            result.usage.inputTokens,
+            result.usage.outputTokens,
+            usedPricing,
+          ),
+          isFallback: usedIsFallback,
+        });
+      } else {
+        this.deps.profileHealth?.recordResult(profileId, true);
+      }
 
       return {
         content: extractAssistantText(result.messages),
@@ -273,6 +296,10 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
 
     const { modelCatalog, modelAliasIndex } = this.deps;
     let result;
+    // Phase 24 E: byModel 집계용 — fallback path 에서만 정확한 modelId/pricing.
+    let usedModelId: string | undefined;
+    let usedPricing: ModelPricing | undefined;
+    let usedIsFallback = false;
     if (routed && modelCatalog && modelAliasIndex) {
       const fallback = await runWithModelFallback(
         {
@@ -296,11 +323,32 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
         (ref) => resolveModel(ref, modelCatalog, modelAliasIndex),
       );
       result = fallback.result;
+      usedModelId = fallback.modelUsed.modelId;
+      usedPricing = fallback.modelUsed.entry.pricing;
+      usedIsFallback = fallback.modelUsed.modelId !== routed.chain[0];
     } else {
       result = await runner.execute(buildParams(input.model), listener);
     }
 
     await this.persistHistory(input.sessionKey, input.agentId, result.messages);
+
+    // Phase 24 E: TUI/chat.send 도 모델 분포에 기록 (execute() 와 동일 정책).
+    const profileId = this.deps.profileId ?? 'default';
+    if (usedModelId && usedPricing) {
+      this.deps.profileHealth?.recordResult(profileId, {
+        success: true,
+        modelId: usedModelId,
+        tokens: { input: result.usage.inputTokens, output: result.usage.outputTokens },
+        costUsd: calculateEstimatedCost(
+          result.usage.inputTokens,
+          result.usage.outputTokens,
+          usedPricing,
+        ),
+        isFallback: usedIsFallback,
+      });
+    } else {
+      this.deps.profileHealth?.recordResult(profileId, true);
+    }
 
     return {
       messageId: randomUUID(),

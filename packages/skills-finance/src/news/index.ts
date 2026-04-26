@@ -1,5 +1,10 @@
 // packages/skills-finance/src/news/index.ts
-import type { RouterHelper, ToolRegistry } from '@finclaw/agent';
+import type {
+  ModelCatalog,
+  ProfileHealthMonitor,
+  RouterHelper,
+  ToolRegistry,
+} from '@finclaw/agent';
 import type { ModelRef, SkillMetadata } from '@finclaw/types';
 import type { DatabaseSync } from 'node:sqlite';
 import Anthropic from '@anthropic-ai/sdk';
@@ -37,6 +42,12 @@ export interface NewsSkillConfig {
    * 주입 시에도 router 결정 외 다른 ModelRef 필드 (provider, contextWindow 등) 의 출처.
    */
   readonly defaultModel?: ModelRef;
+  /** Phase 24 E: 스킬 내부 LLM 호출 비용·건강을 status 분포에 포함하기 위한 모니터. */
+  readonly profileHealth?: ProfileHealthMonitor;
+  /** Phase 24 E: 스킬 호출 기록의 profileId (기본 'skill-news-analyze'). */
+  readonly profileId?: string;
+  /** Phase 24 E: cost 계산용 카탈로그 (pricing 조회). */
+  readonly modelCatalog?: ModelCatalog;
 }
 
 /** Phase 22: main.ts가 alerts 배선에 재사용할 수 있도록 aggregator 노출 */
@@ -78,6 +89,9 @@ export async function registerNewsTools(
       client,
       router: config.router,
       defaultModel: config.defaultModel,
+      profileHealth: config.profileHealth,
+      profileId: config.profileId,
+      modelCatalog: config.modelCatalog,
     });
   }
 

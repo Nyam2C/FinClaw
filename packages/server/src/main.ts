@@ -104,6 +104,9 @@ const DEFAULT_SYSTEM_PROMPT = [
   '- `get_current_datetime`, `web_fetch`, `read_local_file` — 일반 유틸',
   '',
   '도구가 필요한데 없으면 "도구 X가 필요한데 지금 활성화되어 있지 않다. API 키 확인 바란다"라고 답한다.',
+  '',
+  '## 도구 결과 처리',
+  '도구 결과가 모델 일시 불가 안내(예: "analyze_market 사용 불가: opus 이상 모델…")를 반환하면 가짜 분석을 만들지 말고 어느 모델이 일시 불가하며 약 60초 후 재시도 가능하다는 점을 사용자에게 한국어로 그대로 전달한다.',
 ].join('\n');
 
 export class MissingEnvError extends Error {
@@ -201,6 +204,12 @@ async function main(): Promise<void> {
   const toolRegistry = new InMemoryToolRegistry();
   registerGeneralTools(toolRegistry);
 
+  // 4a. 모델 카탈로그 + 별칭 인덱스 + 프로필 건강 모니터.
+  // (스킬 등록보다 먼저 생성 — Phase 24 E 의 analyze_market 등록 시점에 주입 필요.)
+  const modelCatalog = new InMemoryModelCatalog(BUILT_IN_MODELS);
+  const modelAliasIndex = buildModelAliasIndex(modelCatalog);
+  const profileHealth = new ProfileHealthMonitor();
+
   const alphaVantageKey = process.env.ALPHA_VANTAGE_KEY;
   const coinGeckoKey = process.env.COINGECKO_API_KEY;
 
@@ -226,6 +235,10 @@ async function main(): Promise<void> {
       anthropicApiKey: anthropicKey,
       router: routerHelper,
       defaultModel: DEFAULT_MODEL,
+      // Phase 24 E: 스킬 내부 analyze_market LLM 호출도 status 분포에 포함.
+      profileHealth,
+      profileId: 'default',
+      modelCatalog,
     });
     logger.info('News tools registered');
   } else if (marketHandle) {
@@ -259,12 +272,7 @@ async function main(): Promise<void> {
       laneManager: lanes,
     });
 
-  // 4. 모델 카탈로그 + 폴백 체인 + 프로필 건강 모니터
-  const modelCatalog = new InMemoryModelCatalog(BUILT_IN_MODELS);
-  const modelAliasIndex = buildModelAliasIndex(modelCatalog);
-  const profileHealth = new ProfileHealthMonitor();
-
-  // 4a. 실행 어댑터 (storage + toolRegistry 주입 — per-request dispatcher를 빌드)
+  // 4b. 실행 어댑터 (storage + toolRegistry 주입 — per-request dispatcher를 빌드)
   const adapter = new RunnerExecutionAdapter({
     runnerFactory,
     defaultModel: DEFAULT_MODEL,

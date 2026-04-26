@@ -2,6 +2,7 @@ import type { AliasIndex, ModelCatalog, ProfileHealthMonitor, ToolRegistry } fro
 import type { ConcurrencyLane, FinClawLogger } from '@finclaw/infra';
 import type { AgentRunParams, ConversationMessage, ModelRef } from '@finclaw/types';
 import {
+  calculateEstimatedCost,
   DEFAULT_FALLBACK_TRIGGERS,
   ModelFloorExhaustedError,
   resolveModel,
@@ -210,6 +211,10 @@ export function registerAgentMethods(deps: AgentRpcDeps): void {
           let result;
           const catalog = deps.modelCatalog;
           const aliasIndex = deps.modelAliasIndex;
+          // Phase 24 E: byModel 집계용 — fallback path 에서만 정확한 modelId/pricing.
+          let usedModelId: string | undefined;
+          let usedPricing: import('@finclaw/agent').ModelPricing | undefined;
+          let usedIsFallback = false;
           if (decision && catalog && aliasIndex) {
             const others = (deps.fallbackChain ?? []).filter((m) => m !== decision.modelId);
             const chain = [decision.modelId, ...others];
@@ -238,6 +243,9 @@ export function registerAgentMethods(deps: AgentRpcDeps): void {
               (ref) => resolveModel(ref, catalog, aliasIndex),
             );
             result = fallback.result;
+            usedModelId = fallback.modelUsed.modelId;
+            usedPricing = fallback.modelUsed.entry.pricing;
+            usedIsFallback = fallback.modelUsed.modelId !== chain[0];
           } else {
             const modelRef: ModelRef = decision
               ? { ...deps.defaultModel, model: decision.modelId }
@@ -252,7 +260,21 @@ export function registerAgentMethods(deps: AgentRpcDeps): void {
           totalCalls.set(params.agentId, (totalCalls.get(params.agentId) ?? 0) + 1);
           lastCallAt.set(params.agentId, Date.now());
           lastError.delete(params.agentId);
-          deps.profileHealth.recordResult(profileId, true);
+          if (usedModelId && usedPricing) {
+            deps.profileHealth.recordResult(profileId, {
+              success: true,
+              modelId: usedModelId,
+              tokens: { input: result.usage.inputTokens, output: result.usage.outputTokens },
+              costUsd: calculateEstimatedCost(
+                result.usage.inputTokens,
+                result.usage.outputTokens,
+                usedPricing,
+              ),
+              isFallback: usedIsFallback,
+            });
+          } else {
+            deps.profileHealth.recordResult(profileId, true);
+          }
 
           deps.logger.info('agent.run.completed', {
             agentId: params.agentId,
