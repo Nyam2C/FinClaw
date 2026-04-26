@@ -1,12 +1,12 @@
+import { EventEmitter } from 'node:events';
 import type { IncomingMessage } from 'node:http';
 import { resetEventBus } from '@finclaw/infra';
-import { EventEmitter } from 'node:events';
 // packages/server/src/gateway/ws/connection.test.ts
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { z } from 'zod/v4';
 import type { GatewayServerContext } from '../context.js';
-import type { GatewayServerConfig, WsConnection } from '../rpc/types.js';
 import { clearMethods, registerMethod } from '../rpc/index.js';
+import type { GatewayServerConfig, WsConnection } from '../rpc/types.js';
 import { handleWsConnection, sendNotification } from './connection.js';
 
 /** Mock WebSocket */

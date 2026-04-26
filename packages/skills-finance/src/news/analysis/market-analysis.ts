@@ -1,8 +1,8 @@
 // packages/skills-finance/src/news/analysis/market-analysis.ts
 import type Anthropic from '@anthropic-ai/sdk';
 import type { ModelCatalog, ProfileHealthMonitor } from '@finclaw/agent';
-import type { ModelRef, NewsItem } from '@finclaw/types';
 import { calculateEstimatedCost } from '@finclaw/agent';
+import type { ModelRef, NewsItem } from '@finclaw/types';
 import { z } from 'zod/v4';
 import type { MarketAnalysis, AnalysisOptions } from '../types.js';
 

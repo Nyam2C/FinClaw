@@ -1,3 +1,4 @@
+import { DatabaseSync } from 'node:sqlite';
 import type {
   AgentId,
   ConversationMessage,
@@ -6,7 +7,6 @@ import type {
   SessionKey,
   Timestamp,
 } from '@finclaw/types';
-import { DatabaseSync } from 'node:sqlite';
 
 // ─── Internal types ───
 

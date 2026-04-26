@@ -1,8 +1,8 @@
 import { createTickerSymbol } from '@finclaw/types';
 // packages/skills-finance/src/market/normalizer.test.ts
 import { describe, it, expect } from 'vitest';
-import type { ProviderQuoteResponse, ProviderHistoricalResponse } from './types.js';
 import { normalizeQuote, normalizeHistorical } from './normalizer.js';
+import type { ProviderQuoteResponse, ProviderHistoricalResponse } from './types.js';
 
 describe('normalizeQuote', () => {
   describe('alpha-vantage', () => {

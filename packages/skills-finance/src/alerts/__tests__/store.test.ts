@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { AlertStore, CreateAlertInput, PriceCondition } from '../types.js';
 import { createAlertStore } from '../store.js';
+import type { AlertStore, CreateAlertInput, PriceCondition } from '../types.js';
 
 // v3 스키마 DDL (database.ts의 SCHEMA_DDL에서 alerts + alert_history만 추출)
 const SCHEMA_DDL = `

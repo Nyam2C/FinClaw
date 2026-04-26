@@ -1,9 +1,9 @@
-import type { NewsItem } from '@finclaw/types';
+import { createHash } from 'node:crypto';
 // packages/skills-finance/src/news/providers/rss.ts
 import { safeFetch } from '@finclaw/infra';
+import type { NewsItem } from '@finclaw/types';
 import { createTimestamp } from '@finclaw/types';
 import { parseRssFeed } from 'feedsmith';
-import { createHash } from 'node:crypto';
 import type { NewsProvider, NewsQuery } from '../types.js';
 
 const DEFAULT_FEEDS = [

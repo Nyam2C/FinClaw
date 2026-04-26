@@ -1,8 +1,8 @@
-import type { ToolRegistry } from '@finclaw/agent';
-import type { SkillMetadata } from '@finclaw/types';
 // packages/skills-general/src/index.ts
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import type { ToolRegistry } from '@finclaw/agent';
+import type { SkillMetadata } from '@finclaw/types';
 import { registerDatetimeTool } from './datetime.js';
 import { registerFileReadTool } from './file-read.js';
 import { registerWebFetchTool } from './web-fetch.js';

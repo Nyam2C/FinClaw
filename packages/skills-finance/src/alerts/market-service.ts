@@ -1,8 +1,8 @@
 import { createTickerSymbol } from '@finclaw/types';
 import type { MarketCache } from '../market/cache.js';
+import { normalizeQuote } from '../market/normalizer.js';
 import type { ProviderRegistry } from '../market/provider-registry.js';
 import type { AlertMarketService } from './types.js';
-import { normalizeQuote } from '../market/normalizer.js';
 
 export function createAlertMarketService(deps: {
   cache: MarketCache;

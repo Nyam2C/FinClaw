@@ -1,6 +1,3 @@
-// packages/server/src/process/message-router.ts
-import type { InboundMessage, MsgContext, SessionKey, AgentId } from '@finclaw/types';
-import type { FinClawConfig } from '@finclaw/types';
 import {
   Dedupe,
   getEventBus,
@@ -9,6 +6,9 @@ import {
   ConcurrencyLaneManager,
   type LaneId,
 } from '@finclaw/infra';
+// packages/server/src/process/message-router.ts
+import type { InboundMessage, MsgContext, SessionKey, AgentId } from '@finclaw/types';
+import type { FinClawConfig } from '@finclaw/types';
 import { createTimestamp } from '@finclaw/types';
 import { matchBinding, extractBindingRules, type BindingMatch } from './binding-matcher.js';
 import { MessageQueue, type QueueEntry } from './message-queue.js';

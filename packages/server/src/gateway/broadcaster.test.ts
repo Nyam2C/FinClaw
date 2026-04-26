@@ -1,8 +1,8 @@
 import type { StreamEvent } from '@finclaw/agent';
 // packages/server/src/gateway/broadcaster.test.ts
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { WsConnection } from './rpc/types.js';
 import { GatewayBroadcaster } from './broadcaster.js';
+import type { WsConnection } from './rpc/types.js';
 
 function createMockConn(id: string = 'conn-1'): WsConnection {
   const sent: string[] = [];

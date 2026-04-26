@@ -1,6 +1,7 @@
 import type { FinClawLogger, ConcurrencyLane, LaneHandle } from '@finclaw/infra';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { DeliveryDispatcher } from '../delivery.js';
+import { createAlertMonitor } from '../monitor.js';
 import type {
   AlertConditionEvaluator,
   AlertConditionType,
@@ -8,7 +9,6 @@ import type {
   AlertMonitorConfig,
   AlertStore,
 } from '../types.js';
-import { createAlertMonitor } from '../monitor.js';
 
 function mockLogger(): FinClawLogger {
   return {

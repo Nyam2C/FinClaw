@@ -1,4 +1,3 @@
-import type { ToolDefinition } from '@finclaw/types';
 // packages/server/src/auto-reply/tool-dispatcher-adapter.ts
 import {
   ExecutionToolDispatcher,
@@ -6,6 +5,7 @@ import {
   type ToolExecutionContext,
   type ToolRegistry,
 } from '@finclaw/agent';
+import type { ToolDefinition } from '@finclaw/types';
 
 export interface DispatcherContextBase {
   readonly sessionId: string;

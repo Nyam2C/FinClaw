@@ -3,12 +3,12 @@ import type { MsgContext, ChannelPlugin } from '@finclaw/types';
 import { createTimestamp, createSessionKey, createChannelId, createAgentId } from '@finclaw/types';
 import { describe, it, expect, vi } from 'vitest';
 import type { BindingMatch } from '../../process/binding-matcher.js';
-import type { PipelineObserver } from '../observer.js';
-import type { FinanceContextProvider } from '../pipeline-context.js';
 import { registerBuiltInCommands } from '../commands/built-in.js';
 import { InMemoryCommandRegistry } from '../commands/registry.js';
 import { CONTROL_TOKENS } from '../control-tokens.js';
 import { MockExecutionAdapter } from '../execution-adapter.js';
+import type { PipelineObserver } from '../observer.js';
+import type { FinanceContextProvider } from '../pipeline-context.js';
 import { AutoReplyPipeline, type PipelineConfig, type PipelineDependencies } from '../pipeline.js';
 
 function makeLogger(): FinClawLogger {

@@ -1,6 +1,6 @@
+// packages/server/src/gateway/rpc/methods/agent.ts
+import { randomUUID } from 'node:crypto';
 import type { AliasIndex, ModelCatalog, ProfileHealthMonitor, ToolRegistry } from '@finclaw/agent';
-import type { ConcurrencyLane, FinClawLogger } from '@finclaw/infra';
-import type { AgentRunParams, ConversationMessage, ModelRef } from '@finclaw/types';
 import {
   calculateEstimatedCost,
   DEFAULT_FALLBACK_TRIGGERS,
@@ -8,19 +8,19 @@ import {
   resolveModel,
   runWithModelFallback,
 } from '@finclaw/agent';
+import type { ConcurrencyLane, FinClawLogger } from '@finclaw/infra';
+import type { AgentRunParams, ConversationMessage, ModelRef } from '@finclaw/types';
 import { createAgentId, createSessionKey } from '@finclaw/types';
-// packages/server/src/gateway/rpc/methods/agent.ts
-import { randomUUID } from 'node:crypto';
 import { z } from 'zod/v4';
-import type { RouterHelper } from '../../../auto-reply/router-helper.js';
-import type { RpcMethodHandler } from '../types.js';
 import {
   collectToolCalls,
   extractAssistantText,
   type RunnerFactory,
 } from '../../../auto-reply/execution-adapter.js';
+import type { RouterHelper } from '../../../auto-reply/router-helper.js';
 import { buildDispatcher } from '../../../auto-reply/tool-dispatcher-adapter.js';
 import { registerMethod } from '../index.js';
+import type { RpcMethodHandler } from '../types.js';
 
 /** agent.* RPC 메서드 의존성 (main.ts 에서 주입) */
 export interface AgentRpcDeps {

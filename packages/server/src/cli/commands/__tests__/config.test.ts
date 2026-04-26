@@ -1,8 +1,8 @@
 import { Command } from 'commander';
 // packages/server/src/cli/commands/__tests__/config.test.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { CliDeps } from '../../deps.js';
 import { createTestDeps } from '../../__tests__/test-helpers.js';
+import type { CliDeps } from '../../deps.js';
 import { register } from '../config.js';
 
 describe('config command', () => {

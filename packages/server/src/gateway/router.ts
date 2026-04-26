@@ -1,7 +1,7 @@
 // packages/server/src/gateway/router.ts
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { GatewayServerContext } from './context.js';
 import { authenticate } from './auth/index.js';
+import type { GatewayServerContext } from './context.js';
 import { handleCors } from './cors.js';
 import { checkLiveness, checkReadiness } from './health.js';
 import { handleChatCompletions } from './openai-compat/router.js';

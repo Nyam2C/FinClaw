@@ -1,5 +1,5 @@
-import type { ConversationMessage, ContentBlock } from '@finclaw/types';
 import { DatabaseSync } from 'node:sqlite';
+import type { ConversationMessage, ContentBlock } from '@finclaw/types';
 
 // ─── Types ───
 

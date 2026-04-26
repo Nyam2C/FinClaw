@@ -1,4 +1,5 @@
-import type { ChannelPlugin, ConfigValidationIssue, FinClawConfig, ModelRef } from '@finclaw/types';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 // packages/server/src/main.ts
 import {
   AnthropicAdapter,
@@ -35,9 +36,7 @@ import {
 } from '@finclaw/skills-finance';
 import { GENERAL_SKILL_METADATA, registerGeneralTools } from '@finclaw/skills-general';
 import { createStorage } from '@finclaw/storage';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
-import type { GatewayServerConfig } from './gateway/rpc/types.js';
+import type { ChannelPlugin, ConfigValidationIssue, FinClawConfig, ModelRef } from '@finclaw/types';
 import { registerBuiltInCommands } from './auto-reply/commands/built-in.js';
 import { InMemoryCommandRegistry } from './auto-reply/commands/registry.js';
 import { RunnerExecutionAdapter, type RunnerFactory } from './auto-reply/execution-adapter.js';
@@ -45,6 +44,7 @@ import { StubFinanceContextProvider } from './auto-reply/pipeline-context.js';
 import { AutoReplyPipeline } from './auto-reply/pipeline.js';
 import { buildToolMetaIndex, makeRouterHelper } from './auto-reply/router-helper.js';
 import { initChannels } from './channels/index.js';
+import type { GatewayServerConfig } from './gateway/rpc/types.js';
 import { createGatewayServer } from './gateway/server.js';
 import { ProcessLifecycle } from './process/lifecycle.js';
 import { MessageRouter } from './process/message-router.js';

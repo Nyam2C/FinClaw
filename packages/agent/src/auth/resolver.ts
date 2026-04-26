@@ -1,8 +1,8 @@
 // packages/agent/src/auth/resolver.ts
 import { createLogger, getEventBus } from '@finclaw/infra';
+import { maskApiKey } from '../errors.js';
 import type { ProviderId } from '../models/catalog.js';
 import type { AuthProfileStore } from './profiles.js';
-import { maskApiKey } from '../errors.js';
 
 const log = createLogger({ name: 'AuthResolver' });
 

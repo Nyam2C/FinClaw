@@ -1,9 +1,9 @@
 import { resetEventBus } from '@finclaw/infra';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import type { ResolverOptions } from '../src/auth/resolver.js';
 import { CooldownTracker } from '../src/auth/cooldown.js';
 import { ProfileHealthMonitor } from '../src/auth/health.js';
 import { InMemoryAuthProfileStore } from '../src/auth/profiles.js';
+import type { ResolverOptions } from '../src/auth/resolver.js';
 import { resolveApiKeyForProvider } from '../src/auth/resolver.js';
 
 describe('resolveApiKeyForProvider', () => {

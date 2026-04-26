@@ -1,14 +1,14 @@
-import type { FinClawLogger } from '@finclaw/infra';
-import type { AgentId, ModelRef, ModelTier, SessionKey, StorageAdapter } from '@finclaw/types';
 // packages/server/src/gateway/rpc/methods/chat.ts
 import { ModelFloorExhaustedError } from '@finclaw/agent';
+import type { FinClawLogger } from '@finclaw/infra';
+import type { AgentId, ModelRef, ModelTier, SessionKey, StorageAdapter } from '@finclaw/types';
 import { createAgentId, createSessionKey } from '@finclaw/types';
 import { z } from 'zod/v4';
 import type { RunnerExecutionAdapter } from '../../../auto-reply/execution-adapter.js';
 import type { GatewayBroadcaster } from '../../broadcaster.js';
 import type { ChatRegistry } from '../../registry.js';
-import type { RpcMethodHandler, WsConnection } from '../types.js';
 import { registerMethod } from '../index.js';
+import type { RpcMethodHandler, WsConnection } from '../types.js';
 
 /** chat.send 타임아웃 — 긴 도구 체인에서도 안전하도록 60초. */
 const CHAT_SEND_TIMEOUT_MS = 60_000;

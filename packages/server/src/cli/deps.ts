@@ -1,8 +1,8 @@
+import { loadConfig as loadConfigImpl } from '@finclaw/config';
 // packages/server/src/cli/deps.ts
 import type { FinClawLogger } from '@finclaw/infra';
-import type { FinClawConfig } from '@finclaw/types';
-import { loadConfig as loadConfigImpl } from '@finclaw/config';
 import { createLogger } from '@finclaw/infra';
+import type { FinClawConfig } from '@finclaw/types';
 import type { ExitCode } from './exit-codes.js';
 import type { RpcResult, GatewayClientOptions } from './gateway-client.js';
 import {

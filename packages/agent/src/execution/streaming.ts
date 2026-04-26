@@ -1,6 +1,6 @@
-import type { ConversationMessage, TokenUsage, ToolCall } from '@finclaw/types';
 // packages/agent/src/execution/streaming.ts
 import { EventEmitter } from 'node:events';
+import type { ConversationMessage, TokenUsage, ToolCall } from '@finclaw/types';
 
 /** 스트리밍 상태 */
 export type StreamState =

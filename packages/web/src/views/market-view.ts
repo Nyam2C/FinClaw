@@ -149,15 +149,10 @@ export class MarketView extends LitElement {
         </button>
       </form>
 
-      ${
-        !this.gateway?.isConnected
-          ? html`
-              <div class="hint">게이트웨이 연결 대기 중...</div>
-            `
-          : ''
-      }
+      ${!this.gateway?.isConnected
+        ? html` <div class="hint">게이트웨이 연결 대기 중...</div> `
+        : ''}
       ${this.error ? html`<div class="error">${this.error}</div>` : ''}
-
       ${this.quotes.map(
         (q) => html`
           <div class="card">

@@ -1,5 +1,3 @@
-import type { ModelRef, StorageAdapter } from '@finclaw/types';
-import { getEventBus } from '@finclaw/infra';
 import { readFileSync } from 'node:fs';
 // packages/server/src/gateway/server.ts
 import {
@@ -9,11 +7,12 @@ import {
   type ServerResponse,
 } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
+import { getEventBus } from '@finclaw/infra';
+import type { ModelRef, StorageAdapter } from '@finclaw/types';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { RunnerExecutionAdapter } from '../auto-reply/execution-adapter.js';
-import type { GatewayServerContext } from './context.js';
-import type { GatewayServerConfig } from './rpc/types.js';
 import { GatewayBroadcaster } from './broadcaster.js';
+import type { GatewayServerContext } from './context.js';
 import { ChatRegistry } from './registry.js';
 import { handleHttpRequest } from './router.js';
 import { registerAgentMethods, type AgentRpcDeps } from './rpc/methods/agent.js';
@@ -23,6 +22,7 @@ import { registerFinanceMethods, type FinanceRpcDeps } from './rpc/methods/finan
 import { registerSessionMethods } from './rpc/methods/session.js';
 // 메서드 등록
 import { registerSystemMethods } from './rpc/methods/system.js';
+import type { GatewayServerConfig } from './rpc/types.js';
 import { handleWsConnection } from './ws/connection.js';
 import { startHeartbeat } from './ws/heartbeat.js';
 

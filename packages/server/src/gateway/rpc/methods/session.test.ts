@@ -1,13 +1,13 @@
-import type { ConversationRecord, MemoryEntry, SearchResult } from '@finclaw/types';
 import { resetEventBus } from '@finclaw/infra';
+import type { ConversationRecord, MemoryEntry, SearchResult } from '@finclaw/types';
 // packages/server/src/gateway/rpc/methods/session.test.ts
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { GatewayServerContext } from '../../context.js';
-import type { GatewayServerConfig } from '../types.js';
 import { GatewayBroadcaster } from '../../broadcaster.js';
+import type { GatewayServerContext } from '../../context.js';
 import { ChatRegistry } from '../../registry.js';
 import { RpcErrors } from '../errors.js';
 import { dispatchRpc, clearMethods } from '../index.js';
+import type { GatewayServerConfig } from '../types.js';
 import { registerSessionMethods } from './session.js';
 
 function makeStorage() {

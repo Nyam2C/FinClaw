@@ -1,6 +1,6 @@
+import { createLogger } from '@finclaw/infra';
 import type { OutboundMessage, ReplyPayload } from '@finclaw/types';
 import type { Client, TextChannel, DMChannel, ThreadChannel } from 'discord.js';
-import { createLogger } from '@finclaw/infra';
 import { chunkText } from './chunking.js';
 
 const log = createLogger({ name: 'channel-discord' });

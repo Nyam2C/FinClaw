@@ -1,8 +1,8 @@
 import { resetEventBus } from '@finclaw/infra';
 import { describe, it, expect, afterEach } from 'vitest';
 import type { CompactionOptions } from '../src/agents/context/compaction.js';
-import type { TranscriptEntry } from '../src/agents/session/transcript-repair.js';
 import { compactContext } from '../src/agents/context/compaction.js';
+import type { TranscriptEntry } from '../src/agents/session/transcript-repair.js';
 
 // ── 헬퍼 ──
 

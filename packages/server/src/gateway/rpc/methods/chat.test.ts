@@ -1,14 +1,14 @@
-import type { ConversationRecord, MemoryEntry, ModelRef, SearchResult } from '@finclaw/types';
 import { resetEventBus } from '@finclaw/infra';
+import type { ConversationRecord, MemoryEntry, ModelRef, SearchResult } from '@finclaw/types';
 // packages/server/src/gateway/rpc/methods/chat.test.ts
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { RunnerExecutionAdapter } from '../../../auto-reply/execution-adapter.js';
-import type { GatewayServerContext } from '../../context.js';
-import type { GatewayServerConfig } from '../types.js';
 import { GatewayBroadcaster } from '../../broadcaster.js';
+import type { GatewayServerContext } from '../../context.js';
 import { ChatRegistry } from '../../registry.js';
 import { RpcErrors } from '../errors.js';
 import { dispatchRpc, clearMethods } from '../index.js';
+import type { GatewayServerConfig } from '../types.js';
 import { registerChatMethods } from './chat.js';
 
 const TEST_MODEL: ModelRef = {

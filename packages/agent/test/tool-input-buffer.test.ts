@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { StreamChunk } from '../src/models/provider-normalize.js';
 import { ToolInputBuffer } from '../src/execution/tool-input-buffer.js';
+import type { StreamChunk } from '../src/models/provider-normalize.js';
 
 describe('ToolInputBuffer', () => {
   let buffer: ToolInputBuffer;

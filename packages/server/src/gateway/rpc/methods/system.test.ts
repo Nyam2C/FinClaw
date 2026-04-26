@@ -2,8 +2,8 @@ import { resetEventBus } from '@finclaw/infra';
 // packages/server/src/gateway/rpc/methods/system.test.ts
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { GatewayServerContext } from '../../context.js';
-import type { GatewayServerConfig } from '../types.js';
 import { dispatchRpc, clearMethods } from '../index.js';
+import type { GatewayServerConfig } from '../types.js';
 import { registerSystemMethods } from './system.js';
 
 function makeServerCtx(): GatewayServerContext {

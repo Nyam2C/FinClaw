@@ -1,12 +1,12 @@
 import type { Client } from 'discord.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { ApprovalButtonData } from '../src/types.js';
 import {
   buildApprovalRow,
   waitForApproval,
   setupApprovalHandler,
   _resetPendingApprovals,
 } from '../src/buttons.js';
+import type { ApprovalButtonData } from '../src/types.js';
 
 // discord.js mock
 vi.mock('discord.js', () => {

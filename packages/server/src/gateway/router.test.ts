@@ -1,12 +1,12 @@
-import { resetEventBus } from '@finclaw/infra';
 import { type IncomingMessage, type ServerResponse } from 'node:http';
+import { resetEventBus } from '@finclaw/infra';
 // packages/server/src/gateway/router.test.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { z } from 'zod/v4';
 import type { GatewayServerContext } from './context.js';
-import type { GatewayServerConfig } from './rpc/types.js';
 import { handleHttpRequest } from './router.js';
 import { clearMethods, registerMethod } from './rpc/index.js';
+import type { GatewayServerConfig } from './rpc/types.js';
 
 /** 최소 ctx 팩토리 */
 function makeCtx(overrides?: Partial<GatewayServerConfig>): GatewayServerContext {

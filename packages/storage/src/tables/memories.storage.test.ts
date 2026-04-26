@@ -1,7 +1,7 @@
 import type { MemoryEntry, SessionKey, Timestamp } from '@finclaw/types';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import type { EmbeddingProvider } from '../embeddings/provider.js';
 import { openDatabase, type Database } from '../database.js';
+import type { EmbeddingProvider } from '../embeddings/provider.js';
 import { searchVector } from '../search/vector.js';
 import {
   addMemory,

@@ -1,11 +1,11 @@
-import type { RpcMethod } from '@finclaw/types';
 // packages/server/src/gateway/rpc/methods/agent.test.ts
 import { ConcurrencyLane, resetEventBus } from '@finclaw/infra';
+import type { RpcMethod } from '@finclaw/types';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GatewayServerContext } from '../../context.js';
-import type { GatewayServerConfig } from '../types.js';
 import { RpcErrors } from '../errors.js';
 import { clearMethods, dispatchRpc } from '../index.js';
+import type { GatewayServerConfig } from '../types.js';
 import { registerAgentMethods, resetAgentStats, type AgentRpcDeps } from './agent.js';
 
 function makeServerCtx(): GatewayServerContext {

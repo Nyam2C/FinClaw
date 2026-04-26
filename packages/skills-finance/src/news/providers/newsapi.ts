@@ -1,8 +1,8 @@
-import type { NewsItem, TickerSymbol } from '@finclaw/types';
+import { createHash } from 'node:crypto';
 // packages/skills-finance/src/news/providers/newsapi.ts
 import { safeFetchJson, retry } from '@finclaw/infra';
+import type { NewsItem, TickerSymbol } from '@finclaw/types';
 import { createTimestamp } from '@finclaw/types';
-import { createHash } from 'node:crypto';
 import { z } from 'zod/v4';
 import type { NewsProvider, NewsQuery, NewsCategory } from '../types.js';
 

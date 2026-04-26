@@ -1,10 +1,10 @@
-import type { ConversationRecord, MemoryEntry, ModelRef, SearchResult } from '@finclaw/types';
 import { resetEventBus } from '@finclaw/infra';
+import type { ConversationRecord, MemoryEntry, ModelRef, SearchResult } from '@finclaw/types';
 // packages/server/src/gateway/server.test.ts
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import type { RunnerExecutionAdapter } from '../auto-reply/execution-adapter.js';
-import type { GatewayServerConfig } from './rpc/types.js';
 import { clearMethods } from './rpc/index.js';
+import type { GatewayServerConfig } from './rpc/types.js';
 import { createGatewayServer, type GatewayServer, type GatewayServerDeps } from './server.js';
 
 const TEST_MODEL: ModelRef = {

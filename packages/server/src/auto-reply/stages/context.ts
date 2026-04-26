@@ -1,9 +1,9 @@
 // packages/server/src/auto-reply/stages/context.ts
 import type { MsgContext } from '@finclaw/types';
 import type { PipelineMsgContext, EnrichContextDeps } from '../pipeline-context.js';
+import { enrichContext } from '../pipeline-context.js';
 import type { StageResult } from '../pipeline.js';
 import type { NormalizedMessage } from './normalize.js';
-import { enrichContext } from '../pipeline-context.js';
 
 /**
  * 컨텍스트 확장 단계

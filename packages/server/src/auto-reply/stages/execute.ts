@@ -1,8 +1,8 @@
+import { extractControlTokens, type ControlTokenResult } from '../control-tokens.js';
 // packages/server/src/auto-reply/stages/execute.ts
 import type { ExecutionAdapter, ToolCallRecord } from '../execution-adapter.js';
 import type { PipelineMsgContext } from '../pipeline-context.js';
 import type { StageResult } from '../pipeline.js';
-import { extractControlTokens, type ControlTokenResult } from '../control-tokens.js';
 
 export interface ExecuteStageResult {
   readonly content: string;

@@ -9,8 +9,8 @@ import type {
 import { createTickerSymbol } from '@finclaw/types';
 // packages/server/src/gateway/rpc/methods/finance.ts
 import { z } from 'zod/v4';
-import type { RpcMethodHandler } from '../types.js';
 import { registerMethod } from '../index.js';
+import type { RpcMethodHandler } from '../types.js';
 
 /** finance.* RPC 메서드 의존성 (main.ts 에서 주입) */
 export interface FinanceRpcDeps {

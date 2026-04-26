@@ -10,12 +10,10 @@ import type {
   Timestamp,
 } from '@finclaw/types';
 import type { Database, DatabaseOptions } from './database.js';
-import type { EmbeddingProvider } from './embeddings/provider.js';
-import type { ChunkSearchResult, HybridSearchOptions } from './search/hybrid.js';
-import type { MarketCacheEntry } from './tables/market-cache.js';
-import type { MemoryChunk } from './tables/memories.js';
 import { openDatabase } from './database.js';
+import type { EmbeddingProvider } from './embeddings/provider.js';
 import { searchFts } from './search/fts.js';
+import type { ChunkSearchResult, HybridSearchOptions } from './search/hybrid.js';
 import { mergeHybridResults } from './search/hybrid.js';
 import { searchVector } from './search/vector.js';
 import {
@@ -24,7 +22,9 @@ import {
   getConversation,
   upsertConversation as upsertConversationInDb,
 } from './tables/conversations.js';
+import type { MarketCacheEntry } from './tables/market-cache.js';
 import { CACHE_TTL } from './tables/market-cache.js';
+import type { MemoryChunk } from './tables/memories.js';
 import { addMemory, getMemory, addMemoryWithEmbedding } from './tables/memories.js';
 import { chunkMarkdown } from './tables/memories.js';
 

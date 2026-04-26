@@ -1,6 +1,6 @@
-import type { Portfolio, PortfolioHolding, TickerSymbol, CurrencyCode } from '@finclaw/types';
 // packages/skills-finance/src/news/portfolio/store.ts
 import type { DatabaseSync } from 'node:sqlite';
+import type { Portfolio, PortfolioHolding, TickerSymbol, CurrencyCode } from '@finclaw/types';
 import { createTimestamp } from '@finclaw/types';
 
 /** 포트폴리오 CRUD (SQLite) */

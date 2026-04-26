@@ -8,12 +8,12 @@ import type {
   ToolExecutor,
   ToolRegistry,
 } from '@finclaw/agent';
-import type { ModelRef, TickerSymbol } from '@finclaw/types';
 import { ModelFloorExhaustedError } from '@finclaw/agent';
-import type { PortfolioStore } from './portfolio/store.js';
-import type { NewsAggregator, AnalysisOptions, NewsCategory } from './types.js';
+import type { ModelRef, TickerSymbol } from '@finclaw/types';
 import { analyzeMarket } from './analysis/market-analysis.js';
+import type { PortfolioStore } from './portfolio/store.js';
 import { createPortfolioTracker, type QuoteService } from './portfolio/tracker.js';
+import type { NewsAggregator, AnalysisOptions, NewsCategory } from './types.js';
 
 /** analyze_market 등록 시 modelRef 결정 fallback (router 미주입 시). minModel=opus 보호. */
 const ANALYZE_MARKET_FALLBACK_MODEL: ModelRef = {

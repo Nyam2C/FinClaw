@@ -1,5 +1,5 @@
-import type { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
+import type { DatabaseSync } from 'node:sqlite';
 import type {
   AlertStore,
   AlertDefinition,

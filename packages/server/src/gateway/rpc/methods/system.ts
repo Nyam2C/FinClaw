@@ -1,8 +1,8 @@
 // packages/server/src/gateway/rpc/methods/system.ts
 import { z } from 'zod/v4';
-import type { RpcMethodHandler } from '../types.js';
 import { loadVersion } from '../../version.js';
 import { registerMethod, getRegisteredMethods } from '../index.js';
+import type { RpcMethodHandler } from '../types.js';
 
 // -- system.health --
 

@@ -1,12 +1,12 @@
-import type { IncomingMessage } from 'node:http';
-import type { WebSocket } from 'ws';
-import { getEventBus } from '@finclaw/infra';
 // packages/server/src/gateway/ws/connection.ts
 import { randomUUID } from 'node:crypto';
-import type { GatewayServerContext } from '../context.js';
-import type { WsConnection } from '../rpc/types.js';
+import type { IncomingMessage } from 'node:http';
+import { getEventBus } from '@finclaw/infra';
+import type { WebSocket } from 'ws';
 import { authenticate } from '../auth/index.js';
+import type { GatewayServerContext } from '../context.js';
 import { dispatchRpc } from '../rpc/index.js';
+import type { WsConnection } from '../rpc/types.js';
 import { attachPongHandler } from './heartbeat.js';
 
 /**

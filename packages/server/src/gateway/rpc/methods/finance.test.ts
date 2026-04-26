@@ -1,12 +1,12 @@
-import type { AlertDefinition, AlertStore, CreateAlertInput } from '@finclaw/skills-finance';
-import type { RpcMethod } from '@finclaw/types';
 // packages/server/src/gateway/rpc/methods/finance.test.ts
 import { resetEventBus } from '@finclaw/infra';
+import type { AlertDefinition, AlertStore, CreateAlertInput } from '@finclaw/skills-finance';
+import type { RpcMethod } from '@finclaw/types';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GatewayServerContext } from '../../context.js';
-import type { GatewayServerConfig } from '../types.js';
 import { RpcErrors } from '../errors.js';
 import { clearMethods, dispatchRpc } from '../index.js';
+import type { GatewayServerConfig } from '../types.js';
 import { registerFinanceMethods, type FinanceRpcDeps } from './finance.js';
 
 function makeServerCtx(): GatewayServerContext {

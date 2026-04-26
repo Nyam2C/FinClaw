@@ -1,8 +1,8 @@
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import { ensureDir, writeFileAtomic } from '@finclaw/infra';
 // packages/config/src/sessions/store.ts
 import { createTimestamp, type SessionKey } from '@finclaw/types';
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
 import type { SessionEntry } from './types.js';
 
 /**

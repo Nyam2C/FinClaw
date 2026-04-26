@@ -1,9 +1,9 @@
 // packages/server/src/auto-reply/commands/status.ts
 import type { ModelStats, ProfileHealthMonitor, ToolRegistry } from '@finclaw/agent';
-import type { ModelRef, StorageAdapter } from '@finclaw/types';
 import { modelIdToTier } from '@finclaw/agent';
-import type { CommandExecutor } from './registry.js';
+import type { ModelRef, StorageAdapter } from '@finclaw/types';
 import { getAllChannelDocks } from '../../channels/index.js';
+import type { CommandExecutor } from './registry.js';
 
 export interface StatusCommandDeps {
   readonly toolRegistry: ToolRegistry;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { SkillMetadataInput } from '../src/skill.js';
 import { normalizeSkillMetadata } from '../src/index.js';
+import type { SkillMetadataInput } from '../src/skill.js';
 
 describe('normalizeSkillMetadata', () => {
   it('신 형식: ToolMetadata 객체 배열은 그대로 통과', () => {

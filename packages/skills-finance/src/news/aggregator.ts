@@ -1,8 +1,8 @@
-import type { NewsItem } from '@finclaw/types';
-import type { DatabaseSync } from 'node:sqlite';
-import { getCachedData, setCachedData } from '@finclaw/storage';
 // packages/skills-finance/src/news/aggregator.ts
 import { createHash } from 'node:crypto';
+import type { DatabaseSync } from 'node:sqlite';
+import { getCachedData, setCachedData } from '@finclaw/storage';
+import type { NewsItem } from '@finclaw/types';
 import type { NewsAggregator, NewsProvider, NewsQuery } from './types.js';
 
 const NEWS_CACHE_TTL = 300_000; // 5분

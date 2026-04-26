@@ -7,13 +7,13 @@ import {
   type ModelRef,
 } from '@finclaw/types';
 import { describe, it, expect } from 'vitest';
-import type { PipelineMsgContext, FinanceContextProvider } from '../pipeline-context.js';
 import {
   MockExecutionAdapter,
   RunnerExecutionAdapter,
   extractAssistantText,
   sliceHistoryRespectingToolPairs,
 } from '../execution-adapter.js';
+import type { PipelineMsgContext, FinanceContextProvider } from '../pipeline-context.js';
 import { StubFinanceContextProvider } from '../pipeline-context.js';
 
 function makePipelineCtx(): PipelineMsgContext {

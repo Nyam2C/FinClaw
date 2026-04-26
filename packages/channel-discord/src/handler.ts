@@ -1,7 +1,7 @@
-import type { InboundMessage, CleanupFn, ChatType } from '@finclaw/types';
-import type { Client, Message as DiscordMessage } from 'discord.js';
 import { createLogger } from '@finclaw/infra';
+import type { InboundMessage, CleanupFn, ChatType } from '@finclaw/types';
 import { createChannelId, createTimestamp } from '@finclaw/types';
+import type { Client, Message as DiscordMessage } from 'discord.js';
 
 const log = createLogger({ name: 'channel-discord' });
 

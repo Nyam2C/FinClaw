@@ -1,6 +1,6 @@
-import type { IncomingMessage, ServerResponse } from 'node:http';
 // packages/server/src/gateway/access-log.ts
 import { randomUUID } from 'node:crypto';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AccessLogEntry } from './rpc/types.js';
 
 /** 민감 쿼리 파라미터 마스킹 */

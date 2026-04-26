@@ -1,10 +1,9 @@
-// packages/config/src/io.ts
-import type { FinClawConfig } from '@finclaw/types';
-import { writeFileAtomic } from '@finclaw/infra';
-import * as JSON5 from 'json5';
 import * as fs from 'node:fs';
 import { homedir as osHomedir } from 'node:os';
-import type { ConfigCache, ConfigDeps } from './types.js';
+import { writeFileAtomic } from '@finclaw/infra';
+// packages/config/src/io.ts
+import type { FinClawConfig } from '@finclaw/types';
+import * as JSON5 from 'json5';
 import { createConfigCache } from './cache-utils.js';
 import { applyDefaults } from './defaults.js';
 import { resolveEnvVars } from './env-substitution.js';
@@ -13,6 +12,7 @@ import { resolveIncludes } from './includes.js';
 import { normalizePaths } from './normalize-paths.js';
 import { resolveConfigPath } from './paths.js';
 import { applyOverrides } from './runtime-overrides.js';
+import type { ConfigCache, ConfigDeps } from './types.js';
 import { validateConfig } from './validation.js';
 
 /** ConfigIO — 설정 읽기/쓰기 파사드 */
@@ -54,7 +54,8 @@ export function createConfigIO(deps: ConfigDeps = {}): ConfigIO {
     return json5Module.parse(content) as Record<string, unknown>;
   }
 
-  function loadConfig(): FinClawConfig {
+  // ConfigIO 의 내부 구현. 외부 모듈 레벨 loadConfig() (싱글턴 wrapper) 와 구분.
+  function loadConfigInternal(): FinClawConfig {
     // 캐시 히트
     const cached = cache.get();
     if (cached) {
@@ -114,7 +115,7 @@ export function createConfigIO(deps: ConfigDeps = {}): ConfigIO {
   }
 
   return {
-    loadConfig,
+    loadConfig: loadConfigInternal,
     writeConfigFile,
     invalidateCache: () => cache.invalidate(),
     get configPath() {
