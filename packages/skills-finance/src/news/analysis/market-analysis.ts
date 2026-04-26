@@ -5,6 +5,7 @@ import { calculateEstimatedCost } from '@finclaw/agent';
 import type { ModelRef, NewsItem } from '@finclaw/types';
 import { z } from 'zod/v4';
 import type { MarketAnalysis, AnalysisOptions } from '../types.js';
+import { loadAnalysisPrompt } from './prompt-loader.js';
 
 /** Phase 24 E: 스킬 내부 LLM 호출 건강·비용 기록을 위한 선택적 의존성. */
 export interface AnalysisRecordDeps {
@@ -43,7 +44,7 @@ export async function analyzeMarket(
     )
     .join('\n\n');
 
-  const systemPrompt = buildAnalysisSystemPrompt(depth, language);
+  const systemPrompt = await loadAnalysisPrompt(depth, language);
   const userPrompt = buildAnalysisUserPrompt(
     newsDigest,
     options.symbols,
@@ -95,31 +96,6 @@ export async function analyzeMarket(
 }
 
 // ─── 프롬프트 빌더 ───
-
-function buildAnalysisSystemPrompt(depth: string, language: string): string {
-  const langInstruction =
-    language === 'ko' ? '한국어로 분석 결과를 작성하세요.' : 'Write analysis results in English.';
-
-  const depthInstruction =
-    depth === 'brief'
-      ? 'Be concise, 1-2 sentences per field.'
-      : depth === 'detailed'
-        ? 'Provide thorough analysis with multiple paragraphs for summary.'
-        : 'Provide a balanced, moderate-length analysis.';
-
-  return `You are a professional financial market analyst. Analyze the provided news articles and generate a market analysis report.
-${langInstruction}
-${depthInstruction}
-
-Response format (strict JSON, no markdown):
-{
-  "summary": "시장 전망 요약",
-  "sentiment": { "score": -1.0~1.0, "label": "very_negative|negative|neutral|positive|very_positive", "confidence": 0.0~1.0 },
-  "keyFactors": ["핵심 요인 1", "핵심 요인 2"],
-  "risks": ["리스크 1"],
-  "opportunities": ["기회 1"]
-}`;
-}
 
 function buildAnalysisUserPrompt(
   newsDigest: string,
