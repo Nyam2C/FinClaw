@@ -1,5 +1,11 @@
 // packages/skills-finance/src/news/index.ts
-import type { ToolRegistry } from '@finclaw/agent';
+import type {
+  ModelCatalog,
+  ProfileHealthMonitor,
+  RouterHelper,
+  ToolRegistry,
+} from '@finclaw/agent';
+import type { ModelRef, SkillMetadata } from '@finclaw/types';
 import type { DatabaseSync } from 'node:sqlite';
 import Anthropic from '@anthropic-ai/sdk';
 import type { QuoteService } from './portfolio/tracker.js';
@@ -26,6 +32,22 @@ export interface NewsSkillConfig {
   readonly rssFeedUrls?: string[];
   readonly anthropicApiKey?: string;
   readonly quoteService: QuoteService;
+  /**
+   * Phase 24: 모델 라우터. analyze_market 도구 실행 시 role='analysis' 로
+   * 호출되어 modelRef 결정. 미주입 시 defaultModel 사용.
+   */
+  readonly router?: RouterHelper;
+  /**
+   * 라우터 미주입 시 fallback 으로 사용할 LLM modelRef.
+   * 주입 시에도 router 결정 외 다른 ModelRef 필드 (provider, contextWindow 등) 의 출처.
+   */
+  readonly defaultModel?: ModelRef;
+  /** Phase 24 E: 스킬 내부 LLM 호출 비용·건강을 status 분포에 포함하기 위한 모니터. */
+  readonly profileHealth?: ProfileHealthMonitor;
+  /** Phase 24 E: 스킬 호출 기록의 profileId (기본 'skill-news-analyze'). */
+  readonly profileId?: string;
+  /** Phase 24 E: cost 계산용 카탈로그 (pricing 조회). */
+  readonly modelCatalog?: ModelCatalog;
 }
 
 /** Phase 22: main.ts가 alerts 배선에 재사용할 수 있도록 aggregator 노출 */
@@ -62,7 +84,15 @@ export async function registerNewsTools(
   // 도구 등록: analyze_market (Anthropic API 키가 있을 때만)
   if (config.anthropicApiKey) {
     const client = new Anthropic({ apiKey: config.anthropicApiKey });
-    registerAnalyzeMarketTool(registry, { newsAggregator, client });
+    registerAnalyzeMarketTool(registry, {
+      newsAggregator,
+      client,
+      router: config.router,
+      defaultModel: config.defaultModel,
+      profileHealth: config.profileHealth,
+      profileId: config.profileId,
+      modelCatalog: config.modelCatalog,
+    });
   }
 
   // 도구 등록: get_portfolio_summary
@@ -77,7 +107,7 @@ export async function registerNewsTools(
 }
 
 /** 스킬 메타데이터 */
-export const NEWS_SKILL_METADATA = {
+export const NEWS_SKILL_METADATA: SkillMetadata = {
   name: 'news-analysis',
   description: '금융 뉴스 수집, AI 시장 분석, 포트폴리오 추적을 제공합니다.',
   version: '1.0.0',
@@ -85,5 +115,9 @@ export const NEWS_SKILL_METADATA = {
     env: [],
     optionalEnv: ['NEWSAPI_KEY', 'ALPHA_VANTAGE_KEY', 'ANTHROPIC_API_KEY'],
   },
-  tools: ['get_financial_news', 'analyze_market', 'get_portfolio_summary'],
-} as const;
+  tools: [
+    { name: 'get_financial_news', minModel: 'haiku', reason: '리스트 반환' },
+    { name: 'analyze_market', minModel: 'opus', reason: '금융 판단, 환각 방지' },
+    { name: 'get_portfolio_summary', minModel: 'sonnet', reason: '포트 요약 (판단 일부 포함)' },
+  ],
+};

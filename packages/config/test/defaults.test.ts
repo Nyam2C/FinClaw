@@ -22,7 +22,7 @@ describe('applyDefaults', () => {
   it('빈 설정에 모든 기본값을 적용한다', () => {
     const result = applyDefaults({});
     expect(result.gateway?.port).toBe(3000);
-    expect(result.agents?.defaults?.model).toBe('claude-sonnet-4-20250514');
+    expect(result.agents?.defaults?.model).toBe('claude-sonnet-4-6');
     expect(result.logging?.redactSensitive).toBe(true);
   });
 
@@ -40,7 +40,7 @@ describe('applyDefaults', () => {
     };
     const result = applyDefaults(user);
     expect(result.agents?.defaults?.temperature).toBe(0.5);
-    expect(result.agents?.defaults?.model).toBe('claude-sonnet-4-20250514');
+    expect(result.agents?.defaults?.model).toBe('claude-sonnet-4-6');
   });
 
   it('기본값에 없는 섹션은 그대로 통과한다', () => {
@@ -51,5 +51,33 @@ describe('applyDefaults', () => {
     };
     const result = applyDefaults(user);
     expect(result.finance?.dataProviders).toHaveLength(1);
+  });
+
+  it('routing 기본값을 채운다', () => {
+    const result = applyDefaults({});
+    expect(result.routing?.roles.fetch.preferred).toBe('haiku');
+    expect(result.routing?.roles.chat.preferred).toBe('sonnet');
+    expect(result.routing?.roles.analysis.preferred).toBe('opus');
+    expect(result.routing?.roles.summarize.preferred).toBe('haiku');
+    expect(result.routing?.automation.strictFallback).toBe(true);
+    expect(result.routing?.override.respectMinModel).toBe(true);
+  });
+
+  it('routing 의 부분 오버라이드를 병합한다', () => {
+    const user: FinClawConfig = {
+      routing: {
+        roles: {
+          fetch: { preferred: 'sonnet', maxTokens: 2048 },
+          chat: { preferred: 'sonnet', maxTokens: 4096 },
+          analysis: { preferred: 'opus', maxTokens: 8192 },
+          summarize: { preferred: 'haiku', maxTokens: 2048 },
+        },
+        automation: { strictFallback: false, logVerbose: true },
+        override: { allowClientHint: true, respectMinModel: true },
+      },
+    };
+    const result = applyDefaults(user);
+    expect(result.routing?.roles.fetch.preferred).toBe('sonnet');
+    expect(result.routing?.automation.strictFallback).toBe(false);
   });
 });

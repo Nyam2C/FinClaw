@@ -10,7 +10,7 @@
 
   agents: {
     defaults: {
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       provider: 'anthropic',
       maxConcurrent: 2,
       maxTokens: 4096,
@@ -41,5 +41,24 @@
 
   finance: {
     dataProviders: [{ name: 'alpha-vantage', apiKey: '${ALPHA_VANTAGE_KEY}' }],
+  },
+
+  // 모델 역할 라우팅 — 요청 성격에 맞게 Haiku/Sonnet/Opus 자동 선택 (Phase 24)
+  // 최종 선택 = max(role.preferred, 도구.minModel) — 분석 도구는 자동으로 Opus 승격
+  routing: {
+    roles: {
+      fetch: { preferred: 'haiku', maxTokens: 1024 }, // 시세·뉴스 등 단순 조회
+      chat: { preferred: 'sonnet', maxTokens: 4096 }, // 일반 대화
+      analysis: { preferred: 'opus', maxTokens: 8192 }, // 시장 분석·금융 판단
+      summarize: { preferred: 'haiku', maxTokens: 2048 }, // 내부 요약 (사용자 직접 호출 X)
+    },
+    automation: {
+      strictFallback: true, // 자동화 실행 시 fallback chain 한 단계 좁게 (minModel 미만 금지)
+      logVerbose: true, // 자동화 실행은 전량 감사 로그
+    },
+    override: {
+      allowClientHint: true, // 사용자가 modelHint 로 모델 선호 표현 가능
+      respectMinModel: true, // 도구의 minModel 하한선 준수 (분석 도구는 무조건 Opus 이상)
+    },
   },
 }

@@ -83,6 +83,8 @@ export function createGatewayServer(
     storage: deps.storage,
     defaultModel: deps.defaultModel,
     adapter: deps.adapter,
+    // Phase 24 D: ModelFloorExhaustedError 구조화 로그용 — agent.* 와 logger 공유
+    logger: deps.agentDeps?.logger,
   });
   registerFinanceMethods(deps.financeDeps ?? {});
   registerSessionMethods({

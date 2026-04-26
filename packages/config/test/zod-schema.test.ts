@@ -12,8 +12,8 @@ describe('FinClawConfigSchema', () => {
     const config = {
       gateway: { port: 18789, host: 'localhost' },
       agents: {
-        defaults: { model: 'claude-sonnet-4-20250514', provider: 'anthropic' },
-        entries: { main: { model: 'claude-sonnet-4-20250514' } },
+        defaults: { model: 'claude-sonnet-4-6', provider: 'anthropic' },
+        entries: { main: { model: 'claude-sonnet-4-6' } },
       },
       channels: {
         discord: { botToken: 'token', applicationId: 'app-id' },
@@ -23,7 +23,7 @@ describe('FinClawConfigSchema', () => {
       logging: { level: 'info' as const, file: true },
       models: {
         definitions: {
-          sonnet: { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
+          sonnet: { provider: 'anthropic', model: 'claude-sonnet-4-6' },
         },
         aliases: { default: 'sonnet' },
       },
@@ -73,5 +73,37 @@ describe('FinClawConfigSchema', () => {
       },
     });
     expect(result.success).toBe(true);
+  });
+
+  it('routing 섹션을 허용한다', () => {
+    const result = FinClawConfigSchema.safeParse({
+      routing: {
+        roles: {
+          fetch: { preferred: 'haiku', maxTokens: 1024 },
+          analysis: { preferred: 'opus', maxTokens: 8192 },
+        },
+        automation: { strictFallback: true },
+        override: { allowClientHint: false },
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('routing 의 알 수 없는 role 을 거부한다', () => {
+    const result = FinClawConfigSchema.safeParse({
+      routing: {
+        roles: { foobar: { preferred: 'haiku', maxTokens: 512 } },
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('routing 의 잘못된 ModelTier 를 거부한다', () => {
+    const result = FinClawConfigSchema.safeParse({
+      routing: {
+        roles: { chat: { preferred: 'gpt5', maxTokens: 4096 } },
+      },
+    });
+    expect(result.success).toBe(false);
   });
 });

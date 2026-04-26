@@ -11,7 +11,7 @@ import {
   Runner,
 } from '@finclaw/agent';
 import { DiscordAccountSchema, DiscordAdapter } from '@finclaw/channel-discord';
-import { ConfigValidationError, validateConfigStrict } from '@finclaw/config';
+import { ConfigValidationError, loadConfig, validateConfigStrict } from '@finclaw/config';
 import {
   assertPortAvailable,
   ConcurrencyLane,
@@ -23,6 +23,9 @@ import {
   PortInUseError,
 } from '@finclaw/infra';
 import {
+  ALERT_SKILL_METADATA,
+  MARKET_SKILL_METADATA,
+  NEWS_SKILL_METADATA,
   registerMarketTools,
   registerNewsTools,
   registerAlertTools,
@@ -30,7 +33,7 @@ import {
   type MarketSkillHandle,
   type NewsSkillHandle,
 } from '@finclaw/skills-finance';
-import { registerGeneralTools } from '@finclaw/skills-general';
+import { GENERAL_SKILL_METADATA, registerGeneralTools } from '@finclaw/skills-general';
 import { createStorage } from '@finclaw/storage';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -40,6 +43,7 @@ import { InMemoryCommandRegistry } from './auto-reply/commands/registry.js';
 import { RunnerExecutionAdapter, type RunnerFactory } from './auto-reply/execution-adapter.js';
 import { StubFinanceContextProvider } from './auto-reply/pipeline-context.js';
 import { AutoReplyPipeline } from './auto-reply/pipeline.js';
+import { buildToolMetaIndex, makeRouterHelper } from './auto-reply/router-helper.js';
 import { initChannels } from './channels/index.js';
 import { createGatewayServer } from './gateway/server.js';
 import { ProcessLifecycle } from './process/lifecycle.js';
@@ -73,7 +77,7 @@ const defaultConfig: GatewayServerConfig = {
 
 const DEFAULT_MODEL: ModelRef = {
   provider: 'anthropic',
-  model: 'claude-sonnet-4-5',
+  model: 'claude-sonnet-4-6',
   contextWindow: 200_000,
   maxOutputTokens: 8_192,
 };
@@ -100,6 +104,9 @@ const DEFAULT_SYSTEM_PROMPT = [
   '- `get_current_datetime`, `web_fetch`, `read_local_file` — 일반 유틸',
   '',
   '도구가 필요한데 없으면 "도구 X가 필요한데 지금 활성화되어 있지 않다. API 키 확인 바란다"라고 답한다.',
+  '',
+  '## 도구 결과 처리',
+  '도구 결과가 모델 일시 불가 안내(예: "analyze_market 사용 불가: opus 이상 모델…")를 반환하면 가짜 분석을 만들지 말고 어느 모델이 일시 불가하며 약 60초 후 재시도 가능하다는 점을 사용자에게 한국어로 그대로 전달한다.',
 ].join('\n');
 
 export class MissingEnvError extends Error {
@@ -137,6 +144,40 @@ async function main(): Promise<void> {
   // 2. 기반 (로거, 라이프사이클, 스토리지)
   const logger = createLogger({ name: 'finclaw', level: 'info' });
   const lifecycle = new ProcessLifecycle({ logger });
+
+  // 2a. 전체 config 로드 + strict 재검증 (Phase 24 — routing 등 잘못된 설정으로 기동 차단)
+  const finclawConfig = loadConfig({ logger });
+  validateConfigStrict(finclawConfig);
+  const routing = finclawConfig.routing;
+  if (routing) {
+    logger.info('Model routing table loaded', {
+      event: 'routing.loaded',
+      table: {
+        fetch: routing.roles.fetch.preferred,
+        chat: routing.roles.chat.preferred,
+        analysis: routing.roles.analysis.preferred,
+        summarize: routing.roles.summarize.preferred,
+      },
+      automation: routing.automation,
+      override: routing.override,
+    });
+  } else {
+    logger.warn('routing config not found, using defaults', { event: 'routing.config_missing' });
+  }
+
+  // Phase 24: 라우터 helper 구축 — 4개 스킬 메타에서 도구 인덱스 수집.
+  // routing 미주입 시 helper 생성하지 않음 (어댑터/agent.run 모두 fallback 동작).
+  const routerHelper = routing
+    ? makeRouterHelper(
+        routing,
+        buildToolMetaIndex([
+          MARKET_SKILL_METADATA,
+          NEWS_SKILL_METADATA,
+          ALERT_SKILL_METADATA,
+          GENERAL_SKILL_METADATA,
+        ]),
+      )
+    : undefined;
   const dbPath = process.env.FINCLAW_DB_PATH ?? join(homedir(), '.finclaw', 'db.sqlite');
   const storage = createStorage({ dbPath });
   await storage.initialize();
@@ -144,7 +185,7 @@ async function main(): Promise<void> {
     await storage.close();
   });
 
-  // 2a. 채널 도크 자동 등록 (discord, http-webhook)
+  // 2b. 채널 도크 자동 등록 (discord, http-webhook)
   initChannels(logger);
 
   // 3. Discord 클라이언트 먼저 로그인 (alerts가 DM 전달 핸들을 필요로 함)
@@ -162,6 +203,12 @@ async function main(): Promise<void> {
   const lanes = new ConcurrencyLaneManager();
   const toolRegistry = new InMemoryToolRegistry();
   registerGeneralTools(toolRegistry);
+
+  // 4a. 모델 카탈로그 + 별칭 인덱스 + 프로필 건강 모니터.
+  // (스킬 등록보다 먼저 생성 — Phase 24 E 의 analyze_market 등록 시점에 주입 필요.)
+  const modelCatalog = new InMemoryModelCatalog(BUILT_IN_MODELS);
+  const modelAliasIndex = buildModelAliasIndex(modelCatalog);
+  const profileHealth = new ProfileHealthMonitor();
 
   const alphaVantageKey = process.env.ALPHA_VANTAGE_KEY;
   const coinGeckoKey = process.env.COINGECKO_API_KEY;
@@ -186,6 +233,12 @@ async function main(): Promise<void> {
       alphaVantageKey,
       quoteService: marketHandle.quoteService,
       anthropicApiKey: anthropicKey,
+      router: routerHelper,
+      defaultModel: DEFAULT_MODEL,
+      // Phase 24 E: 스킬 내부 analyze_market LLM 호출도 status 분포에 포함.
+      profileHealth,
+      profileId: 'default',
+      modelCatalog,
     });
     logger.info('News tools registered');
   } else if (marketHandle) {
@@ -219,12 +272,7 @@ async function main(): Promise<void> {
       laneManager: lanes,
     });
 
-  // 4. 모델 카탈로그 + 폴백 체인 + 프로필 건강 모니터
-  const modelCatalog = new InMemoryModelCatalog(BUILT_IN_MODELS);
-  const modelAliasIndex = buildModelAliasIndex(modelCatalog);
-  const profileHealth = new ProfileHealthMonitor();
-
-  // 4a. 실행 어댑터 (storage + toolRegistry 주입 — per-request dispatcher를 빌드)
+  // 4b. 실행 어댑터 (storage + toolRegistry 주입 — per-request dispatcher를 빌드)
   const adapter = new RunnerExecutionAdapter({
     runnerFactory,
     defaultModel: DEFAULT_MODEL,
@@ -237,6 +285,7 @@ async function main(): Promise<void> {
     fallbackChain: DEFAULT_FALLBACK_CHAIN,
     profileHealth,
     profileId: 'default',
+    router: routerHelper,
   });
 
   // 5. 파이프라인
@@ -329,6 +378,10 @@ async function main(): Promise<void> {
       defaultModel: DEFAULT_MODEL,
       logger,
       profileId: 'default',
+      router: routerHelper,
+      modelCatalog,
+      modelAliasIndex,
+      fallbackChain: DEFAULT_FALLBACK_CHAIN,
     },
   });
   logger.info('finance.* / agent.* RPC methods wired');

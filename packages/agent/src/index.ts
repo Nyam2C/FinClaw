@@ -35,13 +35,34 @@ export type {
 } from './models/provider-normalize.js';
 
 // ─── models: fallback ───
-export { runWithModelFallback, DEFAULT_FALLBACK_TRIGGERS } from './models/fallback.js';
+export {
+  DEFAULT_FALLBACK_TRIGGERS,
+  ModelFloorExhaustedError,
+  runWithModelFallback,
+} from './models/fallback.js';
 export type {
   FallbackConfig,
   FallbackTrigger,
   FallbackResult,
   FallbackAttempt,
 } from './models/fallback.js';
+
+// ─── models: routing (Phase 24) ───
+export {
+  computeFloor,
+  maxTier,
+  modelIdToTier,
+  resolveModelForRequest,
+  tierToModelId,
+} from './models/routing.js';
+export type {
+  ModelRole,
+  RouteDecision,
+  RouteRequest,
+  RouterHelper,
+  RouterHelperRequest,
+  RouterHelperResult,
+} from './models/routing.js';
 
 // ─── providers ───
 export { getBreakerForProvider, resetBreakers } from './providers/adapter.js';
@@ -54,7 +75,12 @@ export type { CooldownEntry } from './auth/cooldown.js';
 
 // ─── auth: health ───
 export { ProfileHealthMonitor } from './auth/health.js';
-export type { ProfileHealthStatus, HealthThresholds } from './auth/health.js';
+export type {
+  HealthThresholds,
+  ModelStats,
+  ProfileHealthStatus,
+  RecordOptions,
+} from './auth/health.js';
 
 // ─── auth: profiles ───
 export { InMemoryAuthProfileStore } from './auth/profiles.js';

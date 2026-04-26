@@ -17,7 +17,7 @@ const DEFAULTS = Object.freeze({
   },
   agents: {
     defaults: {
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       provider: 'anthropic',
       maxConcurrent: 2,
       maxTokens: 4096,
@@ -46,6 +46,16 @@ const DEFAULTS = Object.freeze({
   plugins: {
     enabled: [] as string[],
     disabled: [] as string[],
+  },
+  routing: {
+    roles: {
+      fetch: { preferred: 'haiku' as const, maxTokens: 1024 },
+      chat: { preferred: 'sonnet' as const, maxTokens: 4096 },
+      analysis: { preferred: 'opus' as const, maxTokens: 8192 },
+      summarize: { preferred: 'haiku' as const, maxTokens: 2048 },
+    },
+    automation: { strictFallback: true, logVerbose: true },
+    override: { allowClientHint: true, respectMinModel: true },
   },
 }) satisfies FinClawConfig;
 

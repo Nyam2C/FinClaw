@@ -1,5 +1,6 @@
 import type { ToolRegistry } from '@finclaw/agent';
 import type { FinClawLogger } from '@finclaw/infra';
+import type { SkillMetadata } from '@finclaw/types';
 import type { DatabaseSync } from 'node:sqlite';
 import { ConcurrencyLane, createCircuitBreaker } from '@finclaw/infra';
 import type { MarketCache } from '../market/cache.js';
@@ -127,7 +128,7 @@ export async function registerAlertTools(
   return { monitor, store };
 }
 
-export const ALERT_SKILL_METADATA = {
+export const ALERT_SKILL_METADATA: SkillMetadata = {
   name: 'alert-system',
   description: '금융 이벤트 조건부 알림 시스템. 가격, 변동률, 거래량, 뉴스 키워드 모니터링.',
   version: '1.0.0',
@@ -139,5 +140,10 @@ export const ALERT_SKILL_METADATA = {
       'ALERT_MAX_CONCURRENT_CHECKS',
     ],
   },
-  tools: ['set_alert', 'list_alerts', 'remove_alert', 'get_alert_history'],
-} as const;
+  tools: [
+    { name: 'set_alert', minModel: 'haiku', reason: 'CRUD' },
+    { name: 'list_alerts', minModel: 'haiku', reason: 'CRUD' },
+    { name: 'remove_alert', minModel: 'haiku', reason: 'CRUD' },
+    { name: 'get_alert_history', minModel: 'haiku', reason: '조회' },
+  ],
+};
