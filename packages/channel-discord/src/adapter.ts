@@ -1,3 +1,4 @@
+import { createLogger } from '@finclaw/infra';
 import type {
   ChannelPlugin,
   ChannelMeta,
@@ -6,15 +7,14 @@ import type {
   CleanupFn,
 } from '@finclaw/types';
 import type { InboundMessage, OutboundMessage } from '@finclaw/types';
-import type { Client } from 'discord.js';
-import { createLogger } from '@finclaw/infra';
 import { createChannelId } from '@finclaw/types';
-import type { DiscordAccount } from './types.js';
+import type { Client } from 'discord.js';
 import { setupApprovalHandler } from './buttons.js';
 import { createDiscordClient } from './client.js';
 import { registerGuildCommands, setupCommandRouter } from './commands/index.js';
 import { setupMessageHandler } from './handler.js';
 import { sendOutboundMessage } from './sender.js';
+import type { DiscordAccount } from './types.js';
 
 const log = createLogger({ name: 'channel-discord' });
 

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { PolicyRule, PolicyContext } from '../src/agents/tools/policy.js';
-import type { RegisteredToolDefinition } from '../src/agents/tools/registry.js';
 import { evaluateToolPolicy, matchToolPattern } from '../src/agents/tools/policy.js';
+import type { RegisteredToolDefinition } from '../src/agents/tools/registry.js';
 
 // ── 헬퍼 ──
 

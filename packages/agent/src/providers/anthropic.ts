@@ -1,10 +1,10 @@
-import type { MessageStreamEvent } from '@anthropic-ai/sdk/resources/messages/messages.js';
-import type { ConversationMessage } from '@finclaw/types';
 // packages/agent/src/providers/anthropic.ts
 import Anthropic from '@anthropic-ai/sdk';
+import type { MessageStreamEvent } from '@anthropic-ai/sdk/resources/messages/messages.js';
+import type { ConversationMessage } from '@finclaw/types';
+import { FailoverError } from '../errors.js';
 import type { StreamChunk } from '../models/provider-normalize.js';
 import type { ProviderAdapter, ProviderRequestParams } from './adapter.js';
-import { FailoverError } from '../errors.js';
 
 type AnthropicMessageParam = Anthropic.Messages.MessageParam;
 

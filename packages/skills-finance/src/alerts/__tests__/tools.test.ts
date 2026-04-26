@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { AlertStore, CreateAlertInput } from '../types.js';
 import { buildConditionFromParams } from '../tools.js';
+import type { AlertStore, CreateAlertInput } from '../types.js';
 
 type ToolExecutor = (
   input: Record<string, unknown>,

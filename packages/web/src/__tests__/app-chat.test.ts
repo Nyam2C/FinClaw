@@ -1,8 +1,8 @@
 // packages/web/src/__tests__/app-chat.test.ts
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { AppGateway, NotificationHandler } from '../app-gateway.js';
 import { createAppChat, type AppChat, type ChatState } from '../app-chat.js';
+import type { AppGateway, NotificationHandler } from '../app-gateway.js';
 
 function createMockGateway(): AppGateway & {
   fireNotification: (method: string, params: Record<string, unknown>) => void;

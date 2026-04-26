@@ -1,6 +1,6 @@
-import type { RoutingConfig, ToolMetadata } from '@finclaw/types';
 // packages/server/src/auto-reply/router-helper.ts
 import { resolveModelForRequest, tierToModelId, type RouterHelper } from '@finclaw/agent';
+import type { RoutingConfig, ToolMetadata } from '@finclaw/types';
 
 export type { RouterHelper, RouterHelperRequest, RouterHelperResult } from '@finclaw/agent';
 

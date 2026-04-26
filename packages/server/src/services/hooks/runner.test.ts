@@ -1,8 +1,8 @@
 // packages/server/src/services/hooks/runner.test.ts
 import { describe, it, expect, vi } from 'vitest';
-import type { HookEvent } from './types.js';
 import { HookRegistry } from './registry.js';
 import { createServiceHookRunner } from './runner.js';
+import type { HookEvent } from './types.js';
 
 function makeEvent(type = 'agent', action = 'bootstrap'): HookEvent {
   return { type: type as HookEvent['type'], action, timestamp: Date.now(), context: {} };

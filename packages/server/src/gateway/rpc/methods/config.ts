@@ -1,7 +1,7 @@
 // packages/server/src/gateway/rpc/methods/config.ts
 import { z } from 'zod/v4';
-import type { RpcMethodHandler } from '../types.js';
 import { registerMethod } from '../index.js';
+import type { RpcMethodHandler } from '../types.js';
 
 // -- config.get --
 

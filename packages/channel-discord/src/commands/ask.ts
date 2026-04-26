@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, type ChatInputCommandInteraction } from 'discord.js';
-import type { SlashCommand, CommandDeps } from '../types.js';
 import { chunkText } from '../chunking.js';
+import type { SlashCommand, CommandDeps } from '../types.js';
 
 export const askCommand: SlashCommand = {
   data: new SlashCommandBuilder()

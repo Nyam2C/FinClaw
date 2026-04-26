@@ -1,8 +1,8 @@
-import type { MemoryEntry, SessionKey, Timestamp } from '@finclaw/types';
 import { renameSync, unlinkSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import type { EmbeddingProvider } from './embeddings/provider.js';
+import type { MemoryEntry, SessionKey, Timestamp } from '@finclaw/types';
 import { openDatabase } from './database.js';
+import type { EmbeddingProvider } from './embeddings/provider.js';
 import { addMemoryWithEmbedding } from './tables/memories.js';
 
 interface MemoryRow {

@@ -1,5 +1,5 @@
-import type { ToolDefinition } from '@finclaw/types';
 import { getEventBus, createCircuitBreaker, type CircuitBreaker } from '@finclaw/infra';
+import type { ToolDefinition } from '@finclaw/types';
 import { z } from 'zod/v4';
 import type { ToolGroupId } from './groups.js';
 import type { PolicyRule } from './policy.js';

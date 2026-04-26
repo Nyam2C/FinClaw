@@ -1,7 +1,8 @@
+import { getEventBus } from '@finclaw/infra';
 // packages/server/src/gateway/rpc/index.ts
 import type { RpcRequest, RpcResponse } from '@finclaw/types';
-import { getEventBus } from '@finclaw/infra';
 import type { GatewayServerContext } from '../context.js';
+import { RpcErrors, createError } from './errors.js';
 import type {
   JsonRpcBatchRequest,
   RpcMethodHandler,
@@ -9,7 +10,6 @@ import type {
   AuthInfo,
   AuthLevel,
 } from './types.js';
-import { RpcErrors, createError } from './errors.js';
 
 // TODO(review-3): 모듈 레벨 Map → GatewayServerContext 소속으로 이동하여 서버 인스턴스별 격리 권장
 const methods = new Map<string, RpcMethodHandler>();

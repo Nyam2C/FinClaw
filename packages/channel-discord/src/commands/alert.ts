@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, MessageFlags, type ChatInputCommandInteraction } from 'discord.js';
-import type { SlashCommand, CommandDeps } from '../types.js';
 import { buildAlertEmbed } from '../embeds.js';
+import type { SlashCommand, CommandDeps } from '../types.js';
 
 export const alertCommand: SlashCommand = {
   data: new SlashCommandBuilder()

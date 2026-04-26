@@ -3,7 +3,6 @@ import { resetEventBus } from '@finclaw/infra';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { z } from 'zod/v4';
 import type { GatewayServerContext } from '../context.js';
-import type { RpcMethodHandler, AuthInfo, GatewayServerConfig, RpcMethod } from './types.js';
 import { RpcErrors } from './errors.js';
 import {
   registerMethod,
@@ -12,6 +11,7 @@ import {
   hasRequiredAuth,
   getRegisteredMethods,
 } from './index.js';
+import type { RpcMethodHandler, AuthInfo, GatewayServerConfig, RpcMethod } from './types.js';
 
 /** 테스트용 최소 GatewayServerContext */
 function makeServerCtx(overrides?: Partial<GatewayServerConfig>): GatewayServerContext {

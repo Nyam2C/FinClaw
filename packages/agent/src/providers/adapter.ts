@@ -1,6 +1,6 @@
-import type { ConversationMessage, ToolDefinition } from '@finclaw/types';
 // packages/agent/src/providers/adapter.ts
 import { createCircuitBreaker, type CircuitBreaker } from '@finclaw/infra';
+import type { ConversationMessage, ToolDefinition } from '@finclaw/types';
 import type { ProviderId } from '../models/catalog.js';
 import type { StreamChunk } from '../models/provider-normalize.js';
 

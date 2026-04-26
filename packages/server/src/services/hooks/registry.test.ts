@@ -1,7 +1,7 @@
 // packages/server/src/services/hooks/registry.test.ts
 import { describe, it, expect, vi } from 'vitest';
-import type { HookEvent, HookRegistration } from './types.js';
 import { HookRegistry } from './registry.js';
+import type { HookEvent, HookRegistration } from './types.js';
 
 function makeEvent(type: string, action: string): HookEvent {
   return { type: type as HookEvent['type'], action, timestamp: Date.now(), context: {} };

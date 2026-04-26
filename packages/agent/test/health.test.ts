@@ -1,7 +1,7 @@
 import { resetEventBus } from '@finclaw/infra';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import type { ManagedAuthProfile } from '../src/auth/profiles.js';
 import { ProfileHealthMonitor } from '../src/auth/health.js';
+import type { ManagedAuthProfile } from '../src/auth/profiles.js';
 
 describe('ProfileHealthMonitor', () => {
   let monitor: ProfileHealthMonitor;

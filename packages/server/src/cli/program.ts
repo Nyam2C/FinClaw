@@ -1,7 +1,6 @@
-import { Command } from 'commander';
 // packages/server/src/cli/program.ts
 import { readFileSync } from 'node:fs';
-import type { CliDeps } from './deps.js';
+import { Command } from 'commander';
 import * as agentCmd from './commands/agent.js';
 import * as alertCmd from './commands/alert.js';
 import * as channelCmd from './commands/channel.js';
@@ -11,6 +10,7 @@ import * as newsCmd from './commands/news.js';
 import * as startCmd from './commands/start.js';
 import * as stopCmd from './commands/stop.js';
 import * as tuiCmd from './commands/tui.js';
+import type { CliDeps } from './deps.js';
 import { EXIT } from './exit-codes.js';
 import { registerPreActionHooks } from './preaction.js';
 import { theme } from './terminal/theme.js';

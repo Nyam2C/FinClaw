@@ -2,9 +2,9 @@
 import type { StorageAdapter } from '@finclaw/types';
 import { z } from 'zod/v4';
 import type { ChatRegistry } from '../../registry.js';
-import type { RpcMethodHandler } from '../types.js';
 import { RpcErrors } from '../errors.js';
 import { registerMethod } from '../index.js';
+import type { RpcMethodHandler } from '../types.js';
 
 export interface SessionMethodsDeps {
   readonly registry: ChatRegistry;

@@ -7,10 +7,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const { MockWebSocket, wsInstances } = vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { EventEmitter } = require('node:events') as typeof import('node:events');
-  const wsInstances: InstanceType<typeof MockWebSocket>[] = [];
-  class MockWebSocket extends EventEmitter {
+  // oxlint-disable-next-line no-shadow -- vi.hoisted 패턴: 콜백 내부 선언이 외부 destructure 와 동일 이름
+  const instances: InstanceType<typeof MockWS>[] = [];
+  // oxlint-disable-next-line no-shadow -- vi.hoisted 패턴
+  class MockWS extends EventEmitter {
     static OPEN = 1;
-    readyState = MockWebSocket.OPEN;
+    readyState = MockWS.OPEN;
     sentMessages: string[] = [];
 
     constructor(
@@ -18,7 +20,7 @@ const { MockWebSocket, wsInstances } = vi.hoisted(() => {
       public opts?: Record<string, unknown>,
     ) {
       super();
-      wsInstances.push(this);
+      instances.push(this);
       // 다음 tick에 open 이벤트 발생
       setTimeout(() => this.emit('open'), 0);
     }
@@ -31,7 +33,7 @@ const { MockWebSocket, wsInstances } = vi.hoisted(() => {
       this.readyState = 3; // CLOSED
     }
   }
-  return { MockWebSocket, wsInstances };
+  return { MockWebSocket: MockWS, wsInstances: instances };
 });
 
 // ws 모듈 mock

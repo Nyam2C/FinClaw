@@ -1,6 +1,6 @@
+import { spawn } from 'node:child_process';
 // packages/server/src/cli/commands/start.ts
 import type { Command } from 'commander';
-import { spawn } from 'node:child_process';
 import type { CliDeps } from '../deps.js';
 import { EXIT } from '../exit-codes.js';
 import { theme } from '../terminal/theme.js';

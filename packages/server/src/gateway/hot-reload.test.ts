@@ -29,9 +29,9 @@ vi.mock('@finclaw/infra', () => ({
   }),
 }));
 
+import { readFile } from 'node:fs/promises';
 import { getEventBus } from '@finclaw/infra';
 import { watch } from 'chokidar';
-import { readFile } from 'node:fs/promises';
 import type { GatewayServerContext } from './context.js';
 import { createHotReloader, type HotReloadConfig } from './hot-reload.js';
 

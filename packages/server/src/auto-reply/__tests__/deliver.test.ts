@@ -2,8 +2,8 @@ import type { FinClawLogger } from '@finclaw/infra';
 import { createTimestamp, createSessionKey, createChannelId } from '@finclaw/types';
 import { describe, it, expect, vi } from 'vitest';
 import type { PipelineMsgContext } from '../pipeline-context.js';
-import type { ExecuteStageResult } from '../stages/execute.js';
 import { deliverResponse } from '../stages/deliver.js';
+import type { ExecuteStageResult } from '../stages/execute.js';
 
 function makeLogger(): FinClawLogger {
   return {

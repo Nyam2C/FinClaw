@@ -1,8 +1,8 @@
 import type { MarketQuote, Timestamp, TickerSymbol } from '@finclaw/types';
 import type { ChatInputCommandInteraction } from 'discord.js';
 import { describe, it, expect, vi } from 'vitest';
-import type { CommandDeps, FinanceServicePort } from '../../src/types.js';
 import { marketCommand } from '../../src/commands/market.js';
+import type { CommandDeps, FinanceServicePort } from '../../src/types.js';
 
 // discord.js mock
 vi.mock('discord.js', () => {

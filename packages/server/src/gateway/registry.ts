@@ -1,7 +1,7 @@
-import type { ModelRef, SessionKey } from '@finclaw/types';
 // packages/server/src/gateway/registry.ts
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
+import type { ModelRef, SessionKey } from '@finclaw/types';
 import type { ActiveSession, RegistryEvent } from './rpc/types.js';
 
 /**

@@ -1,3 +1,8 @@
+// packages/server/src/plugins/loader.ts
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { getNodeMajorVersion } from '@finclaw/infra';
 import type {
   PluginDiagnostic,
   PluginHookName,
@@ -6,12 +11,7 @@ import type {
   RouteRegistration,
   ChannelPlugin,
 } from '@finclaw/types';
-import { getNodeMajorVersion } from '@finclaw/infra';
 import { createJiti } from 'jiti';
-// packages/server/src/plugins/loader.ts
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { discoverPlugins, validatePluginPath } from './discovery.js';
 import { parseManifest } from './manifest.js';
 import { registerToSlot } from './registry.js';

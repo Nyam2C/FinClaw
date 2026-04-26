@@ -1,6 +1,6 @@
-import type { ExitCode } from './exit-codes.js';
 // packages/server/src/cli/entry.ts
 import { createDefaultDeps } from './deps.js';
+import type { ExitCode } from './exit-codes.js';
 import { buildProgram } from './program.js';
 import { tryFastPath } from './route.js';
 

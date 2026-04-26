@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 // packages/server/src/auto-reply/execution-adapter.ts
 import type {
   AliasIndex,
@@ -8,6 +9,15 @@ import type {
   Runner,
   StreamEventListener,
   ToolRegistry,
+} from '@finclaw/agent';
+import {
+  calculateEstimatedCost,
+  DEFAULT_FALLBACK_TRIGGERS,
+  ExecutionToolDispatcher as ToolDispatcherCtor,
+  modelIdToTier,
+  resolveModel,
+  runWithModelFallback,
+  type ModelRole,
 } from '@finclaw/agent';
 import type { FinClawLogger } from '@finclaw/infra';
 import type {
@@ -21,17 +31,7 @@ import type {
   StorageAdapter,
   Timestamp,
 } from '@finclaw/types';
-import {
-  calculateEstimatedCost,
-  DEFAULT_FALLBACK_TRIGGERS,
-  ExecutionToolDispatcher as ToolDispatcherCtor,
-  modelIdToTier,
-  resolveModel,
-  runWithModelFallback,
-  type ModelRole,
-} from '@finclaw/agent';
 import { createAgentId } from '@finclaw/types';
-import { randomUUID } from 'node:crypto';
 import type { PipelineMsgContext } from './pipeline-context.js';
 import type { RouterHelper } from './router-helper.js';
 import { buildDispatcher } from './tool-dispatcher-adapter.js';

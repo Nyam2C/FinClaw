@@ -1,6 +1,5 @@
 import type { FinClawLogger } from '@finclaw/infra';
 import { describe, it, expect, vi } from 'vitest';
-import type { AlertDefinition, ConditionEvaluation } from '../types.js';
 import {
   formatAlertMessage,
   createDiscordDeliveryHandler,
@@ -8,6 +7,7 @@ import {
   createLogDeliveryHandler,
   createDeliveryDispatcher,
 } from '../delivery.js';
+import type { AlertDefinition, ConditionEvaluation } from '../types.js';
 
 function mockAlert(overrides?: Partial<AlertDefinition>): AlertDefinition {
   return {

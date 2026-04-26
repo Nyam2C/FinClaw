@@ -1,7 +1,7 @@
 // packages/skills-finance/src/market/charts.ts
 import type { OHLCVCandle } from '@finclaw/types';
-import type { ChartOptions } from './types.js';
 import { formatPrice } from './formatters.js';
+import type { ChartOptions } from './types.js';
 
 /** 스파크라인 블록 문자 (하단→상단, 8레벨) */
 const SPARK_CHARS = [' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];

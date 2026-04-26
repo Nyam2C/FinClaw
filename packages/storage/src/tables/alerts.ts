@@ -1,5 +1,5 @@
-import type { Alert, AlertConditionType, TickerSymbol, Timestamp } from '@finclaw/types';
 import { DatabaseSync } from 'node:sqlite';
+import type { Alert, AlertConditionType, TickerSymbol, Timestamp } from '@finclaw/types';
 
 // ─── Internal types ───
 

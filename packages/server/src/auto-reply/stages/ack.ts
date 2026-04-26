@@ -1,9 +1,9 @@
 import type { FinClawLogger } from '@finclaw/infra';
 // packages/server/src/auto-reply/stages/ack.ts
 import type { ChannelPlugin } from '@finclaw/types';
-import type { StageResult } from '../pipeline.js';
 // startTyping: 외부 모듈 의존성. 타입체크 통과, 런타임 동작은 통합 테스트 범위.
 import { startTyping, type TypingHandle } from '../../channels/typing.js';
+import type { StageResult } from '../pipeline.js';
 
 type TypingState = 'idle' | 'active' | 'sealed';
 

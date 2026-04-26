@@ -1,13 +1,13 @@
 import { resetEventBus } from '@finclaw/infra';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { FallbackConfig } from '../src/models/fallback.js';
-import type { ResolvedModel } from '../src/models/selection.js';
 import { FailoverError } from '../src/errors.js';
+import type { FallbackConfig } from '../src/models/fallback.js';
 import {
   runWithModelFallback,
   DEFAULT_FALLBACK_TRIGGERS,
   ModelFloorExhaustedError,
 } from '../src/models/fallback.js';
+import type { ResolvedModel } from '../src/models/selection.js';
 import { resetBreakers } from '../src/providers/adapter.js';
 
 // 모킹 helpers

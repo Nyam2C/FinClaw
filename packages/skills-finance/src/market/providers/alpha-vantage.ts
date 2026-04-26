@@ -1,6 +1,6 @@
-import type { TickerSymbol } from '@finclaw/types';
 import { safeFetchJson } from '@finclaw/infra';
 import { retry } from '@finclaw/infra';
+import type { TickerSymbol } from '@finclaw/types';
 import { z } from 'zod/v4';
 // packages/skills-finance/src/market/providers/alpha-vantage.ts
 import type {

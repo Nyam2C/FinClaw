@@ -136,23 +136,18 @@ export class PortfolioView extends LitElement {
       </div>
 
       ${this.error ? html`<div class="error">${this.error}</div>` : ''}
-      ${
-        !this.gateway?.isConnected
-          ? html`
-              <div class="empty">게이트웨이 연결 대기 중...</div>
-            `
-          : this.loading && !this.snapshot
+      ${!this.gateway?.isConnected
+        ? html` <div class="empty">게이트웨이 연결 대기 중...</div> `
+        : this.loading && !this.snapshot
+          ? html` <div class="empty">불러오는 중...</div> `
+          : holdings.length === 0
             ? html`
-                <div class="empty">불러오는 중...</div>
+                <div class="empty">
+                  포트폴리오에 종목이 없습니다.<br />
+                  <span class="note">거래 기록·편집 기능은 Phase 25 에서 추가 예정입니다.</span>
+                </div>
               `
-            : holdings.length === 0
-              ? html`
-                  <div class="empty">
-                    포트폴리오에 종목이 없습니다.<br />
-                    <span class="note">거래 기록·편집 기능은 Phase 25 에서 추가 예정입니다.</span>
-                  </div>
-                `
-              : html`
+            : html`
                 <table>
                   <thead>
                     <tr>
@@ -176,8 +171,7 @@ export class PortfolioView extends LitElement {
                   </tbody>
                 </table>
                 <div class="note">총 ${holdings.length}개 종목. 거래 이력은 Phase 25 예정.</div>
-              `
-      }
+              `}
     `;
   }
 }

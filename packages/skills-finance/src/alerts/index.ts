@@ -1,12 +1,11 @@
+import type { DatabaseSync } from 'node:sqlite';
 import type { ToolRegistry } from '@finclaw/agent';
 import type { FinClawLogger } from '@finclaw/infra';
-import type { SkillMetadata } from '@finclaw/types';
-import type { DatabaseSync } from 'node:sqlite';
 import { ConcurrencyLane, createCircuitBreaker } from '@finclaw/infra';
+import type { SkillMetadata } from '@finclaw/types';
 import type { MarketCache } from '../market/cache.js';
 import type { ProviderRegistry } from '../market/provider-registry.js';
 import type { NewsAggregator } from '../news/types.js';
-import type { AlertConditionEvaluator, AlertConditionType, AlertMonitorConfig } from './types.js';
 import { createChangeConditionEvaluator } from './conditions/change.js';
 import { createNewsConditionEvaluator } from './conditions/news.js';
 import { createPriceConditionEvaluator } from './conditions/price.js';
@@ -29,6 +28,7 @@ import {
   registerRemoveAlertTool,
   registerGetAlertHistoryTool,
 } from './tools.js';
+import type { AlertConditionEvaluator, AlertConditionType, AlertMonitorConfig } from './types.js';
 
 export type {
   AlertStore,

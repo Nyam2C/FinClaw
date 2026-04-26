@@ -1,6 +1,6 @@
+import { resetEventBus, getEventBus, type FinClawLogger } from '@finclaw/infra';
 import type { InboundMessage, MsgContext } from '@finclaw/types';
 import type { FinClawConfig } from '@finclaw/types';
-import { resetEventBus, getEventBus, type FinClawLogger } from '@finclaw/infra';
 import { createChannelId, createTimestamp } from '@finclaw/types';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { BindingMatch } from '../../src/process/binding-matcher.js';

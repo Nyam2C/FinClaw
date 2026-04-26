@@ -4,8 +4,8 @@ import type { OutboundMessage, ReplyPayload, ChannelPlugin } from '@finclaw/type
 import type { ToolCallRecord } from '../execution-adapter.js';
 import type { PipelineMsgContext } from '../pipeline-context.js';
 import type { StageResult } from '../pipeline.js';
-import type { ExecuteStageResult } from './execute.js';
 import { splitMessage } from '../response-formatter.js';
+import type { ExecuteStageResult } from './execute.js';
 
 /**
  * 응답 전송 단계

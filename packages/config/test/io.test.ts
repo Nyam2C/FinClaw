@@ -1,8 +1,8 @@
-// packages/config/test/io.test.ts
-import type { FinClawConfig } from '@finclaw/types';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+// packages/config/test/io.test.ts
+import type { FinClawConfig } from '@finclaw/types';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createConfigIO, loadConfig, clearConfigCache } from '../src/io.js';
 import { resetOverrides } from '../src/runtime-overrides.js';

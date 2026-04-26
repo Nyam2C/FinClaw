@@ -1,6 +1,6 @@
-import type { TickerSymbol } from '@finclaw/types';
 import { safeFetchJson } from '@finclaw/infra';
 import { retry } from '@finclaw/infra';
+import type { TickerSymbol } from '@finclaw/types';
 // packages/skills-finance/src/market/providers/frankfurter.ts
 import type {
   MarketDataProvider,

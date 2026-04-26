@@ -1,11 +1,11 @@
-import type { ModelTier } from '@finclaw/types';
 // packages/agent/src/models/fallback.ts
 import { sleepWithAbort, computeBackoff, getEventBus } from '@finclaw/infra';
+import type { ModelTier } from '@finclaw/types';
 import type { FallbackReason } from '../errors.js';
-import type { UnresolvedModelRef, ResolvedModel } from './selection.js';
 import { classifyFallbackError } from '../errors.js';
 import { getBreakerForProvider } from '../providers/adapter.js';
 import { modelIdToTier } from './routing.js';
+import type { UnresolvedModelRef, ResolvedModel } from './selection.js';
 
 /**
  * 라우터 결정 floor 미만으로 fallback 이 차단된 경우 throw 되는 에러 (Phase 24, B6).

@@ -1,6 +1,6 @@
-import type { MemoryEntry, SessionKey, Timestamp } from '@finclaw/types';
 import { createHash, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
+import type { MemoryEntry, SessionKey, Timestamp } from '@finclaw/types';
 import type { EmbeddingProvider } from '../embeddings/provider.js';
 import { embedBatchWithCache } from './embeddings.js';
 

@@ -1,6 +1,6 @@
+import { createHmac } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import { resetEventBus } from '@finclaw/infra';
-import { createHmac } from 'node:crypto';
 // packages/server/src/gateway/auth/index.test.ts
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { GatewayServerConfig } from '../rpc/types.js';

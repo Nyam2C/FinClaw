@@ -1,6 +1,10 @@
 import type { CircuitBreaker } from '@finclaw/infra';
 import { describe, it, expect, vi } from 'vitest';
 import type { NewsAggregator } from '../../news/types.js';
+import { createChangeConditionEvaluator } from '../conditions/change.js';
+import { createNewsConditionEvaluator } from '../conditions/news.js';
+import { createPriceConditionEvaluator } from '../conditions/price.js';
+import { createVolumeConditionEvaluator } from '../conditions/volume.js';
 import type {
   AlertMarketService,
   PriceCondition,
@@ -8,10 +12,6 @@ import type {
   VolumeCondition,
   NewsCondition,
 } from '../types.js';
-import { createChangeConditionEvaluator } from '../conditions/change.js';
-import { createNewsConditionEvaluator } from '../conditions/news.js';
-import { createPriceConditionEvaluator } from '../conditions/price.js';
-import { createVolumeConditionEvaluator } from '../conditions/volume.js';
 
 function mockMarketService(quote: {
   price: number;

@@ -1,8 +1,8 @@
-import { getEventBus } from '@finclaw/infra';
-import { watch, type FSWatcher } from 'chokidar';
 // packages/server/src/gateway/hot-reload.ts
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { getEventBus } from '@finclaw/infra';
+import { watch, type FSWatcher } from 'chokidar';
 import type { GatewayServerContext } from './context.js';
 import type { ConfigChangeEvent } from './rpc/types.js';
 

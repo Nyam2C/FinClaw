@@ -1,8 +1,8 @@
 // packages/server/src/gateway/openai-compat/router.ts
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { GatewayServerContext } from '../context.js';
-import type { OpenAIChatRequest, OpenAIErrorResponse } from '../rpc/types.js';
 import { readBody } from '../router.js';
+import type { OpenAIChatRequest, OpenAIErrorResponse } from '../rpc/types.js';
 import { adaptRequest, mapModelId } from './adapter.js';
 
 /**

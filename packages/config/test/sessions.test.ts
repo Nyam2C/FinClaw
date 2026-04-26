@@ -1,11 +1,11 @@
-// packages/config/test/sessions.test.ts
-import { createSessionKey, createTimestamp } from '@finclaw/types';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+// packages/config/test/sessions.test.ts
+import { createSessionKey, createTimestamp } from '@finclaw/types';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import type { SessionEntry } from '../src/sessions/types.js';
 import { createSessionStore } from '../src/sessions/store.js';
+import type { SessionEntry } from '../src/sessions/types.js';
 import { mergeSessionEntry } from '../src/sessions/types.js';
 
 function makeEntry(id: string, data: Record<string, unknown> = {}): SessionEntry {

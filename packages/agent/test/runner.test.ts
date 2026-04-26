@@ -1,12 +1,12 @@
-import type { AgentRunParams } from '@finclaw/types';
 import { ConcurrencyLaneManager } from '@finclaw/infra';
+import type { AgentRunParams } from '@finclaw/types';
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { RunnerOptions } from '../src/execution/runner.js';
+import { Runner } from '../src/execution/runner.js';
 import type { StreamEvent } from '../src/execution/streaming.js';
+import { ExecutionToolDispatcher } from '../src/execution/tool-executor.js';
 import type { StreamChunk } from '../src/models/provider-normalize.js';
 import type { ProviderAdapter, ProviderRequestParams } from '../src/providers/adapter.js';
-import { Runner } from '../src/execution/runner.js';
-import { ExecutionToolDispatcher } from '../src/execution/tool-executor.js';
 
 /** mock provider: 미리 정해진 StreamChunk 시퀀스를 반환 */
 function createMockProvider(sequences: StreamChunk[][]): ProviderAdapter {

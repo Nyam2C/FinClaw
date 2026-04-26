@@ -1,3 +1,5 @@
+import type { DatabaseSync } from 'node:sqlite';
+import Anthropic from '@anthropic-ai/sdk';
 // packages/skills-finance/src/news/index.ts
 import type {
   ModelCatalog,
@@ -6,12 +8,9 @@ import type {
   ToolRegistry,
 } from '@finclaw/agent';
 import type { ModelRef, SkillMetadata } from '@finclaw/types';
-import type { DatabaseSync } from 'node:sqlite';
-import Anthropic from '@anthropic-ai/sdk';
-import type { QuoteService } from './portfolio/tracker.js';
-import type { NewsProvider } from './types.js';
 import { createNewsAggregator } from './aggregator.js';
 import { PortfolioStore } from './portfolio/store.js';
+import type { QuoteService } from './portfolio/tracker.js';
 import { createAlphaVantageNewsProvider } from './providers/alpha-vantage-news.js';
 import { createNewsApiProvider } from './providers/newsapi.js';
 import { createRssProvider } from './providers/rss.js';
@@ -20,6 +19,7 @@ import {
   registerAnalyzeMarketTool,
   registerGetPortfolioSummaryTool,
 } from './tools.js';
+import type { NewsProvider } from './types.js';
 
 export type { NewsAggregator, NewsQuery, NewsProvider, NewsSourceId } from './types.js';
 export type { QuoteService } from './portfolio/tracker.js';

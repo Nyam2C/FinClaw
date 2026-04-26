@@ -247,38 +247,30 @@ export class AlertsView extends LitElement {
           <option value="change_percent">변동률 (%)</option>
           <option value="news_match">뉴스 키워드</option>
         </select>
-        ${
-          this.condition === 'news_match'
-            ? html`<input
+        ${this.condition === 'news_match'
+          ? html`<input
               type="text"
               placeholder="키워드"
               .value=${this.keyword}
               @input=${(e: Event) => (this.keyword = (e.target as HTMLInputElement).value)}
             />`
-            : html`<input
+          : html`<input
               type="number"
               step="0.01"
               placeholder="임계값"
               .value=${this.threshold}
               @input=${(e: Event) => (this.threshold = (e.target as HTMLInputElement).value)}
-            />`
-        }
+            />`}
         <button type="submit" ?disabled=${!this.gateway?.isConnected}>추가</button>
       </form>
 
       ${this.triggerMsg ? html`<div class="triggered">${this.triggerMsg}</div>` : ''}
       ${this.error ? html`<div class="error">${this.error}</div>` : ''}
-
-      ${
-        this.loading
-          ? html`
-              <div class="empty">불러오는 중...</div>
-            `
-          : this.alerts.length === 0
-            ? html`
-                <div class="empty">설정된 알림 없음</div>
-              `
-            : html`
+      ${this.loading
+        ? html` <div class="empty">불러오는 중...</div> `
+        : this.alerts.length === 0
+          ? html` <div class="empty">설정된 알림 없음</div> `
+          : html`
               <table>
                 <thead>
                   <tr>
@@ -309,8 +301,7 @@ export class AlertsView extends LitElement {
                   )}
                 </tbody>
               </table>
-            `
-      }
+            `}
 
       <div class="hint">
         알림 삭제는 채팅에서 <code>!finclaw</code> 로 요청하세요 (Web 삭제는 Phase 24+ 예정).

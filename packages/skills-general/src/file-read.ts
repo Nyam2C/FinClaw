@@ -1,7 +1,7 @@
-import type { RegisteredToolDefinition, ToolExecutor, ToolRegistry } from '@finclaw/agent';
 // packages/skills-general/src/file-read.ts
 import { readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
+import type { RegisteredToolDefinition, ToolExecutor, ToolRegistry } from '@finclaw/agent';
 
 export interface FileReadConfig {
   readonly fileRoot: string;

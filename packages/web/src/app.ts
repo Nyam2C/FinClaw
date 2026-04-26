@@ -213,20 +213,20 @@ export class FinClawApp extends LitElement {
           (msg) => html`
             <div class="message ${msg.role}">
               <div class="message-role">${msg.role === 'user' ? 'You' : 'FinClaw'}</div>
-              <div .innerHTML=${msg.role === 'assistant' ? renderMarkdown(msg.content) : msg.content}></div>
+              <div
+                .innerHTML=${msg.role === 'assistant' ? renderMarkdown(msg.content) : msg.content}
+              ></div>
             </div>
           `,
         )}
-        ${
-          this.chatState.streamBuffer
-            ? html`
+        ${this.chatState.streamBuffer
+          ? html`
               <div class="message assistant">
                 <div class="message-role">FinClaw</div>
                 <div class="stream-buffer">${this.chatState.streamBuffer}</div>
               </div>
             `
-            : ''
-        }
+          : ''}
       </div>
       <div class="chat-input">
         <input
@@ -267,34 +267,16 @@ export class FinClawApp extends LitElement {
 
       <main>
         ${this.activeTab === 'chat' ? this.renderChat() : ''}
-        ${
-          this.activeTab === 'market'
-            ? html`
-                <market-view .gateway=${this.gateway}></market-view>
-              `
-            : ''
-        }
-        ${
-          this.activeTab === 'portfolio'
-            ? html`
-                <portfolio-view .gateway=${this.gateway}></portfolio-view>
-              `
-            : ''
-        }
-        ${
-          this.activeTab === 'alerts'
-            ? html`
-                <alerts-view .gateway=${this.gateway}></alerts-view>
-              `
-            : ''
-        }
-        ${
-          this.activeTab === 'settings'
-            ? html`
-                <settings-view></settings-view>
-              `
-            : ''
-        }
+        ${this.activeTab === 'market'
+          ? html` <market-view .gateway=${this.gateway}></market-view> `
+          : ''}
+        ${this.activeTab === 'portfolio'
+          ? html` <portfolio-view .gateway=${this.gateway}></portfolio-view> `
+          : ''}
+        ${this.activeTab === 'alerts'
+          ? html` <alerts-view .gateway=${this.gateway}></alerts-view> `
+          : ''}
+        ${this.activeTab === 'settings' ? html` <settings-view></settings-view> ` : ''}
       </main>
 
       <div class="status-bar">
