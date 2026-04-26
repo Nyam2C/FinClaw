@@ -156,23 +156,6 @@ export type {
 } from './agents/context/index.js';
 export { evaluateContextWindow, compactContext } from './agents/context/index.js';
 
-// ── Phase 7: System Prompt ──
-export type {
-  PromptSection,
-  InvestmentProfile,
-  PromptModelCapabilities,
-  PromptBuildContext,
-  PromptBuildMode,
-} from './agents/system-prompt.js';
-export {
-  buildSystemPrompt,
-  buildIdentitySection,
-  buildToolsSection,
-  buildFinanceContextSection,
-  buildComplianceSection,
-  buildRiskDisclaimerSection,
-} from './agents/system-prompt.js';
-
 // ── Phase 9: Execution ──
 export {
   ToolInputBuffer,

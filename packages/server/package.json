@@ -5,6 +5,10 @@
   "bin": {
     "finclaw": "./bin/finclaw.js"
   },
+  "files": [
+    "dist",
+    "prompts/**/*.md"
+  ],
   "type": "module",
   "dependencies": {
     "@finclaw/agent": "workspace:*",
