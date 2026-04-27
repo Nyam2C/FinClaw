@@ -7,6 +7,9 @@ import type { StageResult } from '../pipeline.js';
 import { splitMessage } from '../response-formatter.js';
 import type { ExecuteStageResult } from './execute.js';
 
+const INVESTMENT_DISCLAIMER =
+  '_본 정보는 투자 조언이 아니며, 투자 결정은 본인의 판단과 책임 하에 이루어져야 합니다._';
+
 /**
  * 응답 전송 단계
  *
@@ -29,9 +32,7 @@ export async function deliverResponse(
 
   // 면책 조항 첨부
   if (executeResult.controlTokens.needsDisclaimer) {
-    content +=
-      '\n\n---\n' +
-      '_본 정보는 투자 조언이 아니며, 투자 결정은 본인의 판단과 책임 하에 이루어져야 합니다._';
+    content += '\n\n---\n' + INVESTMENT_DISCLAIMER;
   }
 
   // Phase 22: 도구 출처 footer 자동 첨부
