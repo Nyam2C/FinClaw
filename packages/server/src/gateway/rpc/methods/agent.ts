@@ -19,6 +19,7 @@ import {
 } from '../../../auto-reply/execution-adapter.js';
 import type { RouterHelper } from '../../../auto-reply/router-helper.js';
 import { buildDispatcher } from '../../../auto-reply/tool-dispatcher-adapter.js';
+import { loadPrompt, requireFrontmatterKeys } from '../../../prompts/loader.js';
 import { registerMethod } from '../index.js';
 import type { RpcMethodHandler } from '../types.js';
 
@@ -50,13 +51,33 @@ interface AgentInfo {
   readonly description: string;
 }
 
-const AGENTS: readonly AgentInfo[] = [
-  {
-    id: 'finclaw-partner',
-    name: 'FinClaw Personal Finance Partner',
-    description: '개인 금융 파트너. 시세 조회·뉴스·포트폴리오·알림 관리.',
-  },
-];
+let cachedAgents: readonly AgentInfo[] | null = null;
+
+async function loadAgents(): Promise<readonly AgentInfo[]> {
+  if (cachedAgents) {
+    return cachedAgents;
+  }
+  const doc = await loadPrompt('finclaw.identity.md', 'agent.ts:loadAgents');
+  requireFrontmatterKeys(
+    doc,
+    'finclaw.identity.md',
+    ['id', 'name', 'description'],
+    'agent.ts:loadAgents',
+  );
+  cachedAgents = [
+    {
+      id: doc.frontmatter.id,
+      name: doc.frontmatter.name,
+      description: doc.frontmatter.description,
+    },
+  ];
+  return cachedAgents;
+}
+
+/** 테스트용: AGENTS 캐시 초기화 */
+export function resetAgentsCache(): void {
+  cachedAgents = null;
+}
 
 // 프로세스 내 상태 — agent.status 응답에 사용
 const activeRuns = new Map<string, number>();
@@ -86,8 +107,9 @@ export function registerAgentMethods(deps: AgentRpcDeps): void {
     schema: z.object({}),
     async execute() {
       const toolCount = deps.toolRegistry.list().length;
+      const agents = await loadAgents();
       return {
-        agents: AGENTS.map((a) => ({
+        agents: agents.map((a) => ({
           id: a.id,
           name: a.name,
           description: a.description,
@@ -104,7 +126,8 @@ export function registerAgentMethods(deps: AgentRpcDeps): void {
     authLevel: 'token',
     schema: z.object({ agentId: z.string() }),
     async execute(params) {
-      const info = AGENTS.find((a) => a.id === params.agentId);
+      const agents = await loadAgents();
+      const info = agents.find((a) => a.id === params.agentId);
       if (!info) {
         throw new Error(`unknown_agent: ${params.agentId}`);
       }
@@ -145,7 +168,8 @@ export function registerAgentMethods(deps: AgentRpcDeps): void {
       role: z.enum(['fetch', 'chat', 'analysis', 'summarize']).default('analysis'),
     }),
     async execute(params) {
-      if (!AGENTS.find((a) => a.id === params.agentId)) {
+      const agents = await loadAgents();
+      if (!agents.find((a) => a.id === params.agentId)) {
         throw new Error(`unknown_agent: ${params.agentId}`);
       }
       if (params.stream) {

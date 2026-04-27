@@ -29,6 +29,12 @@ Phase 24 에서 모델 역할 라우팅이 붙으면 동일 사용자 요청이 
 - **`system-prompt.ts` 동적 빌더는 삭제 기본** — git log 확인 결과 `00060e5 feat(agent): ... and system prompt` 커밋에서 도입됐으나 채택되지 않음 (정적 상수가 대신 채택됨). 호출 0건 = 죽은 코드. 본 phase 에서 정리.
 - **추측성 기능 도입 금지** — hot-reload, A/B 테스트, 버전 관리, 자동 다국어 감지는 범위 외.
 
+**전수 조사 결과** (2026-04-27, `feature/prompt-externalization` 브랜치 시점):
+
+- 위 5곳 외에 자연어 instruction 1곳 추가 식별 — `packages/skills-finance/src/news/analysis/market-analysis.ts:124-140` `buildAnalysisUserPrompt` (영어 6 줄 + 조건부 분기 2개).
+- TUI/Web 클라이언트는 `agent.list` RPC 응답을 그대로 소비 — 페르소나 텍스트가 박힌 곳 없음. 단일 진실 깨질 위험 없음.
+- `packages/server/src/auto-reply/stages/deliver.ts:34` 면책 disclaimer 는 사용자 직접 출력 정적 텍스트(LLM 프롬프트 아님). 본 phase 범위 외.
+
 ---
 
 ## 밀스톤 A — 페르소나 통합 & 외부화
@@ -109,7 +115,10 @@ frontmatter 는 단순 `key: value` 라인 파서 (YAML 라이브러리 안 씀 
 - 기동 시 로드된 시스템 프롬프트 == 기존 `DEFAULT_SYSTEM_PROMPT` 문자열과 동일 (회귀 보존)
 - `agent.list` 응답의 `name`/`description` == `finclaw.identity.md` frontmatter
 - `system-prompt.ts` 와 관련 export 완전 삭제, `pnpm typecheck` 통과
-- `prompts/finclaw.identity.md` 파일 누락 시 기동 실패 + 친절한 에러 메시지
+- `prompts/finclaw.identity.md` 파일 누락 시 기동 실패 + 에러 메시지에 다음 3가지 포함:
+  1. 검색한 디렉토리의 절대 경로
+  2. 누락된 파일명 (또는 frontmatter 키 누락 시 키 이름)
+  3. 어느 호출 site 가 요구했는지 (예: `loadPrompt` 호출 위치)
 
 ---
 
@@ -125,6 +134,7 @@ frontmatter 는 단순 `key: value` 라인 파서 (YAML 라이브러리 안 씀 
 - `sentiment`: 한 줄 system + rule-hint 점수 동적 주입 (`sentiment.ts:127`). 점수만 `{{ruleHint}}` 변수 치환.
 - 응답 검증(`AnalysisResponseSchema`, `LlmSentimentSchema`) 은 코드에 남긴다 (Zod, 타입 안전성).
 - **모델 ID 통일은 Phase 24 책임** — 본 phase 는 프롬프트만 다룸. (Phase 24 plan 의 호출 지점 표에 스킬 내부 LLM 호출 추가 항목과 짝.)
+- **`buildAnalysisUserPrompt` 는 코드에 유지** — `${newsDigest}` 임베딩 + `symbols`/`includeIndicators` 조건부 분기가 본질이라 단순 `{{key}}` 치환으로 표현 시 가독성 더 나빠짐. 자연어 비중도 system 대비 낮음(고정 라벨 3개). system 외부화만으로 변경 빈도 높은 자연어는 충분히 분리됨.
 
 ### 작업
 
@@ -222,6 +232,12 @@ Response format (strict JSON, no markdown):
 - `package.json#files` 에 `prompts/**/*.md` 포함 → `pnpm pack` 결과물에 포함되는지 확인
 - ESM `import.meta.url` 기반 경로 해석이 dist 빌드 후에도 작동하는지 확인 (필요 시 `tsconfig.json` 의 `outDir` 와 `prompts/` 상대 경로 검증)
 
+**CI 가드** (회귀 자동 차단):
+
+- `package.json#files` 에 `prompts/**/*.md` 가 누락된 경우 실패하는 테스트 추가 (해당 패키지 `package.json` 직접 파싱)
+- `pnpm pack --pack-destination /tmp/finclaw-pack-check` 로 tarball 생성 후 안에 `prompts/*.md` 가 포함되는지 검증하는 스크립트를 CI 스텝에 추가
+- 두 가드 모두 server / skills-finance 두 패키지 각각 검증
+
 ### 검증
 
 - `pnpm test` 통과
@@ -230,12 +246,110 @@ Response format (strict JSON, no markdown):
 
 ---
 
+## 밀스톤 D — 분석 프롬프트 강화 (2026-04-27 추가)
+
+### 목표
+
+밀스톤 B 가 단순 외부화에 그쳐 분석 프롬프트가 페르소나 5대 원칙(특히 출처 명시·환각 금지·불확실성 수치화)을 전혀 반영 못함. 외부화로 인해 손쉬운 보강이 가능해진 시점에 **분석 출력의 감사 가능성**을 확보한다. 본 phase 의 "단일 진실" 목표는 페르소나 텍스트뿐 아니라 페르소나 원칙이 모든 LLM 호출에 반영되어야 완성됨.
+
+### 전제
+
+- 밀스톤 A·B·C 완료 후 진행 (외부화·테스트 인프라 활용).
+- 6 변형 `.md` 의 본문이 더 이상 함수 출력과 byte-equal 이지 않게 됨 — 외부화 완료 시점부터 무관하므로 OK.
+- `MarketAnalysis` 타입 변경의 downstream blast radius 확인 결과:
+  - `tools.ts:170` 가 `JSON.stringify(analysis)` 로 LLM 에 그대로 전달 → 신규 필드 자동 활용
+  - `embeds.ts` 는 `NewsItem.sentiment` (별 타입) 사용 → 무관
+  - 직접 코드 호출자 없음
+- **사용자 결정** (2026-04-27): Lv.2 (스키마 확장 포함) 채택. Lv.3 (도메인 특화) 은 별 phase.
+
+### 작업
+
+**파일**:
+
+- `packages/skills-finance/src/news/types.ts` (수정, ~30 LOC) — `MarketAnalysis` 확장 + 보조 타입 신설
+- `packages/skills-finance/src/news/analysis/market-analysis.ts` (수정, ~30 LOC) — `AnalysisResponseSchema` Zod 갱신
+- `packages/skills-finance/prompts/news/analyze.{depth}.{lang}.md` × 6 (재작성, ~40-60 줄/파일)
+- `packages/skills-finance/src/news/analysis/__tests__/analyze-prompts.test.ts` (수정) — 신규 schema 검증
+
+**`MarketAnalysis` 새 형태**:
+
+```ts
+export type RiskCategory = 'regulatory' | 'market' | 'company' | 'macro';
+export type Probability = 'low' | 'medium' | 'high';
+export type Impact = 'high' | 'medium' | 'low';
+export type TimeHorizon = 'short_term' | 'medium_term' | 'long_term';
+
+export interface AnalysisFactor {
+  readonly factor: string;
+  readonly impact: Impact;
+  readonly evidence: readonly number[]; // 인용한 기사 번호 (1-indexed)
+}
+export interface AnalysisRisk {
+  readonly risk: string;
+  readonly category: RiskCategory;
+  readonly probability: Probability;
+  readonly evidence: readonly number[];
+}
+export interface AnalysisOpportunity {
+  readonly opportunity: string;
+  readonly impact: Impact;
+  readonly evidence: readonly number[];
+}
+export interface AnalysisSentiment {
+  readonly score: number;
+  readonly label: NewsSentiment['label'];
+  readonly confidence: number;
+  readonly rationale: string; // 1-2 문장
+  readonly evidence: readonly number[];
+}
+export interface MarketAnalysis {
+  readonly summary: string;
+  readonly summaryEvidence: readonly number[];
+  readonly sentiment: AnalysisSentiment;
+  readonly keyFactors: readonly AnalysisFactor[];
+  readonly risks: readonly AnalysisRisk[];
+  readonly opportunities: readonly AnalysisOpportunity[];
+  readonly timeHorizon: TimeHorizon;
+  readonly dataGaps: readonly string[]; // 부족한 정보 영역 자기보고
+  readonly analyzedAt: Date;
+  readonly newsCount: number;
+  readonly symbols: readonly TickerSymbol[];
+}
+```
+
+**6 `.md` 공통 헤더 (페르소나 5대 원칙 압축)**:
+
+```
+You are FinClaw's market analyst. You operate under these principles:
+1. CITE EVERY CLAIM. Reference article numbers like [1], [3] in evidence arrays. If a claim has no article support, do not include it.
+2. NO HALLUCINATION. If insufficient news to support a field, return an empty array or "data_insufficient" in dataGaps.
+3. QUANTIFY UNCERTAINTY. Use confidence scores (0.0-1.0) and explicit probability labels (low/medium/high), not vague language.
+4. SCOPE STRICTLY READ-ONLY. Do not recommend buy/sell actions; describe market state and factors only.
+5. CONCISE. No greetings, no preamble. Output JSON only.
+
+[depth/language directives]
+
+Response format (strict JSON, no markdown):
+{ ...새 schema... }
+```
+
+### 검증
+
+- `pnpm typecheck` / `pnpm lint` / `pnpm test` 통과
+- `analyze-prompts.test.ts` 가 신규 7 필드 (summary, summaryEvidence, sentiment, keyFactors, risks, opportunities, timeHorizon, dataGaps) 모두 명세 확인
+- mock 응답이 신규 Zod 스키마 통과
+- 6 변형 모두 페르소나 5대 원칙 헤더 포함 (substring check)
+- `bash scripts/verify-pack-includes-prompts.sh` 통과 (파일 수 동일)
+
+---
+
 ## 완료 조건 (Phase 25 Done When)
 
-- 밀스톤 A/B/C 전부 완료.
+- 밀스톤 A/B/C/D 전부 완료.
 - 페르소나 정의 위치 **5곳 → 2곳** 으로 축소 (`finclaw.identity.md` + `finclaw.system.ko.md`).
 - `system-prompt.ts` 와 14개 섹션 빌더 export 완전 삭제, `pnpm typecheck` 통과.
 - `analyze_market` 6 변형 + `sentiment` 모두 `.md` 로드, 인라인 함수 제거.
+- 분석 프롬프트가 페르소나 5대 원칙 헤더 + citation 의무 + 구조화 응답 스키마 포함 (밀스톤 D).
 - 골든 파일 테스트 8+ 케이스 통과.
 - `tsgo --noEmit`, `pnpm lint`, `pnpm test` 통과.
 - 실제 시나리오 3개 수동 검증:
@@ -254,6 +368,8 @@ Response format (strict JSON, no markdown):
 - **다국어 자동 분기** — 사용자 발화 언어 감지 → 자동 `language` 결정. 현재는 호출 site 명시.
 - **임베딩 파일명 정리** — `packages/storage/src/embeddings/anthropic.ts` 가 실제로는 Voyage AI 호출. 파일명 `voyage.ts` 로 변경. 인지 부담 해소 작업으로 별 phase.
 - **사용자 정의 프롬프트** — 사용자가 자신의 페르소나·원칙을 추가/덮어쓸 수 있는 config 인터페이스. Phase 24 의 `customInstructions` 와 통합 검토.
+- **`buildAnalysisUserPrompt` 외부화** — 동적 임베딩(`${newsDigest}`) + 조건부 분기 본질이라 단순 치환으론 표현 못 함. 외부화하면 가독성 더 나빠짐. 향후 user 프롬프트 변형이 폭발하면 그때 별 phase 에서 템플릿 엔진 도입 여부와 함께 재검토.
+- **UI 정적 텍스트 외부화** — `auto-reply/stages/deliver.ts:34` 면책 disclaimer, 도구 description, 에러 문구 등. 페르소나 원칙과 의미상 연결되지만 LLM 프롬프트가 아니라 사용자 직접 출력. `prompts/` 와 다른 위치(`messages/` 또는 i18n 인프라)가 적합. 별 phase.
 
 ---
 

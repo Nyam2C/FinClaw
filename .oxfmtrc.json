@@ -7,5 +7,5 @@
   "experimentalSortPackageJson": {
     "sortScripts": true
   },
-  "ignorePatterns": ["dist/", "node_modules/", "pnpm-lock.yaml"]
+  "ignorePatterns": ["dist/", "node_modules/", "pnpm-lock.yaml", "**/prompts/"]
 }

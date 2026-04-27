@@ -2,6 +2,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import type { ModelRef, NewsItem, NewsSentiment } from '@finclaw/types';
 import { z } from 'zod/v4';
+import { loadSentimentPrompt } from './prompt-loader.js';
 
 const LlmSentimentSchema = z.object({
   score: z.number().min(-1).max(1),
@@ -123,10 +124,11 @@ async function computeLlmSentiment(
     .map((item) => `- ${item.title}`)
     .join('\n');
 
+  const systemPrompt = await loadSentimentPrompt(ruleBasedHint);
   const message = await client.messages.create({
     model: modelRef.model,
     max_tokens: 200,
-    system: `You are a financial sentiment analyzer. Analyze news headlines and return JSON: {"score": -1.0~1.0, "label": "very_negative|negative|neutral|positive|very_positive", "confidence": 0.0~1.0}. Rule-based hint score: ${ruleBasedHint.toFixed(2)}.`,
+    system: systemPrompt,
     messages: [{ role: 'user', content: `Analyze sentiment of these headlines:\n${digest}` }],
   });
 

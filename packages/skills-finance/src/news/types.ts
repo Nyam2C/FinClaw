@@ -41,13 +41,48 @@ export interface NewsAggregator {
 
 // ─── AI 분석 도메인 타입 ───
 
+export type RiskCategory = 'regulatory' | 'market' | 'company' | 'macro';
+export type Probability = 'low' | 'medium' | 'high';
+export type Impact = 'high' | 'medium' | 'low';
+export type TimeHorizon = 'short_term' | 'medium_term' | 'long_term';
+
+export interface AnalysisFactor {
+  readonly factor: string;
+  readonly impact: Impact;
+  readonly evidence: readonly number[];
+}
+
+export interface AnalysisRisk {
+  readonly risk: string;
+  readonly category: RiskCategory;
+  readonly probability: Probability;
+  readonly evidence: readonly number[];
+}
+
+export interface AnalysisOpportunity {
+  readonly opportunity: string;
+  readonly impact: Impact;
+  readonly evidence: readonly number[];
+}
+
+export interface AnalysisSentiment {
+  readonly score: number;
+  readonly label: NewsSentiment['label'];
+  readonly confidence: number;
+  readonly rationale: string;
+  readonly evidence: readonly number[];
+}
+
 /** 시장 분석 결과 */
 export interface MarketAnalysis {
   readonly summary: string;
-  readonly sentiment: NewsSentiment;
-  readonly keyFactors: readonly string[];
-  readonly risks: readonly string[];
-  readonly opportunities: readonly string[];
+  readonly summaryEvidence: readonly number[];
+  readonly sentiment: AnalysisSentiment;
+  readonly keyFactors: readonly AnalysisFactor[];
+  readonly risks: readonly AnalysisRisk[];
+  readonly opportunities: readonly AnalysisOpportunity[];
+  readonly timeHorizon: TimeHorizon;
+  readonly dataGaps: readonly string[];
   readonly analyzedAt: Date;
   readonly newsCount: number;
   readonly symbols: readonly TickerSymbol[];
