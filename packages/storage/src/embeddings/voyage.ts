@@ -7,8 +7,8 @@ interface VoyageResponse {
 const BATCH_SIZE = 50;
 const VOYAGE_URL = 'https://api.voyageai.com/v1/embeddings';
 
-export class AnthropicEmbeddingProvider implements EmbeddingProvider {
-  readonly id = 'anthropic';
+export class VoyageEmbeddingProvider implements EmbeddingProvider {
+  readonly id = 'voyage';
   readonly model = 'voyage-finance-2';
   readonly dimensions = 1024;
 
