@@ -11,6 +11,12 @@ import { commandStage } from './stages/command.js';
 import { contextStage } from './stages/context.js';
 import { deliverResponse } from './stages/deliver.js';
 import { executeStage } from './stages/execute.js';
+import {
+  memoryCaptureStage,
+  type MemoryCaptureResult,
+  type MemoryCaptureService,
+} from './stages/memory-capture.js';
+import type { MemoryRetrievalService } from './stages/memory-retrieval.js';
 import { normalizeMessage } from './stages/normalize.js';
 
 // ── Stage Result types ──
@@ -50,6 +56,10 @@ export interface PipelineDependencies {
   readonly getChannel: (
     channelId: string,
   ) => Pick<ChannelPlugin, 'send' | 'addReaction' | 'sendTyping'> | undefined;
+  /** Phase 26 B: 명시적 기억 capture (정규식 5종 매칭). 미주입 시 capture 단계 no-op. */
+  readonly memoryCaptureService?: MemoryCaptureService;
+  /** Phase 26 C: 자동 회상 retrieval (hybrid/FTS). 미주입 시 retrieval 단계 no-op. */
+  readonly memoryRetrievalService?: MemoryRetrievalService;
 }
 
 /**
@@ -119,6 +129,26 @@ export class AutoReplyPipeline {
       if (cmdResult.action !== 'continue') {
         this.emitComplete(ctx, stagesExecuted, startTime);
         return;
+      }
+
+      // Stage 2.5: Memory Capture (Phase 26 B)
+      // 정규식 5종("기억해/메모/선호/내 원칙/!finclaw remember") 매칭 시 명시적 저장.
+      // 비명령 발화에만 동작 (command 단계가 'continue' 인 경우만 도달).
+      // 실패해도 파이프라인 진행 (best-effort).
+      let capturedMemory: MemoryCaptureResult | null = null;
+      if (this.deps.memoryCaptureService) {
+        this.deps.observer?.onStageStart?.('memory-capture', ctx);
+        capturedMemory = await memoryCaptureStage(
+          normalized.normalizedBody,
+          ctx.sessionKey,
+          this.deps.memoryCaptureService,
+          this.deps.logger,
+        );
+        stagesExecuted.push('memory-capture');
+        this.deps.observer?.onStageComplete?.('memory-capture', {
+          action: 'continue',
+          data: capturedMemory,
+        });
       }
 
       // Stage 3: ACK
@@ -196,7 +226,46 @@ export class AutoReplyPipeline {
         }
         return;
       }
-      const enrichedCtx = ctxResult.data;
+      let enrichedCtx = capturedMemory
+        ? {
+            ...ctxResult.data,
+            capturedMemory: {
+              memoryId: capturedMemory.memoryId,
+              type: capturedMemory.type,
+              content: capturedMemory.content,
+              duplicate: capturedMemory.duplicate,
+            },
+          }
+        : ctxResult.data;
+
+      // Stage 4.5: Memory Retrieval (Phase 26 C)
+      // Context 직후, Execute 직전에 retrieval 호출.
+      // 실패해도 파이프라인 진행 (best-effort) — 빈 retrievalResult 미주입.
+      if (this.deps.memoryRetrievalService) {
+        this.deps.observer?.onStageStart?.('memory-retrieval', ctx);
+        try {
+          const retrievalResult = await this.deps.memoryRetrievalService.searchRelevant({
+            userQuery: enrichedCtx.normalizedBody,
+            sessionKey: enrichedCtx.sessionKey,
+          });
+          enrichedCtx = { ...enrichedCtx, retrievalResult };
+          stagesExecuted.push('memory-retrieval');
+          this.deps.observer?.onStageComplete?.('memory-retrieval', {
+            action: 'continue',
+            data: retrievalResult,
+          });
+        } catch (err) {
+          this.deps.logger.warn('memory retrieval failed (suppressed)', {
+            event: 'memory.retrieval.stage_error',
+            error: err instanceof Error ? err.message : String(err),
+          });
+          stagesExecuted.push('memory-retrieval');
+          this.deps.observer?.onStageComplete?.('memory-retrieval', {
+            action: 'skip',
+            reason: 'retrieval failed',
+          });
+        }
+      }
 
       // Stage 5: Execute
       if (combinedSignal.aborted) {

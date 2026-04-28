@@ -15,6 +15,7 @@ import {
 } from '../execution-adapter.js';
 import type { PipelineMsgContext, FinanceContextProvider } from '../pipeline-context.js';
 import { StubFinanceContextProvider } from '../pipeline-context.js';
+import type { RetrievalResult } from '../stages/memory-retrieval.js';
 
 function makePipelineCtx(): PipelineMsgContext {
   return {
@@ -169,6 +170,110 @@ describe('RunnerExecutionAdapter', () => {
 
     await adapter.execute(makePipelineCtx(), AbortSignal.timeout(5000));
     expect(calls[0]?.agentId).toBe(customAgentId);
+  });
+});
+
+// ─── Phase 26 C: retrievalResult → systemPrompt 합성 ───
+
+function makeRetrievalResultWithSnippet(): RetrievalResult {
+  return {
+    snippets: [
+      {
+        id: 'm1',
+        content: '나는 장기 가치투자를 한다',
+        type: 'preference',
+        createdAt: 1_700_000_000_000,
+        rawScore: 0.81,
+        adjustedScore: 0.78,
+        daysOld: 1,
+      },
+    ],
+    transactions: [],
+    mode: 'fts-only',
+    auditLog: {
+      event: 'memory.injected',
+      sessionKey: 'test',
+      userQuery: 'q',
+      memoryIds: ['m1'],
+      rawScores: [0.81],
+      adjustedScores: [0.78],
+      mode: 'fts-only',
+      transactionSymbols: [],
+      timestamp: 1_700_000_000_000,
+    },
+  };
+}
+
+function makeEmptyRetrievalResult(): RetrievalResult {
+  return {
+    snippets: [],
+    transactions: [],
+    mode: 'fts-only',
+    auditLog: {
+      event: 'memory.injected',
+      sessionKey: 'test',
+      userQuery: 'q',
+      memoryIds: [],
+      rawScores: [],
+      adjustedScores: [],
+      mode: 'fts-only',
+      transactionSymbols: [],
+      timestamp: 1_700_000_000_000,
+    },
+  };
+}
+
+describe('RunnerExecutionAdapter + retrievalResult', () => {
+  it('retrievalResult 가 있고 섹션이 비어있지 않으면 base system prompt + 섹션을 합성한다', async () => {
+    const { runnerFactory, calls } = makeFakeRunnerFactory([{ role: 'assistant', content: 'ok' }]);
+    const adapter = new RunnerExecutionAdapter({
+      runnerFactory,
+      defaultModel: DEFAULT_MODEL,
+      systemPrompt: 'BASE',
+    });
+
+    const ctx: PipelineMsgContext = {
+      ...makePipelineCtx(),
+      retrievalResult: makeRetrievalResultWithSnippet(),
+    };
+    await adapter.execute(ctx, AbortSignal.timeout(5000));
+
+    const sp = calls[0]?.systemPrompt ?? '';
+    expect(sp).toContain('BASE');
+    expect(sp).toContain('## 사용자 배경지식 (자동 주입)');
+    expect(sp).toContain('나는 장기 가치투자를 한다');
+    // base 와 섹션 사이에 빈 줄
+    expect(sp.startsWith('BASE\n\n')).toBe(true);
+  });
+
+  it('retrievalResult 가 없으면 base system prompt 그대로 사용한다', async () => {
+    const { runnerFactory, calls } = makeFakeRunnerFactory([{ role: 'assistant', content: 'ok' }]);
+    const adapter = new RunnerExecutionAdapter({
+      runnerFactory,
+      defaultModel: DEFAULT_MODEL,
+      systemPrompt: 'BASE',
+    });
+
+    await adapter.execute(makePipelineCtx(), AbortSignal.timeout(5000));
+
+    expect(calls[0]?.systemPrompt).toBe('BASE');
+  });
+
+  it('retrievalResult 의 섹션이 빈 문자열이면 base 그대로 사용한다 (빈 헤더 노출 X)', async () => {
+    const { runnerFactory, calls } = makeFakeRunnerFactory([{ role: 'assistant', content: 'ok' }]);
+    const adapter = new RunnerExecutionAdapter({
+      runnerFactory,
+      defaultModel: DEFAULT_MODEL,
+      systemPrompt: 'BASE',
+    });
+
+    const ctx: PipelineMsgContext = {
+      ...makePipelineCtx(),
+      retrievalResult: makeEmptyRetrievalResult(),
+    };
+    await adapter.execute(ctx, AbortSignal.timeout(5000));
+
+    expect(calls[0]?.systemPrompt).toBe('BASE');
   });
 });
 
