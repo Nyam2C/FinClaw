@@ -33,3 +33,6 @@ coverage/
 
 # Claude Code runtime
 .claude/
+
+# Orchestrator workspace (milestone summaries, agent reports)
+_workspace/
