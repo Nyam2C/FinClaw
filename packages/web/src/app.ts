@@ -276,7 +276,9 @@ export class FinClawApp extends LitElement {
         ${this.activeTab === 'alerts'
           ? html` <alerts-view .gateway=${this.gateway}></alerts-view> `
           : ''}
-        ${this.activeTab === 'settings' ? html` <settings-view></settings-view> ` : ''}
+        ${this.activeTab === 'settings'
+          ? html` <settings-view .gateway=${this.gateway}></settings-view> `
+          : ''}
       </main>
 
       <div class="status-bar">
