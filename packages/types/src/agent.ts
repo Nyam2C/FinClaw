@@ -1,4 +1,4 @@
-import type { AgentId, SessionKey } from './common.js';
+import type { AgentId, SessionKey, Timestamp } from './common.js';
 
 /** 에이전트 프로필 */
 export interface AgentProfile {
@@ -85,4 +85,29 @@ export interface TokenUsage {
   outputTokens: number;
   cacheReadTokens?: number;
   cacheWriteTokens?: number;
+}
+
+/**
+ * 에이전트 실행 1회의 영속화 레코드 (감사 + RAG 소스).
+ * DB 컬럼은 snake_case, 본 인터페이스는 camelCase 변환.
+ */
+export interface AgentRun {
+  id: string;
+  agentId: AgentId;
+  prompt: string;
+  output: string;
+  /** tool_calls_json — 호출자가 JSON.stringify 한 raw 문자열 */
+  toolCalls?: string;
+  tokensInput?: number;
+  tokensOutput?: number;
+  durationMs?: number;
+  /** Phase 24 routing 결과 모델명 */
+  modelUsed?: string;
+  /** Phase 24 role */
+  role?: string;
+  /** 저장된 memory.id 링크 (없으면 NULL) */
+  memoryId?: string;
+  /** 실행 실패 시 에러 메시지 */
+  error?: string;
+  createdAt: Timestamp;
 }

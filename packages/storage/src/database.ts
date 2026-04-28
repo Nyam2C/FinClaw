@@ -18,7 +18,7 @@ export interface DatabaseOptions {
 
 // ─── Schema ───
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 5;
 
 const SCHEMA_DDL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -151,6 +151,42 @@ CREATE TABLE IF NOT EXISTS portfolio_holdings (
   PRIMARY KEY (portfolio_id, symbol),
   FOREIGN KEY (portfolio_id) REFERENCES portfolios(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS transactions (
+  id            TEXT PRIMARY KEY,
+  portfolio_id  TEXT NOT NULL,
+  symbol        TEXT NOT NULL,
+  action        TEXT NOT NULL CHECK (action IN ('buy','sell','dividend','fee','split')),
+  quantity      REAL NOT NULL,
+  price         REAL,
+  fee           REAL NOT NULL DEFAULT 0,
+  currency      TEXT NOT NULL,
+  executed_at   INTEGER NOT NULL,
+  source        TEXT NOT NULL CHECK (source IN ('manual','import')),
+  note          TEXT,
+  created_at    INTEGER NOT NULL,
+  FOREIGN KEY (portfolio_id) REFERENCES portfolios(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_transactions_portfolio ON transactions(portfolio_id, executed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_transactions_symbol ON transactions(portfolio_id, symbol, executed_at DESC);
+
+CREATE TABLE IF NOT EXISTS agent_runs (
+  id              TEXT PRIMARY KEY,
+  agent_id        TEXT NOT NULL,
+  prompt          TEXT NOT NULL,
+  output          TEXT NOT NULL,
+  tool_calls_json TEXT,
+  tokens_input    INTEGER,
+  tokens_output   INTEGER,
+  duration_ms     INTEGER,
+  model_used      TEXT,
+  role            TEXT,
+  memory_id       TEXT REFERENCES memories(id) ON DELETE SET NULL,
+  error           TEXT,
+  created_at      INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_created ON agent_runs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_agent ON agent_runs(agent_id, created_at DESC);
 `;
 
 const MIGRATIONS: Record<number, string> = {
@@ -204,6 +240,68 @@ CREATE TABLE IF NOT EXISTS portfolio_holdings (
     );
     CREATE INDEX IF NOT EXISTS idx_alert_history_alert_id ON alert_history(alert_id);
     CREATE INDEX IF NOT EXISTS idx_alert_history_triggered ON alert_history(triggered_at DESC);
+  `,
+  4: `
+    CREATE TABLE IF NOT EXISTS transactions (
+      id            TEXT PRIMARY KEY,
+      portfolio_id  TEXT NOT NULL,
+      symbol        TEXT NOT NULL,
+      action        TEXT NOT NULL CHECK (action IN ('buy','sell','dividend','fee','split')),
+      quantity      REAL NOT NULL,
+      price         REAL,
+      fee           REAL NOT NULL DEFAULT 0,
+      currency      TEXT NOT NULL,
+      executed_at   INTEGER NOT NULL,
+      source        TEXT NOT NULL CHECK (source IN ('manual','import')),
+      note          TEXT,
+      created_at    INTEGER NOT NULL,
+      FOREIGN KEY (portfolio_id) REFERENCES portfolios(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_transactions_portfolio ON transactions(portfolio_id, executed_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_transactions_symbol ON transactions(portfolio_id, symbol, executed_at DESC);
+
+    -- 기존 portfolio_holdings 행 1건당 synthetic transaction 발행.
+    -- transactions 가 비어있을 때만 실행 (idempotent: 이미 v4 인 DB 에서 다시 돌아도 안전).
+    INSERT INTO transactions (
+      id, portfolio_id, symbol, action, quantity, price, fee, currency,
+      executed_at, source, note, created_at
+    )
+    SELECT
+      lower(hex(randomblob(16))),
+      h.portfolio_id,
+      h.symbol,
+      'buy',
+      h.quantity,
+      h.average_cost,
+      0,
+      p.currency,
+      COALESCE(p.updated_at, CAST(strftime('%s','now') AS INTEGER) * 1000),
+      'manual',
+      'synthetic from v3 holdings',
+      CAST(strftime('%s','now') AS INTEGER) * 1000
+    FROM portfolio_holdings h
+    JOIN portfolios p ON p.id = h.portfolio_id
+    WHERE h.quantity > 0
+      AND NOT EXISTS (SELECT 1 FROM transactions LIMIT 1);
+  `,
+  5: `
+    CREATE TABLE IF NOT EXISTS agent_runs (
+      id              TEXT PRIMARY KEY,
+      agent_id        TEXT NOT NULL,
+      prompt          TEXT NOT NULL,
+      output          TEXT NOT NULL,
+      tool_calls_json TEXT,
+      tokens_input    INTEGER,
+      tokens_output   INTEGER,
+      duration_ms     INTEGER,
+      model_used      TEXT,
+      role            TEXT,
+      memory_id       TEXT REFERENCES memories(id) ON DELETE SET NULL,
+      error           TEXT,
+      created_at      INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_runs_created ON agent_runs(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_agent_runs_agent ON agent_runs(agent_id, created_at DESC);
   `,
 };
 
