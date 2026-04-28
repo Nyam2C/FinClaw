@@ -15,10 +15,12 @@ import { GatewayBroadcaster } from './broadcaster.js';
 import type { GatewayServerContext } from './context.js';
 import { ChatRegistry } from './registry.js';
 import { handleHttpRequest } from './router.js';
+import { registerAgentRunsMethods } from './rpc/methods/agent-runs.js';
 import { registerAgentMethods, type AgentRpcDeps } from './rpc/methods/agent.js';
 import { registerChatMethods } from './rpc/methods/chat.js';
 import { registerConfigMethods } from './rpc/methods/config.js';
 import { registerFinanceMethods, type FinanceRpcDeps } from './rpc/methods/finance.js';
+import { registerMemoryMethods, type MemoryRpcDeps } from './rpc/methods/memory.js';
 import { registerSessionMethods } from './rpc/methods/session.js';
 // 메서드 등록
 import { registerSystemMethods } from './rpc/methods/system.js';
@@ -34,6 +36,8 @@ export interface GatewayServerDeps {
   readonly financeDeps?: FinanceRpcDeps;
   /** Phase 23: agent.* RPC 배선용 의존성 (생략 시 agent.* 메서드 등록 스킵) */
   readonly agentDeps?: AgentRpcDeps;
+  /** Phase 26 B: memory.* RPC 배선용 의존성 (생략 시 memory.* 메서드는 provider_unavailable) */
+  readonly memoryDeps?: MemoryRpcDeps;
 }
 
 export interface GatewayServer {
@@ -86,11 +90,21 @@ export function createGatewayServer(
     // Phase 24 D: ModelFloorExhaustedError 구조화 로그용 — agent.* 와 logger 공유
     logger: deps.agentDeps?.logger,
   });
-  registerFinanceMethods(deps.financeDeps ?? {});
+  // Phase 26 A: transactions RPC 가 필요로 하는 broadcaster/connections 를 ctx 에서 주입.
+  registerFinanceMethods({
+    ...deps.financeDeps,
+    broadcaster: ctx.broadcaster,
+    connections: ctx.connections,
+  });
   registerSessionMethods({
     registry: ctx.registry,
     storage: deps.storage,
   });
+  // Phase 26 B: memory.* RPC 등록 (deps 미주입 시 모든 호출이 provider_unavailable).
+  registerMemoryMethods(deps.memoryDeps ?? {});
+  // Phase 26 D: agent.runs.* RPC 등록. agentDeps 또는 financeDeps 의 db 를 재사용
+  // (둘 다 같은 storage.db 인스턴스를 가리키도록 main.ts 가 배선).
+  registerAgentRunsMethods({ db: deps.agentDeps?.db ?? deps.financeDeps?.db });
   if (deps.agentDeps) {
     registerAgentMethods(deps.agentDeps);
   }

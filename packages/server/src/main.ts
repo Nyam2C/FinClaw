@@ -35,14 +35,17 @@ import {
   type NewsSkillHandle,
 } from '@finclaw/skills-finance';
 import { GENERAL_SKILL_METADATA, registerGeneralTools } from '@finclaw/skills-general';
-import { createStorage } from '@finclaw/storage';
+import { createEmbeddingProvider, createStorage, type EmbeddingProvider } from '@finclaw/storage';
 import type { ChannelPlugin, ConfigValidationIssue, FinClawConfig, ModelRef } from '@finclaw/types';
+import { DefaultAttachMemoryService } from './auto-reply/agent-memory-hook.js';
 import { registerBuiltInCommands } from './auto-reply/commands/built-in.js';
 import { InMemoryCommandRegistry } from './auto-reply/commands/registry.js';
 import { RunnerExecutionAdapter, type RunnerFactory } from './auto-reply/execution-adapter.js';
 import { StubFinanceContextProvider } from './auto-reply/pipeline-context.js';
 import { AutoReplyPipeline } from './auto-reply/pipeline.js';
 import { buildToolMetaIndex, makeRouterHelper } from './auto-reply/router-helper.js';
+import { DefaultMemoryCaptureService } from './auto-reply/stages/memory-capture.js';
+import { DefaultMemoryRetrievalService } from './auto-reply/stages/memory-retrieval.js';
 import { initChannels } from './channels/index.js';
 import type { GatewayServerConfig } from './gateway/rpc/types.js';
 import { createGatewayServer } from './gateway/server.js';
@@ -163,6 +166,24 @@ async function main(): Promise<void> {
     await storage.close();
   });
 
+  // Phase 26 B: memory.search hybrid 검색용 embedding provider (best-effort).
+  // 키 미설정/생성 실패 시 undefined → memory.search 는 FTS-only fallback.
+  let embeddingProvider: EmbeddingProvider | undefined;
+  if (process.env.VOYAGE_API_KEY || process.env.OPENAI_API_KEY) {
+    try {
+      embeddingProvider = await createEmbeddingProvider('auto');
+      logger.info('Embedding provider created', {
+        event: 'memory.embedding_ready',
+        model: embeddingProvider.model,
+      });
+    } catch (err) {
+      logger.warn('Failed to create embedding provider — memory.search will use FTS-only', {
+        event: 'memory.embedding_unavailable',
+        error: (err as Error).message,
+      });
+    }
+  }
+
   // 2b. 채널 도크 자동 등록 (discord, http-webhook)
   initChannels(logger);
 
@@ -277,6 +298,31 @@ async function main(): Promise<void> {
     defaultModel: DEFAULT_MODEL,
   });
   const channelPluginRegistry = new Map<string, ChannelPlugin>();
+
+  // Phase 26 B: 명시적 기억 capture (정규식 5종). embeddingProvider 가 있으면
+  // 임베딩 + FTS, 없으면 FTS-only 로 동작.
+  const memoryCaptureService = new DefaultMemoryCaptureService({
+    db: storage.db,
+    embeddingProvider,
+    logger,
+  });
+
+  // Phase 26 C: 자동 회상 retrieval. embeddingProvider 가 있으면 hybrid (vector+FTS),
+  // 없으면 FTS-only fallback. 같은 embedding 인스턴스 재사용.
+  const memoryRetrievalService = new DefaultMemoryRetrievalService({
+    db: storage.db,
+    embeddingProvider,
+    logger,
+  });
+
+  // Phase 26 D: agent.run output → memory 저장 훅. rpc-engineer 가 agent.run 핸들러
+  // 종료 후 호출. 같은 embedding 인스턴스 재사용.
+  const attachMemoryService = new DefaultAttachMemoryService({
+    db: storage.db,
+    embeddingProvider,
+    logger,
+  });
+
   const pipeline = new AutoReplyPipeline(
     {
       enableAck: true,
@@ -291,6 +337,8 @@ async function main(): Promise<void> {
       commandRegistry,
       logger,
       getChannel: (id) => channelPluginRegistry.get(id),
+      memoryCaptureService,
+      memoryRetrievalService,
     },
   );
 
@@ -346,6 +394,13 @@ async function main(): Promise<void> {
       evaluateAlertOnce: alertHandleForRpc
         ? (alertId: string) => alertHandleForRpc.monitor.evaluateOnce(alertId)
         : undefined,
+      // Phase 26 A: finance.transaction.* + finance.portfolio.get(recentTransactions) 용.
+      db: storage.db,
+    },
+    // Phase 26 B: memory.* RPC 용. embeddingProvider 가 없으면 memory.search 는 FTS-only.
+    memoryDeps: {
+      db: storage.db,
+      embeddingProvider,
     },
     agentDeps: {
       toolRegistry,
@@ -360,9 +415,13 @@ async function main(): Promise<void> {
       modelCatalog,
       modelAliasIndex,
       fallbackChain: DEFAULT_FALLBACK_CHAIN,
+      // Phase 26 D: agent.run 종료 후 output → memory 저장 훅 (rpc-engineer 가 호출 위치 결정).
+      attachMemoryService,
+      // Phase 26 D: agent_runs 영속화 + agent.runs.* RPC 가 사용 (server.ts 에서 재패스).
+      db: storage.db,
     },
   });
-  logger.info('finance.* / agent.* RPC methods wired');
+  logger.info('finance.* / memory.* / agent.* RPC methods wired');
   lifecycle.register(() => gateway.stop());
   lifecycle.init();
   await gateway.start();

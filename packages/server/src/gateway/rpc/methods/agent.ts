@@ -1,5 +1,6 @@
 // packages/server/src/gateway/rpc/methods/agent.ts
 import { randomUUID } from 'node:crypto';
+import type { DatabaseSync } from 'node:sqlite';
 import type { AliasIndex, ModelCatalog, ProfileHealthMonitor, ToolRegistry } from '@finclaw/agent';
 import {
   calculateEstimatedCost,
@@ -9,9 +10,11 @@ import {
   runWithModelFallback,
 } from '@finclaw/agent';
 import type { ConcurrencyLane, FinClawLogger } from '@finclaw/infra';
+import { addAgentRun } from '@finclaw/storage';
 import type { AgentRunParams, ConversationMessage, ModelRef } from '@finclaw/types';
 import { createAgentId, createSessionKey } from '@finclaw/types';
 import { z } from 'zod/v4';
+import type { AttachMemoryService } from '../../../auto-reply/agent-memory-hook.js';
 import {
   collectToolCalls,
   extractAssistantText,
@@ -43,6 +46,16 @@ export interface AgentRpcDeps {
   readonly modelCatalog?: ModelCatalog;
   readonly modelAliasIndex?: AliasIndex;
   readonly fallbackChain?: readonly string[];
+  /**
+   * Phase 26 D: agent.run 종료 후 output 을 memory 로 저장하는 훅.
+   * 미주입 시 저장 단계 자체 생략. 호출 위치는 rpc-engineer 가 결정.
+   */
+  readonly attachMemoryService?: AttachMemoryService;
+  /**
+   * Phase 26 D: agent_runs 영속화용 sqlite 핸들.
+   * 미주입 시 agent_runs 저장 + attachMemoryService 호출 모두 skip (best-effort).
+   */
+  readonly db?: DatabaseSync;
 }
 
 interface AgentInfo {
@@ -186,8 +199,9 @@ export function registerAgentMethods(deps: AgentRpcDeps): void {
       const handle = await deps.agentRunLane.acquire(params.agentId);
       activeRuns.set(params.agentId, (activeRuns.get(params.agentId) ?? 0) + 1);
 
+      const sessionKey = createSessionKey(`agent-run-${randomUUID()}`);
+
       try {
-        const sessionKey = createSessionKey(`agent-run-${randomUUID()}`);
         const agentIdBrand = createAgentId(params.agentId);
 
         const { dispatcher, toolDefinitions } = buildDispatcher(deps.toolRegistry, {
@@ -316,6 +330,52 @@ export function registerAgentMethods(deps: AgentRpcDeps): void {
             status: result.status,
           });
 
+          // Phase 26 D: agent_runs 영속화 + memory attach (best-effort).
+          // db 미주입 시 저장·attach 모두 skip — RPC 응답에는 영향 없음.
+          let runId: string | undefined;
+          if (deps.db) {
+            try {
+              const run = addAgentRun(deps.db, {
+                agentId: agentIdBrand,
+                prompt: params.prompt,
+                output,
+                toolCalls: JSON.stringify(toolCallRecords),
+                tokensInput: result.usage.inputTokens,
+                tokensOutput: result.usage.outputTokens,
+                durationMs,
+                modelUsed: usedModelId ?? deps.defaultModel.model,
+                role,
+              });
+              runId = run.id;
+
+              if (deps.attachMemoryService) {
+                try {
+                  await deps.attachMemoryService.attach({
+                    agentRunId: run.id,
+                    agentId: params.agentId,
+                    prompt: params.prompt,
+                    output,
+                    sessionKey,
+                    createdAt: run.createdAt as number,
+                  });
+                  // attach 내부에서 link/skip 로깅을 모두 emit. 여기서는 추가 로그 X.
+                } catch (attachErr) {
+                  deps.logger.warn('agent.run.memory.attach_failed', {
+                    event: 'agent.run.memory.attach_failed',
+                    agentRunId: run.id,
+                    error: (attachErr as Error).message,
+                  });
+                }
+              }
+            } catch (storeErr) {
+              deps.logger.warn('agent.run.store_failed', {
+                event: 'agent.run.store_failed',
+                agentId: params.agentId,
+                error: (storeErr as Error).message,
+              });
+            }
+          }
+
           return {
             agentId: params.agentId,
             output,
@@ -327,6 +387,7 @@ export function registerAgentMethods(deps: AgentRpcDeps): void {
             durationMs,
             stopReason: result.status,
             turns: result.turns,
+            runId,
           };
         } finally {
           clearTimeout(timer);
@@ -340,6 +401,28 @@ export function registerAgentMethods(deps: AgentRpcDeps): void {
           error: msg,
           durationMs: Date.now() - startedAt,
         });
+        // Phase 26 D: 실패도 agent_runs 에 기록 (감사용). attach 는 호출 X (output 없음).
+        // 저장 자체 실패는 swallow — 이미 RPC 가 실패 중이라 응답에 영향 X.
+        if (deps.db) {
+          try {
+            addAgentRun(deps.db, {
+              agentId: createAgentId(params.agentId),
+              prompt: params.prompt,
+              output: '',
+              durationMs: Date.now() - startedAt,
+              modelUsed: deps.defaultModel.model,
+              role: params.role ?? 'analysis',
+              error: msg,
+            });
+          } catch (storeErr) {
+            deps.logger.warn('agent.run.store_failed', {
+              event: 'agent.run.store_failed',
+              agentId: params.agentId,
+              error: (storeErr as Error).message,
+              phase: 'on-failure',
+            });
+          }
+        }
         // Phase 24 D: floor 차단은 사용자에게 한국어 안내 (chat.send 와 동일 정책).
         if (err instanceof ModelFloorExhaustedError) {
           deps.logger.warn('agent.run.floor_exhausted', {
