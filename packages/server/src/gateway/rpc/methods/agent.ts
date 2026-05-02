@@ -116,7 +116,7 @@ async function persistAgentRunAndAttach(
           agentId: input.agentId as string,
           prompt: input.prompt,
           output: input.output,
-          sessionKey: input.sessionKey as string,
+          sessionKey: input.sessionKey,
           createdAt: run.createdAt as number,
         });
       } catch (attachErr) {
