@@ -10,8 +10,8 @@ import {
   runWithModelFallback,
 } from '@finclaw/agent';
 import type { ConcurrencyLane, FinClawLogger } from '@finclaw/infra';
-import { addAgentRun } from '@finclaw/storage';
-import type { AgentRunParams, ConversationMessage, ModelRef } from '@finclaw/types';
+import { addAgentRun, type AddAgentRunInput } from '@finclaw/storage';
+import type { AgentRunParams, ConversationMessage, ModelRef, SessionKey } from '@finclaw/types';
 import { createAgentId, createSessionKey } from '@finclaw/types';
 import { z } from 'zod/v4';
 import type { AttachMemoryService } from '../../../auto-reply/agent-memory-hook.js';
@@ -90,6 +90,51 @@ async function loadAgents(): Promise<readonly AgentInfo[]> {
 /** 테스트용: AGENTS 캐시 초기화 */
 export function resetAgentsCache(): void {
   cachedAgents = null;
+}
+
+/**
+ * agent.run 결과를 agent_runs 에 영속화하고, 조건 충족 시 attachMemoryService 호출.
+ *
+ * Best-effort: db 미주입 / 저장 실패 / attach 실패 모두 swallow + warn 로그. RPC 응답엔 영향 X.
+ * attach 호출 조건: error 없고, output 비어있지 않고, sessionKey 주어졌고, attachMemoryService 주입됐을 때.
+ */
+async function persistAgentRunAndAttach(
+  deps: Pick<AgentRpcDeps, 'db' | 'logger' | 'attachMemoryService'>,
+  input: AddAgentRunInput & { sessionKey?: SessionKey },
+): Promise<{ runId?: string }> {
+  if (!deps.db) {
+    return {};
+  }
+  let runId: string | undefined;
+  try {
+    const run = addAgentRun(deps.db, input);
+    runId = run.id;
+    if (deps.attachMemoryService && !input.error && input.output && input.sessionKey) {
+      try {
+        await deps.attachMemoryService.attach({
+          agentRunId: run.id,
+          agentId: input.agentId as string,
+          prompt: input.prompt,
+          output: input.output,
+          sessionKey: input.sessionKey as string,
+          createdAt: run.createdAt as number,
+        });
+      } catch (attachErr) {
+        deps.logger.warn('agent.run.memory.attach_failed', {
+          event: 'agent.run.memory.attach_failed',
+          agentRunId: run.id,
+          error: (attachErr as Error).message,
+        });
+      }
+    }
+  } catch (storeErr) {
+    deps.logger.warn('agent.run.store_failed', {
+      event: 'agent.run.store_failed',
+      agentId: input.agentId as string,
+      error: (storeErr as Error).message,
+    });
+  }
+  return { runId };
 }
 
 // 프로세스 내 상태 — agent.status 응답에 사용
@@ -331,50 +376,18 @@ export function registerAgentMethods(deps: AgentRpcDeps): void {
           });
 
           // Phase 26 D: agent_runs 영속화 + memory attach (best-effort).
-          // db 미주입 시 저장·attach 모두 skip — RPC 응답에는 영향 없음.
-          let runId: string | undefined;
-          if (deps.db) {
-            try {
-              const run = addAgentRun(deps.db, {
-                agentId: agentIdBrand,
-                prompt: params.prompt,
-                output,
-                toolCalls: JSON.stringify(toolCallRecords),
-                tokensInput: result.usage.inputTokens,
-                tokensOutput: result.usage.outputTokens,
-                durationMs,
-                modelUsed: usedModelId ?? deps.defaultModel.model,
-                role,
-              });
-              runId = run.id;
-
-              if (deps.attachMemoryService) {
-                try {
-                  await deps.attachMemoryService.attach({
-                    agentRunId: run.id,
-                    agentId: params.agentId,
-                    prompt: params.prompt,
-                    output,
-                    sessionKey,
-                    createdAt: run.createdAt as number,
-                  });
-                  // attach 내부에서 link/skip 로깅을 모두 emit. 여기서는 추가 로그 X.
-                } catch (attachErr) {
-                  deps.logger.warn('agent.run.memory.attach_failed', {
-                    event: 'agent.run.memory.attach_failed',
-                    agentRunId: run.id,
-                    error: (attachErr as Error).message,
-                  });
-                }
-              }
-            } catch (storeErr) {
-              deps.logger.warn('agent.run.store_failed', {
-                event: 'agent.run.store_failed',
-                agentId: params.agentId,
-                error: (storeErr as Error).message,
-              });
-            }
-          }
+          const { runId } = await persistAgentRunAndAttach(deps, {
+            agentId: agentIdBrand,
+            prompt: params.prompt,
+            output,
+            toolCalls: JSON.stringify(toolCallRecords),
+            tokensInput: result.usage.inputTokens,
+            tokensOutput: result.usage.outputTokens,
+            durationMs,
+            modelUsed: usedModelId ?? deps.defaultModel.model,
+            role,
+            sessionKey,
+          });
 
           return {
             agentId: params.agentId,
@@ -401,28 +414,16 @@ export function registerAgentMethods(deps: AgentRpcDeps): void {
           error: msg,
           durationMs: Date.now() - startedAt,
         });
-        // Phase 26 D: 실패도 agent_runs 에 기록 (감사용). attach 는 호출 X (output 없음).
-        // 저장 자체 실패는 swallow — 이미 RPC 가 실패 중이라 응답에 영향 X.
-        if (deps.db) {
-          try {
-            addAgentRun(deps.db, {
-              agentId: createAgentId(params.agentId),
-              prompt: params.prompt,
-              output: '',
-              durationMs: Date.now() - startedAt,
-              modelUsed: deps.defaultModel.model,
-              role: params.role ?? 'analysis',
-              error: msg,
-            });
-          } catch (storeErr) {
-            deps.logger.warn('agent.run.store_failed', {
-              event: 'agent.run.store_failed',
-              agentId: params.agentId,
-              error: (storeErr as Error).message,
-              phase: 'on-failure',
-            });
-          }
-        }
+        // Phase 26 D: 실패도 agent_runs 에 기록 (감사용). attach 는 호출 X (output 없음 → helper 가 자동 skip).
+        await persistAgentRunAndAttach(deps, {
+          agentId: createAgentId(params.agentId),
+          prompt: params.prompt,
+          output: '',
+          durationMs: Date.now() - startedAt,
+          modelUsed: deps.defaultModel.model,
+          role: params.role ?? 'analysis',
+          error: msg,
+        });
         // Phase 24 D: floor 차단은 사용자에게 한국어 안내 (chat.send 와 동일 정책).
         if (err instanceof ModelFloorExhaustedError) {
           deps.logger.warn('agent.run.floor_exhausted', {
