@@ -105,6 +105,25 @@ export function requireEnv(name: string, env: NodeJS.ProcessEnv = process.env): 
   return value;
 }
 
+/**
+ * Phase 26: capture / retrieval / attach 3 service 를 동일 deps 로 인스턴스화.
+ *
+ * 3 service 모두 `{db, embeddingProvider?, logger}` shape 를 받으며 같은 embedding
+ * 인스턴스를 공유한다 (키 하나로 4 영역 활성). embeddingProvider 미주입 시 각 service
+ * 가 자체적으로 FTS-only fallback 으로 동작.
+ */
+function wireMemoryServices(deps: ConstructorParameters<typeof DefaultMemoryCaptureService>[0]): {
+  memoryCaptureService: DefaultMemoryCaptureService;
+  memoryRetrievalService: DefaultMemoryRetrievalService;
+  attachMemoryService: DefaultAttachMemoryService;
+} {
+  return {
+    memoryCaptureService: new DefaultMemoryCaptureService(deps),
+    memoryRetrievalService: new DefaultMemoryRetrievalService(deps),
+    attachMemoryService: new DefaultAttachMemoryService(deps),
+  };
+}
+
 async function main(): Promise<void> {
   // 0. 시스템 프롬프트 외부 .md 로드 (Phase 25)
   const systemPromptDoc = await loadPrompt('finclaw.system.ko.md', 'main:DEFAULT_SYSTEM_PROMPT');
@@ -299,25 +318,11 @@ async function main(): Promise<void> {
   });
   const channelPluginRegistry = new Map<string, ChannelPlugin>();
 
-  // Phase 26 B: 명시적 기억 capture (정규식 5종). embeddingProvider 가 있으면
-  // 임베딩 + FTS, 없으면 FTS-only 로 동작.
-  const memoryCaptureService = new DefaultMemoryCaptureService({
-    db: storage.db,
-    embeddingProvider,
-    logger,
-  });
-
-  // Phase 26 C: 자동 회상 retrieval. embeddingProvider 가 있으면 hybrid (vector+FTS),
-  // 없으면 FTS-only fallback. 같은 embedding 인스턴스 재사용.
-  const memoryRetrievalService = new DefaultMemoryRetrievalService({
-    db: storage.db,
-    embeddingProvider,
-    logger,
-  });
-
-  // Phase 26 D: agent.run output → memory 저장 훅. rpc-engineer 가 agent.run 핸들러
-  // 종료 후 호출. 같은 embedding 인스턴스 재사용.
-  const attachMemoryService = new DefaultAttachMemoryService({
+  // Phase 26 B/C/D: capture / retrieval / attach 3 service 를 동일 deps 로 wire-up.
+  // - capture: 정규식 5종 명시적 선언 저장
+  // - retrieval: hybrid (vector+FTS) RAG 주입, embeddingProvider 미주입 시 FTS-only fallback
+  // - attach: agent.run output → memory 훅
+  const { memoryCaptureService, memoryRetrievalService, attachMemoryService } = wireMemoryServices({
     db: storage.db,
     embeddingProvider,
     logger,
