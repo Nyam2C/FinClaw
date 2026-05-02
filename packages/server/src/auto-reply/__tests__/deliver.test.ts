@@ -163,4 +163,52 @@ describe('deliverResponse', () => {
 
     expect(result.action).toBe('continue');
   });
+
+  it('capturedMemory(신규) 시 "기억했습니다" 꼬리표를 부착한다', async () => {
+    const channel = { send: vi.fn().mockResolvedValue(undefined) };
+    const logger = makeLogger();
+    const ctx = makePipelineCtx({
+      capturedMemory: {
+        memoryId: 'abcdef1234567890',
+        type: 'fact',
+        content: 'x',
+        duplicate: false,
+      },
+    });
+
+    const result = await deliverResponse(makeExecResult(), ctx, channel, logger);
+
+    expect(result.action).toBe('continue');
+    if (result.action !== 'continue') {
+      return;
+    }
+    const text = result.data.payloads[0]?.text;
+    expect(text).toContain('기억했습니다');
+    expect(text).toContain('#abcdef12');
+    expect(text).toContain('fact');
+  });
+
+  it('capturedMemory(중복) 시 "이미 기억 중" 꼬리표를 부착한다', async () => {
+    const channel = { send: vi.fn().mockResolvedValue(undefined) };
+    const logger = makeLogger();
+    const ctx = makePipelineCtx({
+      capturedMemory: {
+        memoryId: 'aaaa1111bbbb2222',
+        type: 'preference',
+        content: 'x',
+        duplicate: true,
+      },
+    });
+
+    const result = await deliverResponse(makeExecResult(), ctx, channel, logger);
+
+    expect(result.action).toBe('continue');
+    if (result.action !== 'continue') {
+      return;
+    }
+    const text = result.data.payloads[0]?.text;
+    expect(text).toContain('이미 기억 중');
+    expect(text).toContain('#aaaa1111');
+    expect(text).toContain('preference');
+  });
 });

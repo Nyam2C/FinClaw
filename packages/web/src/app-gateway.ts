@@ -236,6 +236,30 @@ export interface FinanceAlert {
   readonly triggerCount: number;
 }
 
+export type TransactionAction = 'buy' | 'sell' | 'dividend' | 'fee' | 'split';
+export type TransactionSource = 'manual' | 'import';
+
+export interface Transaction {
+  readonly id: string;
+  readonly portfolioId: string;
+  readonly symbol: string;
+  readonly action: TransactionAction;
+  readonly quantity: number;
+  readonly price?: number;
+  readonly fee: number;
+  readonly currency: string;
+  readonly executedAt: number;
+  readonly source: TransactionSource;
+  readonly note?: string;
+  readonly createdAt: number;
+}
+
+export interface UpdatedHolding {
+  readonly symbol: string;
+  readonly quantity: number;
+  readonly averageCost: number;
+}
+
 export interface PortfolioSnapshot {
   readonly portfolioId?: string;
   readonly name?: string;
@@ -249,9 +273,41 @@ export interface PortfolioSnapshot {
     readonly currency: string;
     readonly totalHoldings?: number;
   };
+  readonly recentTransactions?: readonly Transaction[];
 }
 
 export type AlertConditionId = 'price_above' | 'price_below' | 'change_percent' | 'news_match';
+
+export interface TransactionAddParams {
+  readonly portfolioId?: string;
+  readonly symbol: string;
+  readonly action: TransactionAction;
+  readonly quantity: number;
+  readonly price?: number;
+  readonly fee?: number;
+  readonly currency: string;
+  readonly executedAt: number;
+  readonly note?: string;
+}
+
+export interface TransactionAddResult {
+  readonly transactionId: string;
+  readonly createdAt: number;
+  readonly updatedHoldings: readonly UpdatedHolding[];
+}
+
+export interface TransactionUpdateParams {
+  readonly transactionId: string;
+  readonly portfolioId?: string;
+  readonly symbol?: string;
+  readonly action?: TransactionAction;
+  readonly quantity?: number;
+  readonly price?: number | null;
+  readonly fee?: number;
+  readonly currency?: string;
+  readonly executedAt?: number;
+  readonly note?: string | null;
+}
 
 export interface FinanceClient {
   quote(params: { symbol: string }): Promise<FinanceQuote>;
@@ -271,6 +327,20 @@ export interface FinanceClient {
     symbol?: string;
   }): Promise<{ alerts: readonly FinanceAlert[]; total: number }>;
   portfolioGet(): Promise<PortfolioSnapshot>;
+  transactionAdd(params: TransactionAddParams): Promise<TransactionAddResult>;
+  transactionList(params?: {
+    portfolioId?: string;
+    symbol?: string;
+    from?: number;
+    to?: number;
+    limit?: number;
+  }): Promise<{ transactions: readonly Transaction[] }>;
+  transactionUpdate(
+    params: TransactionUpdateParams,
+  ): Promise<{ updatedHoldings: readonly UpdatedHolding[] }>;
+  transactionDelete(params: {
+    transactionId: string;
+  }): Promise<{ deleted: boolean; updatedHoldings: readonly UpdatedHolding[] }>;
 }
 
 export interface AgentInfo {
@@ -310,6 +380,25 @@ export function createFinanceClient(gateway: AppGateway): FinanceClient {
     alertCreate: (p) => gateway.send('finance.alert.create', p) as never,
     alertList: (p = {}) => gateway.send('finance.alert.list', p) as never,
     portfolioGet: () => gateway.send('finance.portfolio.get', {}) as Promise<PortfolioSnapshot>,
+    transactionAdd: (p) =>
+      gateway.send(
+        'finance.transaction.add',
+        p as unknown as Record<string, unknown>,
+      ) as Promise<TransactionAddResult>,
+    transactionList: (p = {}) =>
+      gateway.send('finance.transaction.list', p as Record<string, unknown>) as Promise<{
+        transactions: readonly Transaction[];
+      }>,
+    transactionUpdate: (p) =>
+      gateway.send(
+        'finance.transaction.update',
+        p as unknown as Record<string, unknown>,
+      ) as Promise<{ updatedHoldings: readonly UpdatedHolding[] }>,
+    transactionDelete: (p) =>
+      gateway.send('finance.transaction.delete', p) as Promise<{
+        deleted: boolean;
+        updatedHoldings: readonly UpdatedHolding[];
+      }>,
   };
 }
 
@@ -318,5 +407,108 @@ export function createAgentClient(gateway: AppGateway): AgentClient {
     list: () => gateway.send('agent.list', {}) as never,
     status: (agentId) => gateway.send('agent.status', { agentId }) as never,
     run: (p) => gateway.send('agent.run', p) as never,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Phase 26 E: memory.* / agent.runs.* clients
+// ─────────────────────────────────────────────────────────────────────
+
+export type MemoryType = 'fact' | 'preference' | 'summary' | 'financial';
+
+export interface Memory {
+  readonly id: string;
+  readonly sessionKey: string;
+  readonly content: string;
+  readonly type: MemoryType;
+  readonly createdAt: number;
+}
+
+export interface MemorySearchHit {
+  readonly id: string;
+  readonly content: string;
+  readonly type: MemoryType;
+  readonly score: number;
+  readonly createdAt: number;
+}
+
+export interface MemoryClient {
+  list(params?: {
+    type?: MemoryType;
+    sessionKey?: string;
+    limit?: number;
+  }): Promise<{ memories: readonly Memory[] }>;
+  delete(memoryId: string): Promise<{ deleted: boolean }>;
+  search(params: {
+    query: string;
+    limit?: number;
+    types?: readonly MemoryType[];
+  }): Promise<{ results: readonly MemorySearchHit[] }>;
+}
+
+export function createMemoryClient(gateway: AppGateway): MemoryClient {
+  return {
+    list: (p = {}) =>
+      gateway.send('memory.list', p as Record<string, unknown>) as Promise<{
+        memories: readonly Memory[];
+      }>,
+    delete: (memoryId) =>
+      gateway.send('memory.delete', { memoryId }) as Promise<{ deleted: boolean }>,
+    search: (p) =>
+      gateway.send('memory.search', p as unknown as Record<string, unknown>) as Promise<{
+        results: readonly MemorySearchHit[];
+      }>,
+  };
+}
+
+export interface AgentRunSummary {
+  readonly id: string;
+  readonly agentId: string;
+  /** Truncated to 200 chars by server. */
+  readonly prompt: string;
+  /** Truncated to 500 chars by server. */
+  readonly output: string;
+  readonly durationMs: number;
+  readonly modelUsed?: string;
+  readonly role?: string;
+  readonly memoryId?: string;
+  readonly error?: string;
+  readonly createdAt: number;
+}
+
+export interface AgentRunFull {
+  readonly id: string;
+  readonly agentId: string;
+  readonly prompt: string;
+  readonly output: string;
+  readonly toolCalls: readonly unknown[];
+  readonly tokensInput: number;
+  readonly tokensOutput: number;
+  readonly durationMs: number;
+  readonly modelUsed?: string;
+  readonly role?: string;
+  readonly memoryId?: string;
+  readonly error?: string;
+  readonly createdAt: number;
+}
+
+export interface AgentRunsClient {
+  list(params?: {
+    agentId?: string;
+    from?: number;
+    to?: number;
+    limit?: number;
+  }): Promise<{ runs: readonly AgentRunSummary[] }>;
+  get(runId: string): Promise<{ run: AgentRunFull | null }>;
+}
+
+export function createAgentRunsClient(gateway: AppGateway): AgentRunsClient {
+  return {
+    list: (p = {}) =>
+      gateway.send('agent.runs.list', p as Record<string, unknown>) as Promise<{
+        runs: readonly AgentRunSummary[];
+      }>,
+    get: (runId) =>
+      gateway.send('agent.runs.get', { runId }) as Promise<{ run: AgentRunFull | null }>,
   };
 }

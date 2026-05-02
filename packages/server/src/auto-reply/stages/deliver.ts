@@ -38,6 +38,17 @@ export async function deliverResponse(
   // Phase 22: 도구 출처 footer 자동 첨부
   content += formatSourceFooter(executeResult.toolCalls);
 
+  // Phase 26 B: 기억 capture 꼬리표
+  // capture 가 명시적 선언을 저장(또는 dedup)했으면 응답 끝에 한 줄 부착.
+  // 응답 본문(content)이 비어있어도 꼬리표는 부착해야 사용자가 저장 사실을 안다.
+  if (ctx.capturedMemory) {
+    const shortId = ctx.capturedMemory.memoryId.slice(0, 8);
+    const note = ctx.capturedMemory.duplicate
+      ? `_이미 기억 중 (${ctx.capturedMemory.type}, #${shortId})_`
+      : `_기억했습니다 (${ctx.capturedMemory.type}, #${shortId})_`;
+    content += (content.length > 0 ? '\n\n' : '') + note;
+  }
+
   // 메시지 분할
   // channelCapabilities는 PipelineMsgContext에서 non-optional이지만, 방어적 코딩으로 옵셔널 체이닝 유지.
   const parts = splitMessage(content, ctx.channelCapabilities?.maxMessageLength ?? 2000);

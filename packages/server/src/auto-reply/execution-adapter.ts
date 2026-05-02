@@ -34,6 +34,7 @@ import type {
 import { createAgentId } from '@finclaw/types';
 import type { PipelineMsgContext } from './pipeline-context.js';
 import type { RouterHelper } from './router-helper.js';
+import { formatBackgroundSection } from './stages/memory-retrieval.js';
 import { buildDispatcher } from './tool-dispatcher-adapter.js';
 
 /**
@@ -188,11 +189,21 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
       ? toolDefinitions.filter((t) => routed.allowedToolNames.includes(t.name))
       : toolDefinitions;
 
+    // Phase 26 C: retrievalResult 가 있으면 "사용자 배경지식" 섹션을 system prompt 끝에 합성.
+    // 빈 섹션 (snippets·transactions 모두 0) 이면 base 그대로 — 빈 헤더 노출 방지.
+    const baseSystemPrompt = this.deps.systemPrompt;
+    const backgroundSection = ctx.retrievalResult
+      ? formatBackgroundSection(ctx.retrievalResult)
+      : '';
+    const composedSystemPrompt = backgroundSection
+      ? `${baseSystemPrompt}\n\n${backgroundSection}`
+      : baseSystemPrompt;
+
     const buildParams = (model: ModelRef): AgentRunParams => ({
       agentId: this.defaultAgentId,
       sessionKey: ctx.sessionKey,
       model,
-      systemPrompt: this.deps.systemPrompt,
+      systemPrompt: composedSystemPrompt,
       messages: [...priorMessages, userMessage],
       tools: exposedTools.length > 0 ? [...exposedTools] : undefined,
       abortSignal: signal,

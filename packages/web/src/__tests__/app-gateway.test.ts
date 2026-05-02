@@ -1,7 +1,13 @@
 // packages/web/src/__tests__/app-gateway.test.ts
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { createAppGateway, type AppGateway } from '../app-gateway.js';
+import {
+  createAgentRunsClient,
+  createAppGateway,
+  createFinanceClient,
+  createMemoryClient,
+  type AppGateway,
+} from '../app-gateway.js';
 
 // --- WebSocket mock ---
 
@@ -210,6 +216,152 @@ describe('createAppGateway', () => {
   });
 
   // TODO: 연결 끊김 시 pending request reject 테스트 미작성 (MEDIUM)
+
+  // ── Phase 26 E: typed client wrappers ──
+
+  it('FinanceClient.transactionAdd routes to finance.transaction.add with params', async () => {
+    gw.connect('http://localhost:3000', 'tok');
+    await waitForOpen();
+    const finance = createFinanceClient(gw);
+
+    const promise = finance.transactionAdd({
+      symbol: 'AAPL',
+      action: 'buy',
+      quantity: 10,
+      price: 180,
+      currency: 'USD',
+      executedAt: 1_710_000_000_000,
+    });
+
+    const sent = JSON.parse(instances[0]?.sentMessages[0] ?? '{}') as {
+      id: number;
+      method: string;
+      params: { symbol: string; action: string };
+    };
+    expect(sent.method).toBe('finance.transaction.add');
+    expect(sent.params.symbol).toBe('AAPL');
+    expect(sent.params.action).toBe('buy');
+
+    instances[0]?.emit('message', {
+      data: JSON.stringify({
+        jsonrpc: '2.0',
+        id: sent.id,
+        result: { transactionId: 't1', createdAt: 1, updatedHoldings: [] },
+      }),
+    });
+    const result = await promise;
+    expect(result.transactionId).toBe('t1');
+  });
+
+  it('FinanceClient.transactionDelete routes to finance.transaction.delete', async () => {
+    gw.connect('http://localhost:3000', 'tok');
+    await waitForOpen();
+    const finance = createFinanceClient(gw);
+
+    const promise = finance.transactionDelete({ transactionId: 't1' });
+    const sent = JSON.parse(instances[0]?.sentMessages[0] ?? '{}') as {
+      id: number;
+      method: string;
+      params: { transactionId: string };
+    };
+    expect(sent.method).toBe('finance.transaction.delete');
+    expect(sent.params.transactionId).toBe('t1');
+
+    instances[0]?.emit('message', {
+      data: JSON.stringify({
+        jsonrpc: '2.0',
+        id: sent.id,
+        result: { deleted: true, updatedHoldings: [] },
+      }),
+    });
+    const result = await promise;
+    expect(result.deleted).toBe(true);
+  });
+
+  it('MemoryClient.list routes to memory.list with type filter', async () => {
+    gw.connect('http://localhost:3000', 'tok');
+    await waitForOpen();
+    const memory = createMemoryClient(gw);
+
+    const promise = memory.list({ type: 'preference', limit: 50 });
+    const sent = JSON.parse(instances[0]?.sentMessages[0] ?? '{}') as {
+      id: number;
+      method: string;
+      params: { type?: string; limit?: number };
+    };
+    expect(sent.method).toBe('memory.list');
+    expect(sent.params.type).toBe('preference');
+    expect(sent.params.limit).toBe(50);
+
+    instances[0]?.emit('message', {
+      data: JSON.stringify({ jsonrpc: '2.0', id: sent.id, result: { memories: [] } }),
+    });
+    const result = await promise;
+    expect(result.memories).toEqual([]);
+  });
+
+  it('MemoryClient.delete routes to memory.delete with memoryId', async () => {
+    gw.connect('http://localhost:3000', 'tok');
+    await waitForOpen();
+    const memory = createMemoryClient(gw);
+
+    const promise = memory.delete('mem-1');
+    const sent = JSON.parse(instances[0]?.sentMessages[0] ?? '{}') as {
+      id: number;
+      method: string;
+      params: { memoryId: string };
+    };
+    expect(sent.method).toBe('memory.delete');
+    expect(sent.params.memoryId).toBe('mem-1');
+
+    instances[0]?.emit('message', {
+      data: JSON.stringify({ jsonrpc: '2.0', id: sent.id, result: { deleted: true } }),
+    });
+    const result = await promise;
+    expect(result.deleted).toBe(true);
+  });
+
+  it('AgentRunsClient.list routes to agent.runs.list', async () => {
+    gw.connect('http://localhost:3000', 'tok');
+    await waitForOpen();
+    const runs = createAgentRunsClient(gw);
+
+    const promise = runs.list({ limit: 20 });
+    const sent = JSON.parse(instances[0]?.sentMessages[0] ?? '{}') as {
+      id: number;
+      method: string;
+      params: { limit: number };
+    };
+    expect(sent.method).toBe('agent.runs.list');
+    expect(sent.params.limit).toBe(20);
+
+    instances[0]?.emit('message', {
+      data: JSON.stringify({ jsonrpc: '2.0', id: sent.id, result: { runs: [] } }),
+    });
+    const result = await promise;
+    expect(result.runs).toEqual([]);
+  });
+
+  it('AgentRunsClient.get routes to agent.runs.get with runId', async () => {
+    gw.connect('http://localhost:3000', 'tok');
+    await waitForOpen();
+    const runs = createAgentRunsClient(gw);
+
+    const promise = runs.get('run-1');
+    const sent = JSON.parse(instances[0]?.sentMessages[0] ?? '{}') as {
+      id: number;
+      method: string;
+      params: { runId: string };
+    };
+    expect(sent.method).toBe('agent.runs.get');
+    expect(sent.params.runId).toBe('run-1');
+
+    instances[0]?.emit('message', {
+      data: JSON.stringify({ jsonrpc: '2.0', id: sent.id, result: { run: null } }),
+    });
+    const result = await promise;
+    expect(result.run).toBeNull();
+  });
 
   it('should remove notification handler with offNotification', async () => {
     const handler = vi.fn();

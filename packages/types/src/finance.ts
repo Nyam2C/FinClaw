@@ -195,6 +195,33 @@ export interface PortfolioSummary {
   dailyChangePercent: number;
 }
 
+// ─── 거래 내역 (Phase 26 밀스톤 A) ───
+
+/** 거래 행위 — 매수/매도/배당/수수료/주식분할 */
+export type TransactionAction = 'buy' | 'sell' | 'dividend' | 'fee' | 'split';
+
+/** 거래 입력 출처 — 사용자 직접 입력 vs 외부 임포트 */
+export type TransactionSource = 'manual' | 'import';
+
+/** 거래 1건 */
+export interface Transaction {
+  id: string;
+  portfolioId: string;
+  symbol: TickerSymbol;
+  action: TransactionAction;
+  quantity: number;
+  /** buy/sell 필수, dividend/fee/split 은 nullable */
+  price?: number;
+  fee: number;
+  currency: CurrencyCode;
+  /** 거래 발생 시각 (사용자 입력) */
+  executedAt: Timestamp;
+  source: TransactionSource;
+  note?: string;
+  /** DB 저장 시각 */
+  createdAt: Timestamp;
+}
+
 /** 티커 심볼 생성 (대문자 정규화) */
 export function createTickerSymbol(symbol: string): TickerSymbol {
   return symbol.toUpperCase().trim() as TickerSymbol;

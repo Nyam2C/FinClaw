@@ -31,6 +31,14 @@ import { chunkMarkdown } from './tables/memories.js';
 // re-exports
 export { openDatabase, type Database, type DatabaseOptions };
 export { chunkMarkdown, type MemoryChunk };
+export {
+  addMemory,
+  addMemoryWithEmbedding,
+  getMemory,
+  getMemoriesBySession,
+  deleteMemory,
+  getMemoryChunks,
+} from './tables/memories.js';
 export { CACHE_TTL, type MarketCacheEntry };
 export { type EmbeddingProvider } from './embeddings/provider.js';
 export {
@@ -69,6 +77,28 @@ export {
   type ToolCallRecord,
   type GetToolCallHistoryOptions,
 } from './tables/messages.js';
+export {
+  addTransaction,
+  getTransaction,
+  listTransactions,
+  updateTransaction,
+  deleteTransaction,
+  recomputeHoldings,
+  type Transaction,
+  type AddTransactionInput,
+  type ListTransactionsOptions,
+  type UpdateTransactionInput,
+} from './transactions.js';
+export {
+  addAgentRun,
+  getAgentRun,
+  listAgentRuns,
+  linkMemoryToAgentRun,
+  type AgentRun,
+  type AgentRunRow,
+  type AddAgentRunInput,
+  type ListAgentRunsOptions,
+} from './agent-runs.js';
 
 // ─── StorageAdapter factory ───
 

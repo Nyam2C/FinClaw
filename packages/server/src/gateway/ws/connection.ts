@@ -44,7 +44,8 @@ export async function handleWsConnection(
     auth: authResult.info,
     connectedAt: Date.now(),
     lastPongAt: Date.now(),
-    subscriptions: new Set(),
+    // Phase 26 E: portfolio.changed 자동 구독 (모든 클라이언트가 거래 변경 즉시 수신).
+    subscriptions: new Set(['portfolio.changed']),
   };
 
   // DI 컨테이너에 등록
