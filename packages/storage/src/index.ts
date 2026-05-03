@@ -99,6 +99,18 @@ export {
   type AddAgentRunInput,
   type ListAgentRunsOptions,
 } from './agent-runs.js';
+export {
+  addSchedule,
+  getSchedule,
+  listSchedules,
+  updateSchedule,
+  deleteSchedule,
+  findDueSchedules,
+  markScheduleRun,
+  type AddScheduleInput,
+  type UpdateScheduleInput,
+  type ListSchedulesOptions,
+} from './schedules.js';
 
 // ─── StorageAdapter factory ───
 

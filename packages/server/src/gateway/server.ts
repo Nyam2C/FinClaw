@@ -21,6 +21,7 @@ import { registerChatMethods } from './rpc/methods/chat.js';
 import { registerConfigMethods } from './rpc/methods/config.js';
 import { registerFinanceMethods, type FinanceRpcDeps } from './rpc/methods/finance.js';
 import { registerMemoryMethods, type MemoryRpcDeps } from './rpc/methods/memory.js';
+import { registerScheduleMethods, type ScheduleRpcDeps } from './rpc/methods/schedule.js';
 import { registerSessionMethods } from './rpc/methods/session.js';
 // 메서드 등록
 import { registerSystemMethods } from './rpc/methods/system.js';
@@ -38,6 +39,8 @@ export interface GatewayServerDeps {
   readonly agentDeps?: AgentRpcDeps;
   /** Phase 26 B: memory.* RPC 배선용 의존성 (생략 시 memory.* 메서드는 provider_unavailable) */
   readonly memoryDeps?: MemoryRpcDeps;
+  /** Phase 28: schedule.* RPC 배선용 의존성 (생략 시 schedule.* 메서드는 provider_unavailable) */
+  readonly scheduleDeps?: ScheduleRpcDeps;
 }
 
 export interface GatewayServer {
@@ -108,6 +111,8 @@ export function createGatewayServer(
   if (deps.agentDeps) {
     registerAgentMethods(deps.agentDeps);
   }
+  // Phase 28: schedule.* RPC 등록 (db 미주입 시 provider_unavailable, scheduler 미주입 시 runNow 만 provider_unavailable).
+  registerScheduleMethods(deps.scheduleDeps ?? {});
 
   // HTTP 요청 처리
   httpServer.on('request', (req: IncomingMessage, res: ServerResponse) => {

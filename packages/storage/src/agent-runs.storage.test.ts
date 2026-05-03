@@ -270,7 +270,7 @@ describe('v4 → v5 migration', () => {
       const versionRow = database.db
         .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
         .get() as unknown as { value: string };
-      expect(versionRow.value).toBe('5');
+      expect(versionRow.value).toBe('6');
 
       // agent_runs 테이블 존재
       const tableExists = database.db
@@ -305,7 +305,7 @@ describe('v4 → v5 migration', () => {
       const versionRow = reopened.db
         .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
         .get() as unknown as { value: string };
-      expect(versionRow.value).toBe('5');
+      expect(versionRow.value).toBe('6');
     } finally {
       reopened.close();
     }
