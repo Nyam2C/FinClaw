@@ -36,7 +36,13 @@ import {
 } from '@finclaw/skills-finance';
 import { GENERAL_SKILL_METADATA, registerGeneralTools } from '@finclaw/skills-general';
 import { createEmbeddingProvider, createStorage, type EmbeddingProvider } from '@finclaw/storage';
-import type { ChannelPlugin, ConfigValidationIssue, FinClawConfig, ModelRef } from '@finclaw/types';
+import type {
+  ChannelPlugin,
+  ConfigValidationIssue,
+  FinClawConfig,
+  ModelRef,
+  Schedule,
+} from '@finclaw/types';
 import { DefaultAttachMemoryService } from './auto-reply/agent-memory-hook.js';
 import { registerBuiltInCommands } from './auto-reply/commands/built-in.js';
 import { InMemoryCommandRegistry } from './auto-reply/commands/registry.js';
@@ -46,6 +52,8 @@ import { AutoReplyPipeline } from './auto-reply/pipeline.js';
 import { buildToolMetaIndex, makeRouterHelper } from './auto-reply/router-helper.js';
 import { DefaultMemoryCaptureService } from './auto-reply/stages/memory-capture.js';
 import { DefaultMemoryRetrievalService } from './auto-reply/stages/memory-retrieval.js';
+import { deliverScheduleResult } from './automation/delivery.js';
+import { SchedulerService } from './automation/scheduler.js';
 import { initChannels } from './channels/index.js';
 import type { GatewayServerConfig } from './gateway/rpc/types.js';
 import { createGatewayServer } from './gateway/server.js';
@@ -387,6 +395,50 @@ async function main(): Promise<void> {
     maxQueueSize: 10,
     waitTimeoutMs: 120_000,
   });
+
+  // Phase 28: schedule 동시 실행 1개로 제한하는 lane.
+  // agent.run 큐잉 lane 과 별개로 schedule 전용 (대기열 5분 보유).
+  const scheduleLane = new ConcurrencyLane({
+    maxConcurrent: 1,
+    maxQueueSize: 50,
+    waitTimeoutMs: 5 * 60_000,
+  });
+
+  // Phase 28: SchedulerService — 매 분 폴러로 schedules 검사 + agent.run 직접 실행.
+  // delivery hook 은 gateway 생성 후 lateinit (broadcaster/connections 가 그때 가용).
+  let deliveryHook:
+    | ((args: {
+        schedule: Schedule;
+        agentRunId: string | null;
+        output: string;
+        error?: string;
+      }) => Promise<void>)
+    | null = null;
+  const maxFailRaw = process.env.AUTOMATION_MAX_CONSECUTIVE_FAILURES;
+  const maxConsecutiveFailures = maxFailRaw ? Number(maxFailRaw) : 3;
+  const scheduler = new SchedulerService({
+    db: storage.db,
+    toolRegistry,
+    runnerFactory,
+    lane: scheduleLane,
+    defaultModel: DEFAULT_MODEL,
+    systemPrompt: DEFAULT_SYSTEM_PROMPT,
+    logger,
+    profileHealth,
+    profileId: 'default',
+    router: routerHelper,
+    modelCatalog,
+    modelAliasIndex,
+    fallbackChain: DEFAULT_FALLBACK_CHAIN,
+    maxConsecutiveFailures,
+    onRunComplete: async (args) => {
+      if (deliveryHook) {
+        await deliveryHook(args);
+      }
+    },
+  });
+  lifecycle.register(() => scheduler.stop());
+
   const gateway = createGatewayServer(gatewayConfig, {
     storage,
     defaultModel: DEFAULT_MODEL,
@@ -425,11 +477,27 @@ async function main(): Promise<void> {
       // Phase 26 D: agent_runs 영속화 + agent.runs.* RPC 가 사용 (server.ts 에서 재패스).
       db: storage.db,
     },
+    // Phase 28: schedule.* RPC 배선.
+    scheduleDeps: { db: storage.db, scheduler },
   });
   logger.info('finance.* / memory.* / agent.* RPC methods wired');
   lifecycle.register(() => gateway.stop());
+
+  // Phase 28: gateway 생성 후 delivery hook 활성화. broadcaster/connections 는 gateway.ctx 에서 가져온다.
+  deliveryHook = (args) =>
+    deliverScheduleResult(
+      {
+        discordClient: discordAdapter.getClient() ?? undefined,
+        broadcaster: gateway.ctx.broadcaster,
+        connections: gateway.ctx.connections,
+        logger,
+      },
+      args,
+    );
+
   lifecycle.init();
   await gateway.start();
+  scheduler.start();
   logger.info(`Gateway listening on ${gatewayConfig.host}:${gatewayConfig.port}`);
 
   getEventBus().emit('system:ready');
