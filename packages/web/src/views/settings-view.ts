@@ -7,6 +7,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import {
   createAgentRunsClient,
   createMemoryClient,
+  createScheduleClient,
   type AgentRunFull,
   type AgentRunSummary,
   type AgentRunsClient,
@@ -14,7 +15,10 @@ import {
   type Memory,
   type MemoryClient,
   type MemoryType,
+  type ScheduleClient,
+  type ScheduleSummary,
 } from '../app-gateway.js';
+import './schedule-form.js';
 
 const MEMORY_TYPES: ReadonlyArray<{ value: '' | MemoryType; label: string }> = [
   { value: '', label: '전체' },
@@ -186,14 +190,37 @@ export class SettingsView extends LitElement {
   @state() private expandedRun: AgentRunFull | null = null;
   @state() private detailLoading = false;
 
+  // Phase 28: 자동화
+  @state() private schedules: readonly ScheduleSummary[] = [];
+  @state() private schedulesError = '';
+  @state() private schedulesLoading = false;
+  @state() private showScheduleForm = false;
+  @state() private toastMessage = '';
+
   private memoryClient: MemoryClient | null = null;
   private agentRunsClient: AgentRunsClient | null = null;
+  private scheduleClient: ScheduleClient | null = null;
+  private notificationHandler: ((method: string, params: Record<string, unknown>) => void) | null =
+    null;
+  private toastTimer: ReturnType<typeof setTimeout> | null = null;
   private loaded = false;
 
   override connectedCallback(): void {
     super.connectedCallback();
     if (this.gateway) {
       this.attach();
+    }
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    if (this.notificationHandler && this.gateway) {
+      this.gateway.offNotification(this.notificationHandler);
+      this.notificationHandler = null;
+    }
+    if (this.toastTimer) {
+      clearTimeout(this.toastTimer);
+      this.toastTimer = null;
     }
   }
 
@@ -206,10 +233,101 @@ export class SettingsView extends LitElement {
   private attach(): void {
     this.memoryClient = createMemoryClient(this.gateway);
     this.agentRunsClient = createAgentRunsClient(this.gateway);
+    this.scheduleClient = createScheduleClient(this.gateway);
+    if (!this.notificationHandler) {
+      this.notificationHandler = (method, params) => this.onNotification(method, params);
+      this.gateway.onNotification(this.notificationHandler);
+    }
     if (!this.loaded) {
       this.loaded = true;
       void this.loadMemories();
       void this.loadRuns();
+      void this.loadSchedules();
+    }
+  }
+
+  private setToast(message: string, durationMs = 3_500): void {
+    this.toastMessage = message;
+    if (this.toastTimer) {
+      clearTimeout(this.toastTimer);
+    }
+    this.toastTimer = setTimeout(() => {
+      this.toastMessage = '';
+      this.toastTimer = null;
+    }, durationMs);
+  }
+
+  private onNotification(method: string, params: Record<string, unknown>): void {
+    if (method !== 'notification.schedule.completed') {
+      return;
+    }
+    const data = (params['data'] as { name?: string; error?: string } | undefined) ?? {};
+    this.setToast(
+      data.error
+        ? `자동화 실패: ${data.name ?? ''} — ${data.error}`
+        : `자동화 완료: ${data.name ?? ''}`,
+    );
+    void this.loadSchedules();
+    void this.loadRuns();
+  }
+
+  private async loadSchedules(): Promise<void> {
+    if (!this.scheduleClient || !this.gateway?.isConnected) {
+      return;
+    }
+    this.schedulesLoading = true;
+    this.schedulesError = '';
+    try {
+      const res = await this.scheduleClient.list({ limit: 100 });
+      this.schedules = res.schedules;
+    } catch (err) {
+      this.schedulesError = (err as Error).message;
+    } finally {
+      this.schedulesLoading = false;
+    }
+  }
+
+  private async onScheduleRunNow(s: ScheduleSummary): Promise<void> {
+    if (!this.scheduleClient) {
+      return;
+    }
+    try {
+      await this.scheduleClient.runNow(s.id);
+      this.setToast(`${s.name}: 즉시 실행 요청됨`);
+      await this.loadSchedules();
+    } catch (err) {
+      this.schedulesError = (err as Error).message;
+    }
+  }
+
+  private async onScheduleToggle(s: ScheduleSummary): Promise<void> {
+    if (!this.scheduleClient) {
+      return;
+    }
+    try {
+      if (s.enabled) {
+        await this.scheduleClient.disable(s.id);
+      } else {
+        await this.scheduleClient.enable(s.id);
+      }
+      await this.loadSchedules();
+    } catch (err) {
+      this.schedulesError = (err as Error).message;
+    }
+  }
+
+  private async onScheduleDelete(s: ScheduleSummary): Promise<void> {
+    if (!this.scheduleClient) {
+      return;
+    }
+    if (!window.confirm(`삭제하시겠습니까?\n\n${s.name}`)) {
+      return;
+    }
+    try {
+      await this.scheduleClient.delete(s.id);
+      await this.loadSchedules();
+    } catch (err) {
+      this.schedulesError = (err as Error).message;
     }
   }
 
@@ -457,15 +575,97 @@ createdAt: ${new Date(run.createdAt).toLocaleString()}</pre
     `;
   }
 
+  private renderAutomationSection() {
+    return html`
+      <section>
+        <div class="section-header">
+          <h3>자동화</h3>
+          <div class="controls">
+            <button class="refresh" @click=${this.loadSchedules} ?disabled=${this.schedulesLoading}>
+              ${this.schedulesLoading ? '불러오는 중...' : '새로고침'}
+            </button>
+            <button class="refresh" @click=${() => (this.showScheduleForm = true)}>
+              + 자동화 추가
+            </button>
+          </div>
+        </div>
+        ${this.schedulesError
+          ? html`<div class="error" role="alert">${this.schedulesError}</div>`
+          : ''}
+        ${this.schedules.length === 0
+          ? html`<div class="empty">등록된 자동화가 없습니다.</div>`
+          : html`
+              <table>
+                <thead>
+                  <tr>
+                    <th>이름</th>
+                    <th>cron</th>
+                    <th>agent</th>
+                    <th>채널</th>
+                    <th>다음 실행</th>
+                    <th>상태</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${this.schedules.map(
+                    (s) => html`
+                      <tr>
+                        <td>${s.name}</td>
+                        <td><code>${s.cron}</code></td>
+                        <td>${s.agentId}</td>
+                        <td>${s.deliveryChannel}</td>
+                        <td>${s.nextRunAt ? new Date(s.nextRunAt).toLocaleString() : '-'}</td>
+                        <td>
+                          <span class="badge ${s.enabled && s.status === 'active' ? '' : 'error'}">
+                            ${s.enabled ? s.status : 'disabled'}
+                          </span>
+                        </td>
+                        <td>
+                          <button class="refresh" @click=${() => this.onScheduleRunNow(s)}>
+                            즉시 실행
+                          </button>
+                          <button class="refresh" @click=${() => this.onScheduleToggle(s)}>
+                            ${s.enabled ? '비활성' : '활성'}
+                          </button>
+                          <button class="danger" @click=${() => this.onScheduleDelete(s)}>
+                            삭제
+                          </button>
+                        </td>
+                      </tr>
+                    `,
+                  )}
+                </tbody>
+              </table>
+            `}
+      </section>
+    `;
+  }
+
   override render() {
     return html`
       <h2>Settings</h2>
+      ${this.toastMessage
+        ? html`<div class="badge" style="display:block;margin-bottom:8px;padding:8px 12px;">
+            ${this.toastMessage}
+          </div>`
+        : ''}
       ${!this.gateway?.isConnected
         ? html`<div class="empty">게이트웨이 연결 대기 중...</div>`
         : html`
-            ${this.renderMemoriesSection()} ${this.renderRunsSection()}
-            ${this.renderRoutingSection()}
+            ${this.renderMemoriesSection()} ${this.renderAutomationSection()}
+            ${this.renderRunsSection()} ${this.renderRoutingSection()}
           `}
+      ${this.showScheduleForm
+        ? html`<schedule-form
+            .gateway=${this.gateway}
+            @close=${() => (this.showScheduleForm = false)}
+            @schedule-created=${async () => {
+              this.showScheduleForm = false;
+              await this.loadSchedules();
+            }}
+          ></schedule-form>`
+        : ''}
     `;
   }
 }

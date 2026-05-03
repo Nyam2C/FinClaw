@@ -512,3 +512,107 @@ export function createAgentRunsClient(gateway: AppGateway): AgentRunsClient {
       gateway.send('agent.runs.get', { runId }) as Promise<{ run: AgentRunFull | null }>,
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// Phase 28: schedule.* 자동화 클라이언트
+// ─────────────────────────────────────────────────────────────────────
+
+export type DeliveryChannel = 'discord' | 'web';
+export type ScheduleStatus = 'active' | 'failing' | 'disabled';
+
+export interface ScheduleSummary {
+  readonly id: string;
+  readonly name: string;
+  readonly cron: string;
+  readonly agentId: string;
+  readonly prompt: string;
+  readonly deliveryChannel: DeliveryChannel;
+  readonly deliveryTarget: string;
+  readonly enabled: boolean;
+  readonly timeoutMs?: number;
+  readonly status: ScheduleStatus;
+  readonly consecutiveFailures: number;
+  readonly lastRunAt?: number;
+  readonly lastRunId?: string;
+  readonly nextRunAt?: number;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+}
+
+export interface ScheduleHistoryRun {
+  readonly id: string;
+  readonly agentId: string;
+  readonly prompt: string;
+  readonly output: string;
+  readonly durationMs: number | null;
+  readonly modelUsed: string | null;
+  readonly role: string | null;
+  readonly error: string | null;
+  readonly createdAt: number;
+}
+
+export interface ScheduleClient {
+  list(params?: { enabled?: boolean; limit?: number }): Promise<{
+    schedules: readonly ScheduleSummary[];
+  }>;
+  create(params: {
+    name: string;
+    cron: string;
+    agentId: string;
+    prompt: string;
+    deliveryChannel: DeliveryChannel;
+    deliveryTarget: string;
+    timeoutMs?: number;
+    enabled?: boolean;
+  }): Promise<{ scheduleId: string; nextRunAt: number | null }>;
+  update(params: {
+    scheduleId: string;
+    name?: string;
+    cron?: string;
+    prompt?: string;
+    deliveryChannel?: DeliveryChannel;
+    deliveryTarget?: string;
+    enabled?: boolean;
+    timeoutMs?: number | null;
+  }): Promise<{ schedule: ScheduleSummary }>;
+  delete(scheduleId: string): Promise<{ deleted: boolean }>;
+  runNow(scheduleId: string): Promise<{ runId: string | null }>;
+  history(scheduleId: string, limit?: number): Promise<{ runs: readonly ScheduleHistoryRun[] }>;
+  disable(scheduleId: string): Promise<{ schedule: ScheduleSummary }>;
+  enable(scheduleId: string): Promise<{ schedule: ScheduleSummary }>;
+  testCron(expr: string, sampleCount?: number): Promise<{ nextRunsAt: readonly number[] }>;
+}
+
+export function createScheduleClient(gateway: AppGateway): ScheduleClient {
+  return {
+    list: (p = {}) =>
+      gateway.send('schedule.list', p as Record<string, unknown>) as Promise<{
+        schedules: readonly ScheduleSummary[];
+      }>,
+    create: (p) =>
+      gateway.send('schedule.create', p as unknown as Record<string, unknown>) as Promise<{
+        scheduleId: string;
+        nextRunAt: number | null;
+      }>,
+    update: (p) =>
+      gateway.send('schedule.update', p as unknown as Record<string, unknown>) as Promise<{
+        schedule: ScheduleSummary;
+      }>,
+    delete: (scheduleId) =>
+      gateway.send('schedule.delete', { scheduleId }) as Promise<{ deleted: boolean }>,
+    runNow: (scheduleId) =>
+      gateway.send('schedule.runNow', { scheduleId }) as Promise<{ runId: string | null }>,
+    history: (scheduleId, limit) =>
+      gateway.send('schedule.history', { scheduleId, limit }) as Promise<{
+        runs: readonly ScheduleHistoryRun[];
+      }>,
+    disable: (scheduleId) =>
+      gateway.send('schedule.disable', { scheduleId }) as Promise<{ schedule: ScheduleSummary }>,
+    enable: (scheduleId) =>
+      gateway.send('schedule.enable', { scheduleId }) as Promise<{ schedule: ScheduleSummary }>,
+    testCron: (expr, sampleCount) =>
+      gateway.send('schedule.testCron', { expr, sampleCount }) as Promise<{
+        nextRunsAt: readonly number[];
+      }>,
+  };
+}
