@@ -31,8 +31,7 @@ coverage/
 # Lefthook
 .lefthook-local/
 
-# Claude Code runtime
-.claude/
-
-# Orchestrator workspace (milestone summaries, agent reports)
-_workspace/
+# Claude Code runtime lock files (regenerated each session).
+# .claude/ harness assets (agents, skills, references) and _workspace/
+# reports (milestone summaries, audits, deep-dives) are tracked openly.
+.claude/scheduled_tasks.lock
