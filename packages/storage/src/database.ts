@@ -18,7 +18,7 @@ export interface DatabaseOptions {
 
 // ─── Schema ───
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 const SCHEMA_DDL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -170,6 +170,26 @@ CREATE TABLE IF NOT EXISTS transactions (
 CREATE INDEX IF NOT EXISTS idx_transactions_portfolio ON transactions(portfolio_id, executed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_transactions_symbol ON transactions(portfolio_id, symbol, executed_at DESC);
 
+CREATE TABLE IF NOT EXISTS schedules (
+  id                    TEXT PRIMARY KEY,
+  name                  TEXT NOT NULL,
+  cron                  TEXT NOT NULL,
+  agent_id              TEXT NOT NULL,
+  prompt                TEXT NOT NULL,
+  delivery_channel      TEXT NOT NULL CHECK (delivery_channel IN ('discord', 'web')),
+  delivery_target       TEXT NOT NULL,
+  enabled               INTEGER NOT NULL DEFAULT 1,
+  timeout_ms            INTEGER,
+  status                TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','failing','disabled')),
+  consecutive_failures  INTEGER NOT NULL DEFAULT 0,
+  last_run_at           INTEGER,
+  last_run_id           TEXT,
+  next_run_at           INTEGER,
+  created_at            INTEGER NOT NULL,
+  updated_at            INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_schedules_enabled_next ON schedules(enabled, next_run_at) WHERE enabled = 1;
+
 CREATE TABLE IF NOT EXISTS agent_runs (
   id              TEXT PRIMARY KEY,
   agent_id        TEXT NOT NULL,
@@ -182,6 +202,7 @@ CREATE TABLE IF NOT EXISTS agent_runs (
   model_used      TEXT,
   role            TEXT,
   memory_id       TEXT REFERENCES memories(id) ON DELETE SET NULL,
+  schedule_id     TEXT REFERENCES schedules(id) ON DELETE SET NULL,
   error           TEXT,
   created_at      INTEGER NOT NULL
 );
@@ -189,7 +210,9 @@ CREATE INDEX IF NOT EXISTS idx_agent_runs_created ON agent_runs(created_at DESC)
 CREATE INDEX IF NOT EXISTS idx_agent_runs_agent ON agent_runs(agent_id, created_at DESC);
 `;
 
-const MIGRATIONS: Record<number, string> = {
+type MigrationStep = string | ((db: DatabaseSync) => void);
+
+const MIGRATIONS: Record<number, MigrationStep> = {
   2: `
 CREATE TABLE IF NOT EXISTS portfolios (
   id         TEXT PRIMARY KEY,
@@ -303,6 +326,41 @@ CREATE TABLE IF NOT EXISTS portfolio_holdings (
     CREATE INDEX IF NOT EXISTS idx_agent_runs_created ON agent_runs(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_agent_runs_agent ON agent_runs(agent_id, created_at DESC);
   `,
+  6: (db: DatabaseSync) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS schedules (
+        id                    TEXT PRIMARY KEY,
+        name                  TEXT NOT NULL,
+        cron                  TEXT NOT NULL,
+        agent_id              TEXT NOT NULL,
+        prompt                TEXT NOT NULL,
+        delivery_channel      TEXT NOT NULL CHECK (delivery_channel IN ('discord', 'web')),
+        delivery_target       TEXT NOT NULL,
+        enabled               INTEGER NOT NULL DEFAULT 1,
+        timeout_ms            INTEGER,
+        status                TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','failing','disabled')),
+        consecutive_failures  INTEGER NOT NULL DEFAULT 0,
+        last_run_at           INTEGER,
+        last_run_id           TEXT,
+        next_run_at           INTEGER,
+        created_at            INTEGER NOT NULL,
+        updated_at            INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_schedules_enabled_next ON schedules(enabled, next_run_at) WHERE enabled = 1;
+    `);
+    // agent_runs.schedule_id 는 SCHEMA_DDL 에 이미 정의되어 있을 수도 있고
+    // (fresh DB 또는 v3→ 점프 마이그레이션에서 SCHEMA_DDL 이 먼저 실행됨),
+    // 기존 v5 DB 에는 없을 수도 있다. table_info 로 확인 후 없을 때만 ALTER.
+    const cols = db.prepare(`PRAGMA table_info('agent_runs')`).all() as Array<{ name: string }>;
+    if (!cols.some((c) => c.name === 'schedule_id')) {
+      db.exec(
+        `ALTER TABLE agent_runs ADD COLUMN schedule_id TEXT REFERENCES schedules(id) ON DELETE SET NULL;`,
+      );
+    }
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_agent_runs_schedule ON agent_runs(schedule_id, created_at DESC) WHERE schedule_id IS NOT NULL;`,
+    );
+  },
 };
 
 // ─── Internal helpers ───
@@ -320,11 +378,27 @@ function writeMetaValue(db: DatabaseSync, key: string, value: string): void {
 
 function runMigrations(db: DatabaseSync, from: number, to: number): void {
   for (let v = from + 1; v <= to; v++) {
-    const sql = MIGRATIONS[v];
-    if (sql) {
-      db.exec(sql);
+    const step = MIGRATIONS[v];
+    if (typeof step === 'string') {
+      db.exec(step);
+    } else if (typeof step === 'function') {
+      step(db);
     }
   }
+}
+
+/**
+ * 마이그레이션 후 항상 실행되는 idempotent 보정 단계.
+ *
+ * SCHEMA_DDL 에 둘 수 없는 (마이그레이션으로 추가된 컬럼에 의존하는) 인덱스 등을 여기서 생성한다.
+ * fresh DB 든 마이그레이션 DB 든, openDatabase 마지막에 한 번 실행되어 누락을 방지.
+ */
+function ensurePostMigrationSchema(db: DatabaseSync): void {
+  // Phase 28: agent_runs.schedule_id 인덱스 — SCHEMA_DDL 의 CREATE TABLE IF NOT EXISTS 가
+  // 기존 v5 DB 의 agent_runs 를 재생성하지 않으므로, 인덱스는 마이그레이션 후 별도로 보장.
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_agent_runs_schedule ON agent_runs(schedule_id, created_at DESC) WHERE schedule_id IS NOT NULL;`,
+  );
 }
 
 // ─── Public API ───
@@ -365,6 +439,9 @@ export function openDatabase(options: DatabaseOptions): Database {
       writeMetaValue(db, 'schema_version', String(SCHEMA_VERSION));
     }
   }
+
+  // Idempotent post-migration 보정 (fresh DB 와 마이그레이션 DB 모두 적용).
+  ensurePostMigrationSchema(db);
 
   let closed = false;
 
