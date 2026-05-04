@@ -91,7 +91,7 @@
 
 ## 하네스: 현대 AI 비서 성숙도 감사
 
-**목표:** FinClaw 의 구현 규모·아키텍처가 현대 AI 비서(Claude.ai, ChatGPT, Letta/MemGPT, Hermes 류, MCP 표준) 수준에 도달했는지 종합 평가하고 갭을 우선순위로 보고. 사용자 1인·직접 학습 비대상 제약 반영.
+**목표:** FinClaw 의 구현 규모·아키텍처가 현대 AI 비서(Claude.ai, ChatGPT, Letta/MemGPT, Hermes 류, MCP 표준) 수준에 도달했는지 종합 평가하고 갭을 우선순위로 보고. 사용자 1인 + 학습 동기 인정 (ML 학습 인프라는 비대상) 제약 반영.
 
 **트리거:** 다음 키워드 또는 작업 요청 시 `finclaw-maturity-audit` 스킬을 사용하라.
 
