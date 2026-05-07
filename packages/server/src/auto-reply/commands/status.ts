@@ -95,10 +95,10 @@ function formatApiUsage(
     const rotators = market.keyRotators;
     if (rotators.finnhub) {
       const used = cache.getDailyUsage('finnhub');
-      const total = 60 * rotators.finnhub.totalCount();
+      const total = 60 * 60 * 24 * rotators.finnhub.totalCount();
       const avail = rotators.finnhub.availableCount();
       lines.push(
-        `- Finnhub:     ${usageBar(used, total)} ${used} / ${total} calls/min · 가용 키 ${avail}/${rotators.finnhub.totalCount()}`,
+        `- Finnhub:     ${usageBar(used, total)} ${used} / ${total}/day    · 가용 키 ${avail}/${rotators.finnhub.totalCount()}`,
       );
     }
     if (rotators.twelveData) {

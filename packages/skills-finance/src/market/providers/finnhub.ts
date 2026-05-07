@@ -71,6 +71,7 @@ export class FinnhubProvider implements MarketDataProvider {
   readonly rateLimit: RateLimitConfig = {
     maxRequests: 60, // 60/min · 키
     windowMs: 60_000,
+    dailyLimit: 60 * 60 * 24, // 분당 60 의 일 환산 (이론 max). cache.incrementDailyCount 활성화 + status 사용량 표시.
   };
 
   constructor(private readonly rotator: KeyRotator) {}
