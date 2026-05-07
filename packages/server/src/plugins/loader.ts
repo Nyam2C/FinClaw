@@ -2,6 +2,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import type { ToolRegistry } from '@finclaw/agent';
 import { getNodeMajorVersion } from '@finclaw/infra';
 import type {
   PluginDiagnostic,
@@ -14,6 +15,8 @@ import type {
 import { createJiti } from 'jiti';
 import { discoverPlugins, validatePluginPath } from './discovery.js';
 import { parseManifest } from './manifest.js';
+import { bridgeMCPTools, registerMCPTools } from './mcp-tool-bridge.js';
+import { createMCPClient, type MCPClientHandle } from './mcp-transport.js';
 import { registerToSlot } from './registry.js';
 
 // ─── 타입 ───
@@ -45,6 +48,8 @@ export interface PluginBuildApi {
 export interface LoadResult {
   loaded: string[];
   failed: Array<{ pluginName: string; phase: string; error: string }>;
+  /** Phase 29 D8: 활성화된 MCP client 핸들 (server 종료 시 shutdown). */
+  mcpHandles: MCPClientHandle[];
 }
 
 // ─── jiti Lazy 싱글턴 ───
@@ -163,8 +168,10 @@ function recordDiagnostic(
 export async function loadPlugins(
   searchPaths: string[],
   allowedRoots: string[],
+  /** Phase 29 D8: MCP 도구 등록 대상 ToolRegistry (미주입 시 mcpServers skip + warn). */
+  toolRegistry?: ToolRegistry,
 ): Promise<LoadResult> {
-  const result: LoadResult = { loaded: [], failed: [] };
+  const result: LoadResult = { loaded: [], failed: [], mcpHandles: [] };
 
   // Stage 1: Discovery
   const discovered = discoverPlugins(searchPaths);
@@ -211,6 +218,35 @@ export async function loadPlugins(
             'warn',
             'register',
             'register() returned a Promise; async registration is ignored',
+          );
+        }
+      }
+
+      // Phase 29 D8: MCP servers 등록 (toolRegistry 주입 시).
+      if (manifest.mcpServers && manifest.mcpServers.length > 0) {
+        if (toolRegistry) {
+          for (const spec of manifest.mcpServers) {
+            try {
+              const handle = await createMCPClient(spec);
+              const regs = await bridgeMCPTools(handle);
+              registerMCPTools(toolRegistry, regs);
+              result.mcpHandles.push(handle);
+            } catch (mcpErr) {
+              recordDiagnostic(
+                pluginName,
+                'error',
+                'register',
+                `MCP server "${spec.id}" failed: ${(mcpErr as Error).message}`,
+                mcpErr as Error,
+              );
+            }
+          }
+        } else {
+          recordDiagnostic(
+            pluginName,
+            'warn',
+            'register',
+            'mcpServers declared but toolRegistry not provided — skipped',
           );
         }
       }

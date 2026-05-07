@@ -9,6 +9,7 @@ export type ToolGroupId =
   | 'web' // 웹 도구 (검색, 페이지 읽기)
   | 'data' // 데이터 도구 (DB 쿼리, 캐시)
   | 'communication' // 커뮤니케이션 (알림, 메시지)
+  | 'mcp' // Phase 29 D: MCP (Model Context Protocol) 외부 도구
   | 'custom'; // 사용자 정의
 
 // ── 도구 그룹 정의 ──
@@ -60,6 +61,13 @@ export const BUILT_IN_GROUPS = [
     description: '알림 발송, 메시지 전달',
     defaultPolicy: 'allow',
     includeInPromptWhen: 'always',
+  },
+  {
+    id: 'mcp',
+    displayName: 'MCP 외부 도구',
+    description: 'MCP (Model Context Protocol) 서버가 노출한 외부 도구',
+    defaultPolicy: 'require-approval',
+    includeInPromptWhen: 'on-demand',
   },
   {
     id: 'custom',

@@ -1,5 +1,9 @@
 import type { RegisteredToolDefinition } from './registry.js';
 
+// Phase 29 D7: group='mcp' 도구는 main.ts 에서 `mcp:*` pattern 의 require-approval rule 을
+// addPolicyRule 로 등록한다. finance-safety 단계는 isTransactional/accessesSensitiveData 만
+// 트리거하므로, MCP 도구 (둘 다 false) 는 group-policy 단계에서 require-approval 로 분류돼야 한다.
+
 // ── 타입 ──
 
 /** 정책 판정 결과 */

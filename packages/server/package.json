@@ -20,6 +20,7 @@
     "@finclaw/storage": "workspace:*",
     "@finclaw/tui": "workspace:*",
     "@finclaw/types": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1",
     "chokidar": "^5.0.0",
     "commander": "^14",
     "jiti": "^2.6.0",

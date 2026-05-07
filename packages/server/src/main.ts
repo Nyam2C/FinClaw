@@ -64,6 +64,7 @@ import { SchedulerService } from './automation/scheduler.js';
 import { initChannels } from './channels/index.js';
 import type { GatewayServerConfig } from './gateway/rpc/types.js';
 import { createGatewayServer } from './gateway/server.js';
+import { loadPlugins } from './plugins/loader.js';
 import { ProcessLifecycle } from './process/lifecycle.js';
 import { MessageRouter } from './process/message-router.js';
 import { loadPrompt } from './prompts/loader.js';
@@ -330,6 +331,29 @@ async function main(): Promise<void> {
   } else {
     logger.info('market/news tools unavailable — skipping alerts');
   }
+
+  // Phase 29 D9: MCP 도구 group=mcp 정책 — require-approval (사용자 결정 5).
+  toolRegistry.addPolicyRule({
+    pattern: 'mcp:*',
+    verdict: 'require-approval',
+    reason: 'MCP external tools require explicit approval',
+    priority: 100,
+  });
+
+  // Phase 29 D9: plugin loader 호출. plugins 디렉터리 미존재 시 no-op (loader 가 silently 처리).
+  const pluginsDir = process.env.FINCLAW_PLUGINS_DIR ?? join(homedir(), '.finclaw', 'plugins');
+  const pluginResult = await loadPlugins([pluginsDir], [pluginsDir], toolRegistry);
+  logger.info('Plugins loaded', {
+    event: 'plugins.loaded',
+    loaded: pluginResult.loaded,
+    failed: pluginResult.failed,
+    mcpServers: pluginResult.mcpHandles.length,
+  });
+  lifecycle.register(async () => {
+    for (const h of pluginResult.mcpHandles) {
+      await h.shutdown();
+    }
+  });
 
   const runnerFactory: RunnerFactory = (dispatcher) =>
     new Runner({

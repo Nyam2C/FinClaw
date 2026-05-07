@@ -3,8 +3,8 @@ import type { ToolGroupId } from '../src/agents/tools/groups.js';
 import { BUILT_IN_GROUPS } from '../src/agents/tools/groups.js';
 
 describe('BUILT_IN_GROUPS', () => {
-  it('6개 내장 그룹이 정의되어 있다', () => {
-    expect(BUILT_IN_GROUPS).toHaveLength(6);
+  it('7개 내장 그룹이 정의되어 있다 (Phase 29 D: mcp 추가)', () => {
+    expect(BUILT_IN_GROUPS).toHaveLength(7);
   });
 
   it('모든 ToolGroupId 값이 포함되어 있다', () => {
@@ -15,6 +15,7 @@ describe('BUILT_IN_GROUPS', () => {
       'web',
       'data',
       'communication',
+      'mcp',
       'custom',
     ];
     expect(ids).toEqual(expectedIds);
