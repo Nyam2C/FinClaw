@@ -32,6 +32,9 @@ coverage/
 .lefthook-local/
 
 # Claude Code runtime lock files (regenerated each session).
-# .claude/ harness assets (agents, skills, references) and _workspace/
-# reports (milestone summaries, audits, deep-dives) are tracked openly.
+# .claude/ harness assets (agents, skills, references) are tracked openly.
 .claude/scheduled_tasks.lock
+
+# _workspace/ holds harness intermediate artifacts (milestone summaries,
+# audit reports, phase reviews). Reproducible from harness re-runs, not committed.
+_workspace/
