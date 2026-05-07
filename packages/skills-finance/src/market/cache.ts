@@ -57,7 +57,9 @@ export class MarketCache {
 
       // 5. 캐시 저장 — provider.id 기반 TTL 매핑
       const ttlMap: Record<string, number> = {
-        'alpha-vantage': CACHE_TTL.QUOTE,
+        finnhub: 5_000, // real-time → 5초
+        'twelve-data': 300_000, // 4시간 지연 → 5분
+        'alpha-vantage': 1_800_000, // EOD → 30분 (plan.md 명시)
         coingecko: CACHE_TTL.CRYPTO,
         frankfurter: CACHE_TTL.FOREX,
       };
@@ -78,6 +80,13 @@ export class MarketCache {
       }
       throw error;
     }
+  }
+
+  /** Phase 27 D: status 표시용. 오늘 (UTC 자정 기준) 호출 카운터 조회. */
+  getDailyUsage(providerId: string): number {
+    const today = new Date().toISOString().split('T')[0];
+    const counterKey = `rate:daily:${providerId}:${today}`;
+    return getCachedData<number>(this.db, counterKey) ?? 0;
   }
 
   /** 일별 API 호출 횟수를 SQLite에 영속화하여 확인한다 */

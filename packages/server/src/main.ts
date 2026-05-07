@@ -352,6 +352,8 @@ async function main(): Promise<void> {
     profileHealth,
     profileId: 'default',
     defaultModel: DEFAULT_MODEL,
+    marketHandle,
+    newsHandle,
   });
   const channelPluginRegistry = new Map<string, ChannelPlugin>();
 
