@@ -54,6 +54,8 @@ export interface FallbackConfig {
   readonly automation?: boolean;
   /** Phase 24: 자동화 시 동일 tier 만 시도 (escalation/degradation 모두 차단) */
   readonly strictFallback?: boolean;
+  /** Phase 29 A: cross-provider 폴백 허용 (기본 false — 동일 벤더 내만 시도) */
+  readonly allowCrossProvider?: boolean;
 }
 
 /** 폴백 실행 결과 */
@@ -118,6 +120,14 @@ export async function runWithModelFallback<T>(
         new Error('chain is empty after floor filter'),
       );
     }
+  }
+
+  // Phase 29 A: cross-provider 폴백 차단 가드 (기본값). chain 첫 모델의 provider 와
+  // 다른 provider 모델은 자동 skip — anthropic→openai 등 silent 전환을 막아 비용/품질
+  // 이상 동작을 차단한다. allowCrossProvider=true 로 명시 시 비활성.
+  if (config.allowCrossProvider !== true && effectiveModels.length > 0) {
+    const firstProvider = resolve(effectiveModels[0]).provider;
+    effectiveModels = effectiveModels.filter((m) => resolve(m).provider === firstProvider);
   }
 
   let previousModelId: string | undefined;

@@ -5,8 +5,8 @@ import { InMemoryModelCatalog } from '../src/models/catalog.js';
 describe('InMemoryModelCatalog', () => {
   const catalog = new InMemoryModelCatalog(BUILT_IN_MODELS);
 
-  it('내장 모델 3종을 모두 조회한다', () => {
-    expect(catalog.listModels()).toHaveLength(3);
+  it('내장 모델 5종을 모두 조회한다 (anthropic 3 + openai 2 — Phase 29 A)', () => {
+    expect(catalog.listModels()).toHaveLength(5);
   });
 
   it('ID로 모델을 조회한다', () => {
