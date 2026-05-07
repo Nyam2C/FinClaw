@@ -510,9 +510,35 @@ async function main(): Promise<void> {
     },
     // Phase 28: schedule.* RPC 배선.
     scheduleDeps: { db: storage.db, scheduler },
+    // Phase 29 E6: /readyz 의 db / embedding 컴포넌트 헬스 체커.
+    dbHealthCheck: async () => {
+      storage.db.prepare('SELECT 1').get();
+    },
+    embeddingHealthCheck: embeddingProvider
+      ? async () => {
+          // 짧은 query 1건 — 실패 시 throw → degraded
+          await embeddingProvider.embedQuery('healthz');
+        }
+      : undefined,
   });
   logger.info('finance.* / memory.* / agent.* RPC methods wired');
   lifecycle.register(() => gateway.stop());
+
+  // Phase 29 E6: dev 모드에서만 hot reload — prompts 디렉터리 watch.
+  if (process.env.NODE_ENV !== 'production') {
+    const { createHotReloader } = await import('./gateway/hot-reload.js');
+    const promptsPath = join(import.meta.dirname, '..', 'prompts', 'finclaw.system.ko.md');
+    const hotReloader = createHotReloader(
+      { configPath: promptsPath, debounceMs: 500, validateBeforeApply: false, mode: 'watch' },
+      gateway.ctx,
+      () => ({ success: true }),
+    );
+    hotReloader.on('change', (e) => {
+      logger.info('Prompts hot-reloaded', { event: 'prompts.reloaded', path: e.path });
+    });
+    await hotReloader.start();
+    lifecycle.register(() => hotReloader.stop());
+  }
 
   // Phase 28: gateway 생성 후 delivery hook 활성화. broadcaster/connections 는 gateway.ctx 에서 가져온다.
   deliveryHook = (args) =>

@@ -1,6 +1,7 @@
 // packages/server/src/gateway/context.ts
 import type { Server as HttpServer } from 'node:http';
 import type { WebSocketServer } from 'ws';
+import type { AuthRateLimiter } from './auth/rate-limit.js';
 import type { GatewayBroadcaster } from './broadcaster.js';
 import type { ChatRegistry } from './registry.js';
 import type { GatewayServerConfig, WsConnection } from './rpc/types.js';
@@ -17,4 +18,10 @@ export interface GatewayServerContext {
   readonly registry: ChatRegistry;
   readonly broadcaster: GatewayBroadcaster;
   isDraining: boolean;
+  /** Phase 29 E1: 요청 수준 IP rate limiter (없으면 비활성화) */
+  readonly rateLimiter?: import('./rate-limit.js').RequestRateLimiter;
+  /** Phase 29 E3: HTTP 액세스 로거 (없으면 비활성화) */
+  readonly accessLogger?: ReturnType<typeof import('./access-log.js').createAccessLogger>;
+  /** Phase 29 E4: auth 실패 IP rate limiter (없으면 비활성화) */
+  readonly authRateLimiter?: AuthRateLimiter;
 }
