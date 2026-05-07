@@ -37,7 +37,12 @@ import {
   type NewsSkillHandle,
 } from '@finclaw/skills-finance';
 import { GENERAL_SKILL_METADATA, registerGeneralTools } from '@finclaw/skills-general';
-import { createEmbeddingProvider, createStorage, type EmbeddingProvider } from '@finclaw/storage';
+import {
+  assertEmbeddingDimension,
+  createEmbeddingProvider,
+  createStorage,
+  type EmbeddingProvider,
+} from '@finclaw/storage';
 import type {
   ChannelPlugin,
   ConfigValidationIssue,
@@ -195,21 +200,27 @@ async function main(): Promise<void> {
     await storage.close();
   });
 
-  // Phase 26 B: memory.search hybrid 검색용 embedding provider (best-effort).
+  // Phase 26 B / Phase 29 C: memory.search hybrid 검색용 embedding provider (best-effort).
   // 키 미설정/생성 실패 시 undefined → memory.search 는 FTS-only fallback.
+  // OpenAI 만 있으면 dimensions=storage.vectorDimension truncation 으로 vec0 매칭.
   let embeddingProvider: EmbeddingProvider | undefined;
   if (process.env.VOYAGE_API_KEY || process.env.OPENAI_API_KEY) {
     try {
-      embeddingProvider = await createEmbeddingProvider('auto');
+      embeddingProvider = await createEmbeddingProvider('auto', {
+        dimensions: storage.vectorDimension,
+      });
+      assertEmbeddingDimension(embeddingProvider, storage.vectorDimension);
       logger.info('Embedding provider created', {
         event: 'memory.embedding_ready',
         model: embeddingProvider.model,
+        dimensions: embeddingProvider.dimensions,
       });
     } catch (err) {
       logger.warn('Failed to create embedding provider — memory.search will use FTS-only', {
         event: 'memory.embedding_unavailable',
         error: (err as Error).message,
       });
+      embeddingProvider = undefined;
     }
   }
 
@@ -537,7 +548,9 @@ async function main(): Promise<void> {
       logger.info('Prompts hot-reloaded', { event: 'prompts.reloaded', path: e.path });
     });
     await hotReloader.start();
-    lifecycle.register(() => hotReloader.stop());
+    lifecycle.register(async () => {
+      hotReloader.stop();
+    });
   }
 
   // Phase 28: gateway 생성 후 delivery hook 활성화. broadcaster/connections 는 gateway.ctx 에서 가져온다.

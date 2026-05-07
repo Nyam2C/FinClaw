@@ -47,6 +47,10 @@ export {
   type EmbeddingConfig,
 } from './embeddings/provider.js';
 export {
+  EmbeddingDimensionMismatchError,
+  assertEmbeddingDimension,
+} from './embeddings/registry.js';
+export {
   mergeHybridResults,
   type ChunkSearchResult,
   type HybridSearchOptions,
@@ -126,6 +130,8 @@ export interface StorageOptions {
  */
 export interface FinClawStorage extends StorageAdapter {
   readonly db: Database['db'];
+  /** Phase 29 C7: vec0 의 embedding 차원 (main.ts 의 assertEmbeddingDimension 검사용) */
+  readonly vectorDimension: number;
 }
 
 // NOTE(review-1 R-2): duplicates conversations.ts type — will be removed with LIKE fallback
@@ -157,6 +163,9 @@ export function createStorage(options: StorageOptions): FinClawStorage {
   return {
     get db(): Database['db'] {
       return database.db;
+    },
+    get vectorDimension(): number {
+      return database.vectorDimension;
     },
 
     async initialize(): Promise<void> {

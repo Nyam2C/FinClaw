@@ -25,6 +25,16 @@ export async function atomicReindex(dbPath: string, provider: EmbeddingProvider)
   try {
     // NOTE(review-2 I-10): no sqlite-vec — safe, only memories table queried (no vec0 access)
     const origDb = new DatabaseSync(dbPath, { readOnly: true });
+    // Phase 29 C8: meta.last_reindex_provider 검사. 다른 provider 면 강제 전체 reindex (안내만).
+    const lastProviderRow = origDb
+      .prepare(`SELECT value FROM meta WHERE key = 'last_reindex_provider'`)
+      .get() as { value: string } | undefined;
+    const previousProvider = lastProviderRow?.value;
+    if (previousProvider && previousProvider !== provider.id) {
+      console.warn(
+        `[reindex] provider changed: ${previousProvider} -> ${provider.id} - full reindex.`,
+      );
+    }
     const rows = origDb
       .prepare('SELECT * FROM memories ORDER BY created_at ASC')
       .all() as unknown as MemoryRow[];
@@ -44,6 +54,11 @@ export async function atomicReindex(dbPath: string, provider: EmbeddingProvider)
       };
       await addMemoryWithEmbedding(tmpDatabase.db, entry, provider);
     }
+
+    // Phase 29 C8: 새 DB 에 last_reindex_provider 기록 (다음 reindex 시 비교용).
+    tmpDatabase.db
+      .prepare(`INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)`)
+      .run('last_reindex_provider', provider.id);
 
     tmpDatabase.close();
 
