@@ -271,10 +271,15 @@ async function main(): Promise<void> {
     logger.info('No market keys set — skipping market tools');
   }
 
-  if (marketHandle && alphaVantageRotator) {
+  const newsdataKeys = readKeyArray('NEWSDATA_API_KEY');
+  const newsdataRotator = newsdataKeys.length > 0 ? new KeyRotator(newsdataKeys) : undefined;
+
+  if (marketHandle && (alphaVantageRotator || newsdataRotator || finnhubRotator)) {
     newsHandle = await registerNewsTools(toolRegistry, {
       db: storage.db,
       alphaVantageKey: alphaVantageKeys[0],
+      newsdataRotator,
+      finnhubRotator, // 시세 KeyRotator 와 동일 인스턴스 공유
       quoteService: marketHandle.quoteService,
       anthropicApiKey: anthropicKey,
       router: routerHelper,
@@ -284,9 +289,15 @@ async function main(): Promise<void> {
       profileId: 'default',
       modelCatalog,
     });
-    logger.info('News tools registered');
+    logger.info('News tools registered', {
+      providers: [
+        alphaVantageRotator && 'alpha-vantage',
+        newsdataRotator && 'newsdata',
+        finnhubRotator && 'finnhub-news',
+      ].filter(Boolean),
+    });
   } else if (marketHandle) {
-    logger.info('ALPHA_VANTAGE_KEY not set — skipping news tools');
+    logger.info('No news keys set — skipping news tools');
   }
 
   let alertHandle: AlertSkillHandle | undefined;
