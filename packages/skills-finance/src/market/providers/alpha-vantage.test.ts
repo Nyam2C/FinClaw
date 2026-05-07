@@ -1,6 +1,7 @@
 import { createTickerSymbol } from '@finclaw/types';
 // packages/skills-finance/src/market/providers/alpha-vantage.test.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { KeyRotator } from '../../shared/key-rotator.js';
 import { AlphaVantageProvider, AlphaVantageError } from './alpha-vantage.js';
 
 // safeFetchJson mock
@@ -16,7 +17,7 @@ describe('AlphaVantageProvider', () => {
   let provider: AlphaVantageProvider;
 
   beforeEach(() => {
-    provider = new AlphaVantageProvider('test-api-key');
+    provider = new AlphaVantageProvider(new KeyRotator(['test-api-key']));
     vi.clearAllMocks();
   });
 

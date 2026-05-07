@@ -50,8 +50,15 @@ export function createNewsAggregator(deps: {
       // URL 기반 중복 제거
       const deduped = deduplicateByUrl(allItems);
 
-      // 날짜순 정렬 (최신 우선) — Timestamp는 branded number, 직접 비교
-      deduped.sort((a, b) => (b.publishedAt as number) - (a.publishedAt as number));
+      // sentiment 가 있는 항목을 위로, 그 안에서 publishedAt 내림차순.
+      deduped.sort((a, b) => {
+        const aHas = (a as { sentiment?: { score: number } }).sentiment !== undefined;
+        const bHas = (b as { sentiment?: { score: number } }).sentiment !== undefined;
+        if (aHas !== bHas) {
+          return aHas ? -1 : 1;
+        }
+        return (b.publishedAt as number) - (a.publishedAt as number);
+      });
 
       // limit 적용
       const limited = deduped.slice(0, query.limit ?? 20);

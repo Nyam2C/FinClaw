@@ -8,11 +8,14 @@ import type {
   ToolRegistry,
 } from '@finclaw/agent';
 import type { ModelRef, SkillMetadata } from '@finclaw/types';
+import type { KeyRotator } from '../shared/key-rotator.js';
 import { createNewsAggregator } from './aggregator.js';
 import { PortfolioStore } from './portfolio/store.js';
 import type { QuoteService } from './portfolio/tracker.js';
 import { createAlphaVantageNewsProvider } from './providers/alpha-vantage-news.js';
+import { createFinnhubNewsProvider } from './providers/finnhub-news.js';
 import { createNewsApiProvider } from './providers/newsapi.js';
+import { createNewsDataProvider } from './providers/newsdata.js';
 import { createRssProvider } from './providers/rss.js';
 import {
   registerGetFinancialNewsTool,
@@ -29,6 +32,10 @@ export interface NewsSkillConfig {
   readonly db: DatabaseSync;
   readonly newsApiKey?: string;
   readonly alphaVantageKey?: string;
+  /** Phase 27: NewsData.io 전용 KeyRotator */
+  readonly newsdataRotator?: KeyRotator;
+  /** Phase 27: Finnhub 시세와 공유하는 KeyRotator */
+  readonly finnhubRotator?: KeyRotator;
   readonly rssFeedUrls?: string[];
   readonly anthropicApiKey?: string;
   readonly quoteService: QuoteService;
@@ -52,9 +59,13 @@ export interface NewsSkillConfig {
 
 /** Phase 22: main.ts가 alerts 배선에 재사용할 수 있도록 aggregator 노출 */
 /** Phase 23: finance.portfolio.get RPC 배선을 위해 portfolioStore 도 함께 노출 */
+/** Phase 27 D: status 표시용 newsdata rotator 노출. */
 export interface NewsSkillHandle {
   readonly aggregator: import('./types.js').NewsAggregator;
   readonly portfolioStore: PortfolioStore;
+  readonly keyRotators: {
+    readonly newsdata?: KeyRotator;
+  };
 }
 
 /** 스킬을 초기화하고 도구를 등록한다 */
@@ -71,6 +82,14 @@ export async function registerNewsTools(
 
   if (config.alphaVantageKey) {
     providers.push(createAlphaVantageNewsProvider({ apiKey: config.alphaVantageKey }));
+  }
+
+  if (config.newsdataRotator) {
+    providers.push(createNewsDataProvider({ rotator: config.newsdataRotator }));
+  }
+
+  if (config.finnhubRotator) {
+    providers.push(createFinnhubNewsProvider({ rotator: config.finnhubRotator }));
   }
 
   providers.push(createRssProvider({ feedUrls: config.rssFeedUrls }));
@@ -103,7 +122,11 @@ export async function registerNewsTools(
     newsAggregator,
   });
 
-  return { aggregator: newsAggregator, portfolioStore };
+  return {
+    aggregator: newsAggregator,
+    portfolioStore,
+    keyRotators: { newsdata: config.newsdataRotator },
+  };
 }
 
 /** 스킬 메타데이터 */
@@ -113,7 +136,13 @@ export const NEWS_SKILL_METADATA: SkillMetadata = {
   version: '1.0.0',
   requires: {
     env: [],
-    optionalEnv: ['NEWSAPI_KEY', 'ALPHA_VANTAGE_KEY', 'ANTHROPIC_API_KEY'],
+    optionalEnv: [
+      'NEWSAPI_KEY',
+      'ALPHA_VANTAGE_KEY',
+      'FINNHUB_KEY',
+      'NEWSDATA_API_KEY',
+      'ANTHROPIC_API_KEY',
+    ],
   },
   tools: [
     { name: 'get_financial_news', minModel: 'haiku', reason: '리스트 반환' },

@@ -1,6 +1,7 @@
 // packages/server/src/auto-reply/commands/status.ts
 import type { ModelStats, ProfileHealthMonitor, ToolRegistry } from '@finclaw/agent';
 import { modelIdToTier } from '@finclaw/agent';
+import type { MarketSkillHandle, NewsSkillHandle } from '@finclaw/skills-finance';
 import type { ModelRef, StorageAdapter } from '@finclaw/types';
 import { getAllChannelDocks } from '../../channels/index.js';
 import type { CommandExecutor } from './registry.js';
@@ -11,9 +12,12 @@ export interface StatusCommandDeps {
   readonly profileHealth?: ProfileHealthMonitor;
   readonly profileId?: string;
   readonly defaultModel?: ModelRef;
+  /** Phase 27: provider 한도 표시. */
+  readonly marketHandle?: MarketSkillHandle;
+  readonly newsHandle?: NewsSkillHandle;
 }
 
-/** `!finclaw status` — 서버 상태 요약 (도구/세션/업타임/채널/모델/API 건강) */
+/** `!finclaw status` — 서버 상태 + provider 한도. */
 export function createStatusCommand(deps: StatusCommandDeps): CommandExecutor {
   return async (_args, ctx) => {
     const toolCount = deps.toolRegistry.list().length;
@@ -33,6 +37,8 @@ export function createStatusCommand(deps: StatusCommandDeps): CommandExecutor {
     const breakdown = deps.profileHealth?.getModelBreakdown(profileId, 60 * 60 * 1000);
     const breakdownLines = formatBreakdown(breakdown);
 
+    const apiLines = formatApiUsage(deps.marketHandle, deps.newsHandle);
+
     return {
       content: [
         '**FinClaw 상태**',
@@ -43,6 +49,7 @@ export function createStatusCommand(deps: StatusCommandDeps): CommandExecutor {
         `- 현재 모델: ${modelId}`,
         `- API 상태: ${healthLabel}`,
         ...breakdownLines,
+        ...apiLines,
       ].join('\n'),
       ephemeral: false,
     };
@@ -72,4 +79,66 @@ function formatBreakdown(breakdown: Map<string, ModelStats> | undefined): string
     lines.push(`- Fallback 발동: ${totalFallbacks}회`);
   }
   return lines;
+}
+
+function formatApiUsage(
+  market: MarketSkillHandle | undefined,
+  news: NewsSkillHandle | undefined,
+): string[] {
+  if (!market && !news) {
+    return [];
+  }
+  const lines: string[] = ['', '**API 한도 (오늘)**'];
+
+  if (market) {
+    const cache = market.cache;
+    const rotators = market.keyRotators;
+    if (rotators.finnhub) {
+      const used = cache.getDailyUsage('finnhub');
+      const total = 60 * 60 * 24 * rotators.finnhub.totalCount();
+      const avail = rotators.finnhub.availableCount();
+      lines.push(
+        `- Finnhub:     ${usageBar(used, total)} ${used} / ${total}/day    · 가용 키 ${avail}/${rotators.finnhub.totalCount()}`,
+      );
+    }
+    if (rotators.twelveData) {
+      const used = cache.getDailyUsage('twelve-data');
+      const total = 800 * rotators.twelveData.totalCount();
+      const avail = rotators.twelveData.availableCount();
+      lines.push(
+        `- Twelve Data: ${usageBar(used, total)} ${used} / ${total}/day      · 가용 키 ${avail}/${rotators.twelveData.totalCount()}`,
+      );
+    }
+    if (rotators.alphaVantage) {
+      const used = cache.getDailyUsage('alpha-vantage');
+      const total = 25 * rotators.alphaVantage.totalCount();
+      const avail = rotators.alphaVantage.availableCount();
+      lines.push(
+        `- Alpha V:     ${usageBar(used, total)} ${used} / ${total}/day        · 가용 키 ${avail}/${rotators.alphaVantage.totalCount()}`,
+      );
+    }
+  }
+
+  if (news?.keyRotators.newsdata) {
+    const r = news.keyRotators.newsdata;
+    const total = 200 * r.totalCount();
+    // newsdata 는 cache 에 daily counter 미기록 (rateLimit.dailyLimit 미설정). placeholder.
+    lines.push(
+      `- NewsData.io: ${usageBar(0, total)} ?  / ${total}/day       · 가용 키 ${r.availableCount()}/${r.totalCount()}`,
+    );
+  }
+
+  if (market?.keyRotators.finnhub) {
+    lines.push('- Finnhub News: (시세와 키 공유)');
+  }
+
+  return lines;
+}
+
+function usageBar(used: number, total: number): string {
+  if (total === 0) {
+    return '[░░░░░░░░░░]';
+  }
+  const filled = Math.min(10, Math.max(0, Math.round((used / total) * 10)));
+  return `[${'▓'.repeat(filled)}${'░'.repeat(10 - filled)}]`;
 }

@@ -1,5 +1,6 @@
 // packages/server/src/auto-reply/commands/built-in.ts
 import type { ProfileHealthMonitor, ToolRegistry } from '@finclaw/agent';
+import type { MarketSkillHandle, NewsSkillHandle } from '@finclaw/skills-finance';
 import type { ModelRef, StorageAdapter } from '@finclaw/types';
 import type { CommandRegistry } from './registry.js';
 import { createResetCommand } from './reset.js';
@@ -11,6 +12,9 @@ export interface BuiltInCommandDeps {
   readonly profileHealth?: ProfileHealthMonitor;
   readonly profileId?: string;
   readonly defaultModel?: ModelRef;
+  /** Phase 27 D: status 명령의 provider 한도 표시용. */
+  readonly marketHandle?: MarketSkillHandle;
+  readonly newsHandle?: NewsSkillHandle;
 }
 
 /** 내장 명령어 등록 (deps 미제공 시 status/reset은 플레이스홀더) */
@@ -80,6 +84,8 @@ export function registerBuiltInCommands(
         profileHealth: deps.profileHealth,
         profileId: deps.profileId,
         defaultModel: deps.defaultModel,
+        marketHandle: deps.marketHandle,
+        newsHandle: deps.newsHandle,
       }),
     );
   }

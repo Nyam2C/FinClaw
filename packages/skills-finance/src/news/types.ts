@@ -5,7 +5,7 @@ import type { NewsItem, NewsSentiment, TickerSymbol } from '@finclaw/types';
 export type { NewsItem, NewsSentiment, TickerSymbol };
 
 /** 뉴스 소스 프로바이더 식별자 */
-export type NewsSourceId = 'newsapi' | 'alpha-vantage' | 'rss';
+export type NewsSourceId = 'newsapi' | 'alpha-vantage' | 'rss' | 'newsdata' | 'finnhub-news';
 
 export type NewsCategory =
   | 'earnings'

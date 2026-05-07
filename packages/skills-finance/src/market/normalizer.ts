@@ -76,9 +76,61 @@ export function normalizeQuote(response: ProviderQuoteResponse): ProviderMarketQ
       return normalizeCoinGeckoQuote(response);
     case 'frankfurter':
       return normalizeFrankfurterQuote(response);
+    case 'finnhub':
+      return normalizeFinnhubQuote(response);
+    case 'twelve-data':
+      return normalizeTwelveDataQuote(response);
     default:
       throw new Error(`Unknown provider: ${response.provider}`);
   }
+}
+
+function normalizeFinnhubQuote(response: ProviderQuoteResponse): ProviderMarketQuote {
+  const r = response.raw as { c: number; h: number; l: number; o: number; pc: number; t: number };
+  return {
+    symbol: response.symbol,
+    price: r.c,
+    change: r.c - r.pc,
+    changePercent: ((r.c - r.pc) / r.pc) * 100,
+    open: r.o,
+    high: r.h,
+    low: r.l,
+    previousClose: r.pc,
+    volume: 0,
+    marketCap: undefined,
+    timestamp: (r.t * 1000) as Timestamp,
+    provider: 'finnhub',
+    delayed: false,
+    currency: createCurrencyCode('USD'),
+  };
+}
+
+function normalizeTwelveDataQuote(response: ProviderQuoteResponse): ProviderMarketQuote {
+  const r = response.raw as {
+    open: string;
+    high: string;
+    low: string;
+    close: string;
+    previous_close: string;
+  };
+  const close = Number(r.close);
+  const prev = Number(r.previous_close);
+  return {
+    symbol: response.symbol,
+    price: close,
+    change: close - prev,
+    changePercent: ((close - prev) / prev) * 100,
+    open: Number(r.open),
+    high: Number(r.high),
+    low: Number(r.low),
+    previousClose: prev,
+    volume: 0,
+    marketCap: undefined,
+    timestamp: Date.now() as Timestamp,
+    provider: 'twelve-data',
+    delayed: true, // 4시간 지연
+    currency: createCurrencyCode('USD'),
+  };
 }
 
 function normalizeAlphaVantageQuote(response: ProviderQuoteResponse): ProviderMarketQuote {
@@ -171,9 +223,77 @@ export function normalizeHistorical(response: ProviderHistoricalResponse): Marke
       return normalizeAlphaVantageHistorical(response);
     case 'coingecko':
       return normalizeCoinGeckoHistorical(response);
+    case 'finnhub':
+      return normalizeFinnhubHistorical(response);
+    case 'twelve-data':
+      return normalizeTwelveDataHistorical(response);
     default:
       throw new Error(`Historical data not supported for: ${response.provider}`);
   }
+}
+
+function normalizeFinnhubHistorical(response: ProviderHistoricalResponse): MarketHistorical {
+  const r = response.raw as {
+    s: string;
+    t?: number[];
+    o?: number[];
+    h?: number[];
+    l?: number[];
+    c?: number[];
+    v?: number[];
+  };
+  const t = r.t ?? [];
+  const o = r.o ?? [];
+  const h = r.h ?? [];
+  const l = r.l ?? [];
+  const c = r.c ?? [];
+  const v = r.v ?? [];
+  const candles: OHLCVCandle[] = t.map((ts, i) => ({
+    timestamp: (ts * 1000) as Timestamp,
+    open: o[i] ?? 0,
+    high: h[i] ?? 0,
+    low: l[i] ?? 0,
+    close: c[i] ?? 0,
+    volume: v[i] ?? 0,
+  }));
+  return {
+    symbol: response.symbol,
+    period: response.period,
+    currency: createCurrencyCode('USD'),
+    candles,
+    provider: 'finnhub',
+  };
+}
+
+function normalizeTwelveDataHistorical(response: ProviderHistoricalResponse): MarketHistorical {
+  const r = response.raw as {
+    values?: Array<{
+      datetime: string;
+      open: string;
+      high: string;
+      low: string;
+      close: string;
+      volume?: string;
+    }>;
+  };
+  const values = r.values ?? [];
+  const candles: OHLCVCandle[] = values
+    .map((v) => ({
+      timestamp: new Date(v.datetime).getTime() as Timestamp,
+      open: Number(v.open),
+      high: Number(v.high),
+      low: Number(v.low),
+      close: Number(v.close),
+      volume: v.volume ? Number(v.volume) : 0,
+    }))
+    .toSorted((a, b) => a.timestamp - b.timestamp);
+  return {
+    symbol: response.symbol,
+    period: response.period,
+    currency: createCurrencyCode('USD'),
+    candles,
+    provider: 'twelve-data',
+  };
 }
 
 function normalizeAlphaVantageHistorical(response: ProviderHistoricalResponse): MarketHistorical {

@@ -25,8 +25,10 @@ import {
 } from '@finclaw/infra';
 import {
   ALERT_SKILL_METADATA,
+  KeyRotator,
   MARKET_SKILL_METADATA,
   NEWS_SKILL_METADATA,
+  readKeyArray,
   registerMarketTools,
   registerNewsTools,
   registerAlertTools,
@@ -236,27 +238,48 @@ async function main(): Promise<void> {
   const modelAliasIndex = buildModelAliasIndex(modelCatalog);
   const profileHealth = new ProfileHealthMonitor();
 
-  const alphaVantageKey = process.env.ALPHA_VANTAGE_KEY;
+  const finnhubKeys = readKeyArray('FINNHUB_KEY');
+  const twelveDataKeys = readKeyArray('TWELVE_DATA_KEY');
+  const alphaVantageKeys = readKeyArray('ALPHA_VANTAGE_KEY');
   const coinGeckoKey = process.env.COINGECKO_API_KEY;
+
+  const finnhubRotator = finnhubKeys.length > 0 ? new KeyRotator(finnhubKeys) : undefined;
+  const twelveDataRotator = twelveDataKeys.length > 0 ? new KeyRotator(twelveDataKeys) : undefined;
+  const alphaVantageRotator =
+    alphaVantageKeys.length > 0 ? new KeyRotator(alphaVantageKeys) : undefined;
 
   let marketHandle: MarketSkillHandle | undefined;
   let newsHandle: NewsSkillHandle | undefined;
 
-  if (alphaVantageKey || coinGeckoKey) {
+  if (finnhubRotator || twelveDataRotator || alphaVantageRotator || coinGeckoKey) {
     marketHandle = await registerMarketTools(toolRegistry, {
       db: storage.db,
-      alphaVantageKey,
+      finnhubRotator,
+      twelveDataRotator,
+      alphaVantageRotator,
       coinGeckoKey,
     });
-    logger.info('Market tools registered');
+    logger.info('Market tools registered', {
+      providers: [
+        finnhubRotator && 'finnhub',
+        twelveDataRotator && 'twelve-data',
+        alphaVantageRotator && 'alpha-vantage',
+        coinGeckoKey && 'coingecko',
+      ].filter(Boolean),
+    });
   } else {
-    logger.info('ALPHA_VANTAGE_KEY/COINGECKO_API_KEY not set — skipping market tools');
+    logger.info('No market keys set — skipping market tools');
   }
 
-  if (marketHandle && alphaVantageKey) {
+  const newsdataKeys = readKeyArray('NEWSDATA_API_KEY');
+  const newsdataRotator = newsdataKeys.length > 0 ? new KeyRotator(newsdataKeys) : undefined;
+
+  if (marketHandle && (alphaVantageRotator || newsdataRotator || finnhubRotator)) {
     newsHandle = await registerNewsTools(toolRegistry, {
       db: storage.db,
-      alphaVantageKey,
+      alphaVantageKey: alphaVantageKeys[0],
+      newsdataRotator,
+      finnhubRotator, // 시세 KeyRotator 와 동일 인스턴스 공유
       quoteService: marketHandle.quoteService,
       anthropicApiKey: anthropicKey,
       router: routerHelper,
@@ -266,9 +289,15 @@ async function main(): Promise<void> {
       profileId: 'default',
       modelCatalog,
     });
-    logger.info('News tools registered');
+    logger.info('News tools registered', {
+      providers: [
+        alphaVantageRotator && 'alpha-vantage',
+        newsdataRotator && 'newsdata',
+        finnhubRotator && 'finnhub-news',
+      ].filter(Boolean),
+    });
   } else if (marketHandle) {
-    logger.info('ALPHA_VANTAGE_KEY not set — skipping news tools');
+    logger.info('No news keys set — skipping news tools');
   }
 
   let alertHandle: AlertSkillHandle | undefined;
@@ -323,6 +352,8 @@ async function main(): Promise<void> {
     profileHealth,
     profileId: 'default',
     defaultModel: DEFAULT_MODEL,
+    marketHandle,
+    newsHandle,
   });
   const channelPluginRegistry = new Map<string, ChannelPlugin>();
 
