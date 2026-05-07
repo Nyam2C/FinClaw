@@ -223,7 +223,27 @@ export function registerMemoryMethods(deps: MemoryRpcDeps): void {
     },
   };
 
+  // ── memory.getById (Phase 29 B8) ──
+  // settings-view 의 인용 점프용 단건 조회.
+  const memoryGetByIdHandler: RpcMethodHandler<{ memoryId: string }, unknown> = {
+    method: 'memory.getById',
+    description: '메모리 1건을 ID 로 조회합니다 (settings-view 인용 점프용)',
+    authLevel: 'token',
+    schema: z.object({ memoryId: z.string().min(1) }),
+    async execute(params) {
+      if (!deps.db) {
+        throw new Error('provider_unavailable: storage db not initialized');
+      }
+      const entry = getMemory(deps.db, params.memoryId);
+      if (!entry) {
+        throw new Error(`not_found: ${params.memoryId}`);
+      }
+      return { memory: entry };
+    },
+  };
+
   registerMethod(memoryListHandler);
   registerMethod(memoryDeleteHandler);
   registerMethod(memorySearchHandler);
+  registerMethod(memoryGetByIdHandler);
 }

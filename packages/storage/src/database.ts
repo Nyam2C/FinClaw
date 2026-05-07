@@ -18,7 +18,7 @@ export interface DatabaseOptions {
 
 // ─── Schema ───
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 const SCHEMA_DDL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -191,20 +191,21 @@ CREATE TABLE IF NOT EXISTS schedules (
 CREATE INDEX IF NOT EXISTS idx_schedules_enabled_next ON schedules(enabled, next_run_at) WHERE enabled = 1;
 
 CREATE TABLE IF NOT EXISTS agent_runs (
-  id              TEXT PRIMARY KEY,
-  agent_id        TEXT NOT NULL,
-  prompt          TEXT NOT NULL,
-  output          TEXT NOT NULL,
-  tool_calls_json TEXT,
-  tokens_input    INTEGER,
-  tokens_output   INTEGER,
-  duration_ms     INTEGER,
-  model_used      TEXT,
-  role            TEXT,
-  memory_id       TEXT REFERENCES memories(id) ON DELETE SET NULL,
-  schedule_id     TEXT REFERENCES schedules(id) ON DELETE SET NULL,
-  error           TEXT,
-  created_at      INTEGER NOT NULL
+  id               TEXT PRIMARY KEY,
+  agent_id         TEXT NOT NULL,
+  prompt           TEXT NOT NULL,
+  output           TEXT NOT NULL,
+  tool_calls_json  TEXT,
+  tokens_input     INTEGER,
+  tokens_output    INTEGER,
+  duration_ms      INTEGER,
+  model_used       TEXT,
+  role             TEXT,
+  memory_id        TEXT REFERENCES memories(id) ON DELETE SET NULL,
+  used_memory_ids  TEXT,
+  schedule_id      TEXT REFERENCES schedules(id) ON DELETE SET NULL,
+  error            TEXT,
+  created_at       INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_agent_runs_created ON agent_runs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_agent_runs_agent ON agent_runs(agent_id, created_at DESC);
@@ -360,6 +361,13 @@ CREATE TABLE IF NOT EXISTS portfolio_holdings (
     db.exec(
       `CREATE INDEX IF NOT EXISTS idx_agent_runs_schedule ON agent_runs(schedule_id, created_at DESC) WHERE schedule_id IS NOT NULL;`,
     );
+  },
+  // Phase 29 B3: agent_runs.used_memory_ids — RAG 인용으로 응답이 의존한 memory.id 배열 (JSON).
+  7: (db: DatabaseSync) => {
+    const cols = db.prepare(`PRAGMA table_info('agent_runs')`).all() as Array<{ name: string }>;
+    if (!cols.some((c) => c.name === 'used_memory_ids')) {
+      db.exec(`ALTER TABLE agent_runs ADD COLUMN used_memory_ids TEXT;`);
+    }
   },
 };
 

@@ -16,6 +16,8 @@ export interface AgentRunRow {
   model_used: string | null;
   role: string | null;
   memory_id: string | null;
+  /** Phase 29 B4: RAG 인용으로 응답이 의존한 memory.id 배열 (JSON.stringify 결과) */
+  used_memory_ids: string | null;
   error: string | null;
   created_at: number;
 }
@@ -37,6 +39,8 @@ export interface AddAgentRunInput {
   modelUsed?: string;
   role?: string;
   memoryId?: string;
+  /** Phase 29 B4: RAG 인용으로 응답이 의존한 memory.id 목록 (응답 후처리에서 채움) */
+  usedMemoryIds?: string[];
   error?: string;
 }
 
@@ -63,6 +67,8 @@ function rowToAgentRun(row: AgentRunRow): AgentRun {
     modelUsed: row.model_used === null ? undefined : row.model_used,
     role: row.role === null ? undefined : row.role,
     memoryId: row.memory_id === null ? undefined : row.memory_id,
+    usedMemoryIds:
+      row.used_memory_ids === null ? undefined : (JSON.parse(row.used_memory_ids) as string[]),
     error: row.error === null ? undefined : row.error,
     createdAt: row.created_at as Timestamp,
   };
@@ -80,8 +86,8 @@ export function addAgentRun(db: DatabaseSync, input: AddAgentRunInput): AgentRun
   db.prepare(
     `INSERT INTO agent_runs
      (id, agent_id, prompt, output, tool_calls_json, tokens_input, tokens_output,
-      duration_ms, model_used, role, memory_id, error, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      duration_ms, model_used, role, memory_id, used_memory_ids, error, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     input.agentId as string,
@@ -94,6 +100,9 @@ export function addAgentRun(db: DatabaseSync, input: AddAgentRunInput): AgentRun
     input.modelUsed ?? null,
     input.role ?? null,
     input.memoryId ?? null,
+    input.usedMemoryIds && input.usedMemoryIds.length > 0
+      ? JSON.stringify(input.usedMemoryIds)
+      : null,
     input.error ?? null,
     createdAt as number,
   );

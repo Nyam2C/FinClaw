@@ -497,6 +497,7 @@ role: ${run.role ?? '-'}
 duration: ${run.durationMs}ms
 tokens: in=${run.tokensInput}, out=${run.tokensOutput}
 memoryId: ${run.memoryId ?? '-'}
+usedMemoryIds: ${(run.usedMemoryIds ?? []).join(', ') || '-'}
 createdAt: ${new Date(run.createdAt).toLocaleString()}</pre
         >
       </div>

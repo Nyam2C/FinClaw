@@ -107,6 +107,8 @@ export interface AgentRun {
   role?: string;
   /** 저장된 memory.id 링크 (없으면 NULL) */
   memoryId?: string;
+  /** Phase 29 B: RAG 인용 추출 결과 (응답이 의존한 memory.id 배열) */
+  usedMemoryIds?: string[];
   /** 실행 실패 시 에러 메시지 */
   error?: string;
   createdAt: Timestamp;
