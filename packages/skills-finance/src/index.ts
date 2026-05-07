@@ -18,3 +18,9 @@ export type {
   AlertDefinition,
   CreateAlertInput,
 } from './alerts/index.js';
+export {
+  KeyRotator,
+  AllKeysCooldownError,
+  readKeyArray,
+  type KeyRotatorOptions,
+} from './shared/key-rotator.js';
