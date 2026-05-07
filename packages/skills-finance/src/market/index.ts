@@ -4,6 +4,7 @@ import type { RegisteredToolDefinition, ToolExecutor, ToolRegistry } from '@finc
 import type { SkillMetadata } from '@finclaw/types';
 import { createTickerSymbol } from '@finclaw/types';
 import type { QuoteService } from '../news/portfolio/tracker.js';
+import type { KeyRotator } from '../shared/key-rotator.js';
 import { MarketCache } from './cache.js';
 import { generateSparkline } from './charts.js';
 import { formatQuote, formatForexRate, formatChart } from './formatters.js';
@@ -14,7 +15,10 @@ import type { ProviderMarketQuote, HistoricalPeriod } from './types.js';
 /** 스킬 초기화에 필요한 설정 */
 export interface MarketSkillConfig {
   readonly db: DatabaseSync;
-  readonly alphaVantageKey?: string;
+  /** Phase 27: KeyRotator 들 (각각 옵션). 미주입 시 해당 provider 비활성. */
+  readonly finnhubRotator?: KeyRotator;
+  readonly twelveDataRotator?: KeyRotator;
+  readonly alphaVantageRotator?: KeyRotator;
   readonly coinGeckoKey?: string;
 }
 
@@ -25,10 +29,16 @@ interface MarketSkillState {
 }
 
 /** Phase 22: main.ts가 news/alerts 배선에 재사용할 수 있도록 내부 상태 노출 */
+/** Phase 27 D: status 명령이 사용량을 표시하기 위해 rotator 들도 노출. */
 export interface MarketSkillHandle {
   readonly providers: ProviderRegistry;
   readonly cache: MarketCache;
   readonly quoteService: QuoteService;
+  readonly keyRotators: {
+    readonly finnhub?: KeyRotator;
+    readonly twelveData?: KeyRotator;
+    readonly alphaVantage?: KeyRotator;
+  };
 }
 
 /** 스킬을 초기화하고 도구를 등록한다 */
@@ -37,7 +47,9 @@ export async function registerMarketTools(
   config: MarketSkillConfig,
 ): Promise<MarketSkillHandle> {
   const providers = await createDefaultRegistry({
-    alphaVantageKey: config.alphaVantageKey,
+    finnhubRotator: config.finnhubRotator,
+    twelveDataRotator: config.twelveDataRotator,
+    alphaVantageRotator: config.alphaVantageRotator,
     coinGeckoKey: config.coinGeckoKey,
   });
   const cache = new MarketCache(config.db);
@@ -59,7 +71,16 @@ export async function registerMarketTools(
     },
   };
 
-  return { providers, cache, quoteService };
+  return {
+    providers,
+    cache,
+    quoteService,
+    keyRotators: {
+      finnhub: config.finnhubRotator,
+      twelveData: config.twelveDataRotator,
+      alphaVantage: config.alphaVantageRotator,
+    },
+  };
 }
 
 export type { MarketCache } from './cache.js';
@@ -236,7 +257,7 @@ export const MARKET_SKILL_METADATA: SkillMetadata = {
   version: '1.0.0',
   requires: {
     env: [], // API 키는 선택사항 (무료 티어 가능)
-    optionalEnv: ['ALPHA_VANTAGE_KEY', 'COINGECKO_DEMO_KEY'],
+    optionalEnv: ['ALPHA_VANTAGE_KEY', 'FINNHUB_KEY', 'TWELVE_DATA_KEY', 'COINGECKO_API_KEY'],
   },
   tools: [
     { name: 'get_stock_price', minModel: 'haiku', reason: '구조화 조회' },

@@ -33,6 +33,10 @@ export class FrankfurterProvider implements MarketDataProvider {
     return /^[A-Z]{3}\/[A-Z]{3}$/.test(symbol);
   }
 
+  isAvailable(): boolean {
+    return true;
+  }
+
   async getQuote(symbol: TickerSymbol): Promise<ProviderQuoteResponse> {
     const [from, to] = (symbol as string).split('/');
 

@@ -70,6 +70,10 @@ export class CoinGeckoProvider implements MarketDataProvider {
     return ticker in TICKER_TO_ID;
   }
 
+  isAvailable(): boolean {
+    return true;
+  }
+
   async getQuote(symbol: TickerSymbol): Promise<ProviderQuoteResponse> {
     const ticker = (symbol as string).split('-')[0].toUpperCase();
     const coinId = TICKER_TO_ID[ticker];

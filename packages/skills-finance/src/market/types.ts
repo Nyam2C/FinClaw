@@ -30,6 +30,12 @@ export interface MarketDataProvider {
 
   /** 지원 여부 확인 */
   supports(symbol: TickerSymbol): boolean;
+
+  /**
+   * Phase 27: provider 가 호출 가능한 상태인지 (KeyRotator 가용 키 ≥ 1).
+   * KeyRotator 미사용 provider 는 항상 true.
+   */
+  isAvailable(): boolean;
 }
 
 /** Rate Limit 설정 */
