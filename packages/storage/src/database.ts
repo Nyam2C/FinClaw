@@ -7,6 +7,8 @@ export interface Database {
   readonly db: DatabaseSync;
   readonly path: string;
   readonly schemaVersion: number;
+  /** Phase 29 C1: memory_chunks_vec 의 embedding 컬럼 차원. 부트 시 1회 읽고 캐시. */
+  readonly vectorDimension: number;
   close(): void;
 }
 
@@ -18,7 +20,7 @@ export interface DatabaseOptions {
 
 // ─── Schema ───
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 const SCHEMA_DDL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -191,20 +193,21 @@ CREATE TABLE IF NOT EXISTS schedules (
 CREATE INDEX IF NOT EXISTS idx_schedules_enabled_next ON schedules(enabled, next_run_at) WHERE enabled = 1;
 
 CREATE TABLE IF NOT EXISTS agent_runs (
-  id              TEXT PRIMARY KEY,
-  agent_id        TEXT NOT NULL,
-  prompt          TEXT NOT NULL,
-  output          TEXT NOT NULL,
-  tool_calls_json TEXT,
-  tokens_input    INTEGER,
-  tokens_output   INTEGER,
-  duration_ms     INTEGER,
-  model_used      TEXT,
-  role            TEXT,
-  memory_id       TEXT REFERENCES memories(id) ON DELETE SET NULL,
-  schedule_id     TEXT REFERENCES schedules(id) ON DELETE SET NULL,
-  error           TEXT,
-  created_at      INTEGER NOT NULL
+  id               TEXT PRIMARY KEY,
+  agent_id         TEXT NOT NULL,
+  prompt           TEXT NOT NULL,
+  output           TEXT NOT NULL,
+  tool_calls_json  TEXT,
+  tokens_input     INTEGER,
+  tokens_output    INTEGER,
+  duration_ms      INTEGER,
+  model_used       TEXT,
+  role             TEXT,
+  memory_id        TEXT REFERENCES memories(id) ON DELETE SET NULL,
+  used_memory_ids  TEXT,
+  schedule_id      TEXT REFERENCES schedules(id) ON DELETE SET NULL,
+  error            TEXT,
+  created_at       INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_agent_runs_created ON agent_runs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_agent_runs_agent ON agent_runs(agent_id, created_at DESC);
@@ -361,6 +364,13 @@ CREATE TABLE IF NOT EXISTS portfolio_holdings (
       `CREATE INDEX IF NOT EXISTS idx_agent_runs_schedule ON agent_runs(schedule_id, created_at DESC) WHERE schedule_id IS NOT NULL;`,
     );
   },
+  // Phase 29 B3: agent_runs.used_memory_ids — RAG 인용으로 응답이 의존한 memory.id 배열 (JSON).
+  7: (db: DatabaseSync) => {
+    const cols = db.prepare(`PRAGMA table_info('agent_runs')`).all() as Array<{ name: string }>;
+    if (!cols.some((c) => c.name === 'used_memory_ids')) {
+      db.exec(`ALTER TABLE agent_runs ADD COLUMN used_memory_ids TEXT;`);
+    }
+  },
 };
 
 // ─── Internal helpers ───
@@ -374,6 +384,27 @@ function readMetaValue(db: DatabaseSync, key: string): string | null {
 
 function writeMetaValue(db: DatabaseSync, key: string, value: string): void {
   db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(key, value);
+}
+
+/**
+ * Phase 29 C1: memory_chunks_vec 가상 테이블의 embedding 컬럼 차원을 읽는다.
+ *
+ * vec0 virtual table 의 PRAGMA table_info 는 type 컬럼이 빈 문자열이라
+ * sqlite_master.sql (CREATE 문 원본) 에서 `float[NNNN]` 패턴을 파싱한다.
+ * 부트 시 1회만 호출되며 결과가 EmbeddingDimensionMismatchError 검사의 source-of-truth.
+ */
+function readVectorDimension(db: DatabaseSync): number {
+  const row = db
+    .prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='memory_chunks_vec'`)
+    .get() as { sql: string } | undefined;
+  if (!row?.sql) {
+    throw new Error('memory_chunks_vec table not found in sqlite_master');
+  }
+  const m = row.sql.match(/float\[(\d+)\]/);
+  if (!m) {
+    throw new Error(`Cannot parse vector dimension from CREATE SQL: ${row.sql}`);
+  }
+  return Number(m[1]);
 }
 
 function runMigrations(db: DatabaseSync, from: number, to: number): void {
@@ -443,12 +474,16 @@ export function openDatabase(options: DatabaseOptions): Database {
   // Idempotent post-migration 보정 (fresh DB 와 마이그레이션 DB 모두 적용).
   ensurePostMigrationSchema(db);
 
+  // Phase 29 C1: vec0 차원을 부트 시 1회 읽고 캐시 (provider mismatch silent corruption 방지).
+  const vectorDimension = readVectorDimension(db);
+
   let closed = false;
 
   return {
     db,
     path,
     schemaVersion: SCHEMA_VERSION,
+    vectorDimension,
     close() {
       if (closed) {
         return;

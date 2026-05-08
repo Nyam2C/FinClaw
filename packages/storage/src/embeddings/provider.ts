@@ -13,6 +13,8 @@ export type EmbeddingMode = 'auto' | 'voyage' | 'openai';
 // NOTE(review-2 I-3): single apiKey — providers fall back to env vars (VOYAGE_API_KEY / OPENAI_API_KEY)
 export interface EmbeddingConfig {
   readonly apiKey?: string;
+  /** Phase 29 C5: OpenAI provider 의 출력 차원 truncation (1024 권장 — vec0 매칭) */
+  readonly dimensions?: number;
 }
 
 /**
@@ -43,7 +45,10 @@ export async function createEmbeddingProvider(
 
   if (mode === 'openai' || mode === 'auto') {
     const { OpenAIEmbeddingProvider } = await import('./openai.js');
-    return new OpenAIEmbeddingProvider(config?.apiKey);
+    return new OpenAIEmbeddingProvider({
+      apiKey: config?.apiKey,
+      dimensions: config?.dimensions,
+    });
   }
 
   throw new Error(`Unknown embedding mode: ${mode as string}`);

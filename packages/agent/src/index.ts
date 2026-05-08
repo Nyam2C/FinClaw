@@ -68,6 +68,7 @@ export type {
 export { getBreakerForProvider, resetBreakers } from './providers/adapter.js';
 export type { ProviderAdapter, ProviderRequestParams } from './providers/adapter.js';
 export { AnthropicAdapter } from './providers/anthropic.js';
+export { OpenAIAdapter } from './providers/openai.js';
 
 // ─── auth: cooldown ───
 export { CooldownTracker } from './auth/cooldown.js';

@@ -79,7 +79,7 @@ describe('openDatabase', () => {
     const result = database.db
       .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
       .get() as unknown as { value: string };
-    expect(result.value).toBe('6');
+    expect(result.value).toBe('7');
   });
 
   it('sqlite-vec 로드 확인 — SELECT vec_version()', () => {

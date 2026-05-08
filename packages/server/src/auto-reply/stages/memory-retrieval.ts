@@ -174,7 +174,10 @@ export function formatBackgroundSection(result: RetrievalResult): string {
   if (result.snippets.length > 0) {
     lines.push('## 사용자 배경지식 (자동 주입)');
     for (const s of result.snippets) {
-      lines.push(`- [${s.type}] ${s.content} (${isoDate(s.createdAt)} 저장)`);
+      // Phase 29 B1: 메모리 줄 끝에 [mem:<id 첫 6자>] 마커 부착 (인용 추출용).
+      lines.push(
+        `- [${s.type}] ${s.content} (${isoDate(s.createdAt)} 저장) [mem:${s.id.slice(0, 6)}]`,
+      );
     }
   }
 
@@ -198,7 +201,13 @@ export function formatBackgroundSection(result: RetrievalResult): string {
       for (const tx of txs) {
         const label = ACTION_LABEL[tx.action];
         const priceStr = tx.price !== null ? `@ ${tx.currency} ${tx.price}`.trim() : '';
-        lines.push(`- ${isoDate(tx.executedAt)}: ${label} ${tx.quantity}주 ${priceStr}`.trimEnd());
+        // Phase 29 B1: txn 인용 마커 — symbol+executedAt prefix (12자) 로 stable.
+        const txMark = `${tx.symbol}:${tx.executedAt}`.slice(0, 12);
+        lines.push(
+          `- ${isoDate(tx.executedAt)}: ${label} ${tx.quantity}주 ${priceStr} [txn:${txMark}]`
+            .replace(/\s+\[txn/, ' [txn')
+            .trimEnd(),
+        );
       }
     }
   }

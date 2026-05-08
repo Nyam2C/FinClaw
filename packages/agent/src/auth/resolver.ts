@@ -32,6 +32,7 @@ export interface ResolverOptions {
 /** 제공자별 환경변수 이름 매핑 */
 const ENV_KEY_MAP: Record<ProviderId, string> = {
   anthropic: 'ANTHROPIC_API_KEY',
+  openai: 'OPENAI_API_KEY',
 };
 
 /**

@@ -96,6 +96,40 @@ export interface ExecutionResult {
   readonly content: string;
   readonly usage?: { inputTokens: number; outputTokens: number };
   readonly toolCalls?: readonly ToolCallRecord[];
+  /** Phase 29 B: 응답 텍스트에서 추출한 [mem:xxxxxx] 인용을 retrievalResult.snippets 와 매칭한 결과 */
+  readonly usedMemoryIds?: readonly string[];
+}
+
+/**
+ * Phase 29 B: 응답 텍스트의 `[mem:xxxxxx]` 마커 (id 첫 6-8자, 또는 콤마 구분 다중)
+ * 를 추출하여 candidates 의 실제 id 와 prefix-match.
+ *
+ * - 마커가 없으면 빈 배열.
+ * - 같은 id 가 여러 마커에 매칭돼도 한 번만 결과에 포함.
+ * - candidates 순서를 유지.
+ */
+export function extractCitedMemoryIds(
+  text: string,
+  candidates: ReadonlyArray<{ readonly id: string }>,
+): string[] {
+  const prefixes = new Set<string>();
+  const re = /\[mem:([a-f0-9]{6,8}(?:,[a-f0-9]{6,8})*)\]/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    for (const p of m[1].split(',')) {
+      prefixes.add(p);
+    }
+  }
+  const matched: string[] = [];
+  for (const c of candidates) {
+    for (const p of prefixes) {
+      if (c.id.startsWith(p)) {
+        matched.push(c.id);
+        break;
+      }
+    }
+  }
+  return matched;
 }
 
 /**
@@ -272,13 +306,19 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
         this.deps.profileHealth?.recordResult(profileId, true);
       }
 
+      const content = extractAssistantText(result.messages);
+      // Phase 29 B6: 응답 텍스트에서 [mem:xxxxxx] 인용 추출 → retrievalResult 의 snippets 와 prefix 매칭.
+      const usedMemoryIds = ctx.retrievalResult?.snippets
+        ? extractCitedMemoryIds(content, ctx.retrievalResult.snippets)
+        : [];
       return {
-        content: extractAssistantText(result.messages),
+        content,
         usage: {
           inputTokens: result.usage.inputTokens,
           outputTokens: result.usage.outputTokens,
         },
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+        usedMemoryIds: usedMemoryIds.length > 0 ? usedMemoryIds : undefined,
       };
     } catch (err) {
       if (err instanceof Error && err.name !== 'AbortError') {

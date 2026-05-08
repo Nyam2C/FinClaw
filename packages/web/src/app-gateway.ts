@@ -488,6 +488,8 @@ export interface AgentRunFull {
   readonly modelUsed?: string;
   readonly role?: string;
   readonly memoryId?: string;
+  /** Phase 29 B: RAG 인용 추출 결과 — settings-view 에서 chip 으로 표시 */
+  readonly usedMemoryIds?: readonly string[];
   readonly error?: string;
   readonly createdAt: number;
 }

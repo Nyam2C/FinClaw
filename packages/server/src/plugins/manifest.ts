@@ -2,6 +2,15 @@ import type { PluginManifest } from '@finclaw/types';
 // packages/server/src/plugins/manifest.ts
 import { z } from 'zod/v4';
 
+/** Phase 29 D3: stdio MCP 서버 spec 검증 */
+const MCPServerSpecSchema = z.strictObject({
+  id: z.string().min(1),
+  command: z.string().min(1),
+  args: z.array(z.string()),
+  env: z.record(z.string(), z.string()).optional(),
+  timeoutMs: z.number().int().min(1_000).max(300_000).optional(),
+});
+
 /** 플러그인 매니페스트 Zod v4 스키마 */
 export const PluginManifestSchema = z.strictObject({
   name: z.string().min(1),
@@ -14,6 +23,7 @@ export const PluginManifestSchema = z.strictObject({
   slots: z.array(z.string()).optional(),
   config: z.record(z.string(), z.unknown()).optional(),
   configSchema: z.unknown().optional(),
+  mcpServers: z.array(MCPServerSpecSchema).optional(),
 });
 
 /** Zod v4 매니페스트 파싱 — 성공 시 PluginManifest 반환 */

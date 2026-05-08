@@ -265,3 +265,81 @@ describe('runWithModelFallback — floor (B6)', () => {
   // floor 미설정 시 AggregateError 동작은 위 'runWithModelFallback' 그룹의
   // '모든 모델 소진 → AggregateError' 케이스로 커버됨 — 중복 회피.
 });
+
+// Phase 29 A — cross-provider 폴백 차단 가드
+describe('runWithModelFallback — cross-provider gate (Phase 29 A)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    resetBreakers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    resetEventBus();
+    resetBreakers();
+  });
+
+  // anthropic 1개 + openai 1개 + anthropic 1개 chain.
+  const mixedResolve = (ref: { raw: string }): ResolvedModel => {
+    const provider = ref.raw.startsWith('gpt') ? 'openai' : 'anthropic';
+    return {
+      entry: { id: ref.raw, provider } as unknown as ResolvedModel['entry'],
+      provider,
+      modelId: ref.raw,
+      resolvedFrom: 'id',
+    };
+  };
+
+  it('allowCrossProvider=false (default) — skips models from different provider', async () => {
+    const called: string[] = [];
+    const err = new FailoverError('rl', 'rate-limit');
+    const fn = vi.fn().mockImplementation(async (resolved: ResolvedModel) => {
+      called.push(resolved.modelId);
+      throw err;
+    });
+
+    await expect(
+      runWithModelFallback(
+        {
+          models: [
+            { raw: 'claude-sonnet-4-6' },
+            { raw: 'gpt-4o' },
+            { raw: 'claude-haiku-4-5-20251001' },
+          ],
+          maxRetriesPerModel: 0,
+          retryBaseDelayMs: 1,
+          fallbackOn: ['rate-limit'],
+        },
+        fn,
+        mixedResolve,
+      ),
+    ).rejects.toThrow();
+    expect(called).not.toContain('gpt-4o');
+    expect(called).toContain('claude-sonnet-4-6');
+    expect(called).toContain('claude-haiku-4-5-20251001');
+  });
+
+  it('allowCrossProvider=true — visits all providers in chain', async () => {
+    const called: string[] = [];
+    const err = new FailoverError('rl', 'rate-limit');
+    const fn = vi.fn().mockImplementation(async (resolved: ResolvedModel) => {
+      called.push(resolved.modelId);
+      throw err;
+    });
+
+    await expect(
+      runWithModelFallback(
+        {
+          models: [{ raw: 'claude-sonnet-4-6' }, { raw: 'gpt-4o' }],
+          maxRetriesPerModel: 0,
+          retryBaseDelayMs: 1,
+          fallbackOn: ['rate-limit'],
+          allowCrossProvider: true,
+        },
+        fn,
+        mixedResolve,
+      ),
+    ).rejects.toThrow();
+    expect(called).toContain('gpt-4o');
+  });
+});

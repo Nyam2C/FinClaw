@@ -37,7 +37,12 @@ import {
   type NewsSkillHandle,
 } from '@finclaw/skills-finance';
 import { GENERAL_SKILL_METADATA, registerGeneralTools } from '@finclaw/skills-general';
-import { createEmbeddingProvider, createStorage, type EmbeddingProvider } from '@finclaw/storage';
+import {
+  assertEmbeddingDimension,
+  createEmbeddingProvider,
+  createStorage,
+  type EmbeddingProvider,
+} from '@finclaw/storage';
 import type {
   ChannelPlugin,
   ConfigValidationIssue,
@@ -59,6 +64,7 @@ import { SchedulerService } from './automation/scheduler.js';
 import { initChannels } from './channels/index.js';
 import type { GatewayServerConfig } from './gateway/rpc/types.js';
 import { createGatewayServer } from './gateway/server.js';
+import { loadPlugins } from './plugins/loader.js';
 import { ProcessLifecycle } from './process/lifecycle.js';
 import { MessageRouter } from './process/message-router.js';
 import { loadPrompt } from './prompts/loader.js';
@@ -195,21 +201,27 @@ async function main(): Promise<void> {
     await storage.close();
   });
 
-  // Phase 26 B: memory.search hybrid 검색용 embedding provider (best-effort).
+  // Phase 26 B / Phase 29 C: memory.search hybrid 검색용 embedding provider (best-effort).
   // 키 미설정/생성 실패 시 undefined → memory.search 는 FTS-only fallback.
+  // OpenAI 만 있으면 dimensions=storage.vectorDimension truncation 으로 vec0 매칭.
   let embeddingProvider: EmbeddingProvider | undefined;
   if (process.env.VOYAGE_API_KEY || process.env.OPENAI_API_KEY) {
     try {
-      embeddingProvider = await createEmbeddingProvider('auto');
+      embeddingProvider = await createEmbeddingProvider('auto', {
+        dimensions: storage.vectorDimension,
+      });
+      assertEmbeddingDimension(embeddingProvider, storage.vectorDimension);
       logger.info('Embedding provider created', {
         event: 'memory.embedding_ready',
         model: embeddingProvider.model,
+        dimensions: embeddingProvider.dimensions,
       });
     } catch (err) {
       logger.warn('Failed to create embedding provider — memory.search will use FTS-only', {
         event: 'memory.embedding_unavailable',
         error: (err as Error).message,
       });
+      embeddingProvider = undefined;
     }
   }
 
@@ -319,6 +331,29 @@ async function main(): Promise<void> {
   } else {
     logger.info('market/news tools unavailable — skipping alerts');
   }
+
+  // Phase 29 D9: MCP 도구 group=mcp 정책 — require-approval (사용자 결정 5).
+  toolRegistry.addPolicyRule({
+    pattern: 'mcp:*',
+    verdict: 'require-approval',
+    reason: 'MCP external tools require explicit approval',
+    priority: 100,
+  });
+
+  // Phase 29 D9: plugin loader 호출. plugins 디렉터리 미존재 시 no-op (loader 가 silently 처리).
+  const pluginsDir = process.env.FINCLAW_PLUGINS_DIR ?? join(homedir(), '.finclaw', 'plugins');
+  const pluginResult = await loadPlugins([pluginsDir], [pluginsDir], toolRegistry);
+  logger.info('Plugins loaded', {
+    event: 'plugins.loaded',
+    loaded: pluginResult.loaded,
+    failed: pluginResult.failed,
+    mcpServers: pluginResult.mcpHandles.length,
+  });
+  lifecycle.register(async () => {
+    for (const h of pluginResult.mcpHandles) {
+      await h.shutdown();
+    }
+  });
 
   const runnerFactory: RunnerFactory = (dispatcher) =>
     new Runner({
@@ -510,9 +545,37 @@ async function main(): Promise<void> {
     },
     // Phase 28: schedule.* RPC 배선.
     scheduleDeps: { db: storage.db, scheduler },
+    // Phase 29 E6: /readyz 의 db / embedding 컴포넌트 헬스 체커.
+    dbHealthCheck: async () => {
+      storage.db.prepare('SELECT 1').get();
+    },
+    embeddingHealthCheck: embeddingProvider
+      ? async () => {
+          // 짧은 query 1건 — 실패 시 throw → degraded
+          await embeddingProvider.embedQuery('healthz');
+        }
+      : undefined,
   });
   logger.info('finance.* / memory.* / agent.* RPC methods wired');
   lifecycle.register(() => gateway.stop());
+
+  // Phase 29 E6: dev 모드에서만 hot reload — prompts 디렉터리 watch.
+  if (process.env.NODE_ENV !== 'production') {
+    const { createHotReloader } = await import('./gateway/hot-reload.js');
+    const promptsPath = join(import.meta.dirname, '..', 'prompts', 'finclaw.system.ko.md');
+    const hotReloader = createHotReloader(
+      { configPath: promptsPath, debounceMs: 500, validateBeforeApply: false, mode: 'watch' },
+      gateway.ctx,
+      () => ({ success: true }),
+    );
+    hotReloader.on('change', (e) => {
+      logger.info('Prompts hot-reloaded', { event: 'prompts.reloaded', path: e.path });
+    });
+    await hotReloader.start();
+    lifecycle.register(async () => {
+      hotReloader.stop();
+    });
+  }
 
   // Phase 28: gateway 생성 후 delivery hook 활성화. broadcaster/connections 는 gateway.ctx 에서 가져온다.
   deliveryHook = (args) =>

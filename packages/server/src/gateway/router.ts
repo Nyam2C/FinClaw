@@ -5,6 +5,7 @@ import type { GatewayServerContext } from './context.js';
 import { handleCors } from './cors.js';
 import { checkLiveness, checkReadiness } from './health.js';
 import { handleChatCompletions } from './openai-compat/router.js';
+import { RequestRateLimiter } from './rate-limit.js';
 import { createError, RpcErrors } from './rpc/errors.js';
 import { dispatchRpc } from './rpc/index.js';
 import { loadVersion } from './version.js';
@@ -29,6 +30,9 @@ export async function handleHttpRequest(
   res: ServerResponse,
   ctx: GatewayServerContext,
 ): Promise<void> {
+  // Phase 29 E3: HTTP access log 등록 (응답 finish 시 자동 emit).
+  ctx.accessLogger?.(req, res);
+
   // CORS preflight
   if (req.method === 'OPTIONS') {
     handleCors(req, res, ctx.config.cors);
@@ -78,6 +82,16 @@ async function handleRpcRequest(
   res: ServerResponse,
   ctx: GatewayServerContext,
 ): Promise<void> {
+  // Phase 29 E1: IP 기반 슬라이딩 윈도우 rate-limit (60 rpm 기본).
+  const ip = req.socket.remoteAddress ?? 'unknown';
+  const rl = ctx.rateLimiter?.check(ip);
+  if (rl && !rl.allowed) {
+    const headers = RequestRateLimiter.toRateLimitHeaders(rl.info);
+    res.writeHead(429, { 'Content-Type': 'application/json', ...headers });
+    res.end(JSON.stringify(createError(null, RpcErrors.RATE_LIMITED, 'Too Many Requests')));
+    return;
+  }
+
   let body: string;
   try {
     body = await readBody(req);
@@ -98,10 +112,18 @@ async function handleRpcRequest(
     return;
   }
 
+  // Phase 29 E4: auth 실패 IP rate-limit 사전 차단.
+  if (ctx.authRateLimiter?.isBlocked(ip)) {
+    res.writeHead(401, { 'Content-Type': 'application/json', 'Retry-After': '900' });
+    res.end(JSON.stringify(createError(null, RpcErrors.UNAUTHORIZED, 'Auth rate limited')));
+    return;
+  }
+
   // Phase 23 post-ship fix: HTTP /rpc 도 WS 경로와 동일하게 authenticate.
   // Bearer 토큰 / ?token= 쿼리 / X-API-Key 헤더 순. 헤더 없으면 level: 'none'.
   const authResult = await authenticate(req, ctx.config.auth);
   if (!authResult.ok) {
+    ctx.authRateLimiter?.recordFailure(ip);
     res.writeHead(authResult.code, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(createError(null, RpcErrors.UNAUTHORIZED, authResult.error)));
     return;

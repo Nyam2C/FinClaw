@@ -1,5 +1,6 @@
 // packages/server/src/gateway/rate-limit.test.ts
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { AuthRateLimiter } from './auth/rate-limit.js';
 import { RequestRateLimiter } from './rate-limit.js';
 
 describe('RequestRateLimiter', () => {
@@ -96,5 +97,39 @@ describe('RequestRateLimiter', () => {
 
       expect(headers['Retry-After']).toBe('30');
     });
+  });
+});
+
+// Phase 29 E7: router 통합 폭주 시나리오 — RequestRateLimiter + AuthRateLimiter 의 행동 검증.
+describe('integration with router (Phase 29 E)', () => {
+  it('60+ 요청 시 일부가 거부되고 Retry-After 헤더가 생성된다', () => {
+    const limiter = new RequestRateLimiter({ windowMs: 60_000, maxRequests: 60 });
+    let denied = 0;
+    let lastRetry: number | undefined;
+    for (let i = 0; i < 80; i++) {
+      const r = limiter.check('client-x');
+      if (!r.allowed) {
+        denied++;
+        const headers = RequestRateLimiter.toRateLimitHeaders(r.info);
+        if (headers['Retry-After'] !== undefined) {
+          lastRetry = Number(headers['Retry-After']);
+        }
+      }
+    }
+    expect(denied).toBe(20);
+    expect(lastRetry).toBeGreaterThanOrEqual(0);
+    limiter.dispose();
+  });
+
+  it('AuthRateLimiter 5회 실패 → 6회째 isBlocked', () => {
+    const limiter = new AuthRateLimiter({
+      maxFailures: 5,
+      windowMs: 60_000,
+      blockDurationMs: 60_000,
+    });
+    for (let i = 0; i < 5; i++) {
+      limiter.recordFailure('1.2.3.4');
+    }
+    expect(limiter.isBlocked('1.2.3.4')).toBe(true);
   });
 });

@@ -160,6 +160,8 @@ describe('formatBackgroundSection', () => {
     );
     expect(out).toContain('## 사용자 배경지식 (자동 주입)');
     expect(out).toContain('[preference] 분기별 리밸런싱 한다 (2025-12-02 저장)');
+    // Phase 29 B1: 인용 마커 [mem:<id 첫 6자>] 부착
+    expect(out).toContain('[mem:m1]');
     expect(out).not.toContain('## 최근 거래');
   });
 

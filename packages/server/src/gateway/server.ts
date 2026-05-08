@@ -11,8 +11,16 @@ import { getEventBus } from '@finclaw/infra';
 import type { ModelRef, StorageAdapter } from '@finclaw/types';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { RunnerExecutionAdapter } from '../auto-reply/execution-adapter.js';
+import { createAccessLogger } from './access-log.js';
+import { AuthRateLimiter } from './auth/rate-limit.js';
 import { GatewayBroadcaster } from './broadcaster.js';
 import type { GatewayServerContext } from './context.js';
+import {
+  createDbHealthChecker,
+  createProviderHealthChecker,
+  registerHealthChecker,
+} from './health.js';
+import { RequestRateLimiter } from './rate-limit.js';
 import { ChatRegistry } from './registry.js';
 import { handleHttpRequest } from './router.js';
 import { registerAgentRunsMethods } from './rpc/methods/agent-runs.js';
@@ -41,6 +49,10 @@ export interface GatewayServerDeps {
   readonly memoryDeps?: MemoryRpcDeps;
   /** Phase 28: schedule.* RPC 배선용 의존성 (생략 시 schedule.* 메서드는 provider_unavailable) */
   readonly scheduleDeps?: ScheduleRpcDeps;
+  /** Phase 29 E5: /readyz 의 db 컴포넌트 헬스 체커 (생략 시 db 항목 미등록) */
+  readonly dbHealthCheck?: () => Promise<void>;
+  /** Phase 29 E5: /readyz 의 embedding 컴포넌트 헬스 체커 (생략 시 embedding 항목 미등록) */
+  readonly embeddingHealthCheck?: () => Promise<void>;
 }
 
 export interface GatewayServer {
@@ -69,6 +81,20 @@ export function createGatewayServer(
     maxPayload: config.ws.maxPayloadBytes,
   });
 
+  // Phase 29 E5: 운영성 인스턴스 생성. config 에 키가 있으면 활성, 없으면 기본값.
+  // router 의 optional chain 으로 ctx 에 항상 주입되어 자동 활성.
+  const rateLimiter = new RequestRateLimiter({
+    windowMs: config.rateLimit?.windowMs ?? 60_000,
+    maxRequests: config.rateLimit?.maxRequests ?? 60,
+    maxKeys: config.rateLimit?.maxKeys ?? 10_000,
+  });
+  const accessLogger = createAccessLogger(); // stdout JSON
+  const authRateLimiter = new AuthRateLimiter({
+    maxFailures: 5,
+    windowMs: 5 * 60_000,
+    blockDurationMs: 15 * 60_000,
+  });
+
   // DI 컨테이너
   const ctx: GatewayServerContext = {
     config,
@@ -78,7 +104,19 @@ export function createGatewayServer(
     registry: new ChatRegistry(config.auth.sessionTtlMs),
     broadcaster: new GatewayBroadcaster(),
     isDraining: false,
+    rateLimiter,
+    accessLogger,
+    authRateLimiter,
   };
+
+  // Phase 29 E5: deep health checker 등록. db ping 은 storage.db.exec('SELECT 1'),
+  // embedding ping 은 매우 짧은 텍스트 1건. 모두 deps 미주입 시 skip.
+  if (deps.dbHealthCheck) {
+    registerHealthChecker(createDbHealthChecker(deps.dbHealthCheck));
+  }
+  if (deps.embeddingHealthCheck) {
+    registerHealthChecker(createProviderHealthChecker('embedding', deps.embeddingHealthCheck));
+  }
 
   // RPC 메서드 등록 (ctx가 생성된 후 deps 주입)
   registerSystemMethods();
@@ -168,6 +206,10 @@ export function createGatewayServer(
       for (const client of wss.clients) {
         client.close(1001, 'Server shutting down');
       }
+
+      // Phase 29 E5: rate-limiter / auth rate-limiter dispose.
+      rateLimiter.dispose();
+      authRateLimiter.clear();
 
       // 6. HTTP 서버 종료
       return new Promise((resolve) => {
