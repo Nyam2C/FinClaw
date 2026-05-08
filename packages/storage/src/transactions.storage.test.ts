@@ -88,7 +88,7 @@ describe('v3 → v4 migration', () => {
       const versionRow = database.db
         .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
         .get() as unknown as { value: string };
-      expect(versionRow.value).toBe('8');
+      expect(versionRow.value).toBe('9');
 
       // synthetic transactions 2건 생성
       const txnRows = database.db

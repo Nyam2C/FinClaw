@@ -12,6 +12,13 @@ export interface FinClawConfig {
   finance?: FinanceConfig;
   routing?: RoutingConfig;
   meta?: ConfigMeta;
+  /** Phase 30 C4: access-log retention (SQLite 행 보존 기간). */
+  accessLog?: AccessLogConfig;
+}
+
+export interface AccessLogConfig {
+  /** 보존 기간 (일). 기본 30. 매일 04:00 (또는 24h interval) 에 oldest 삭제. */
+  readonly retentionDays?: number;
 }
 
 /** 모델 티어 — 라우팅 결정의 단위 (Phase 24) */

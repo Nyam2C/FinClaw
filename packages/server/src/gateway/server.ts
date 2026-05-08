@@ -25,6 +25,7 @@ import { ChatRegistry } from './registry.js';
 import { handleHttpRequest } from './router.js';
 import { registerAgentRunsMethods } from './rpc/methods/agent-runs.js';
 import { registerAgentMethods, type AgentRpcDeps } from './rpc/methods/agent.js';
+import { registerAuditMethods } from './rpc/methods/audit.js';
 import { registerChatMethods } from './rpc/methods/chat.js';
 import { registerConfigMethods } from './rpc/methods/config.js';
 import { registerFinanceMethods, type FinanceRpcDeps } from './rpc/methods/finance.js';
@@ -54,6 +55,10 @@ export interface GatewayServerDeps {
   readonly dbHealthCheck?: () => Promise<void>;
   /** Phase 29 E5: /readyz 의 embedding 컴포넌트 헬스 체커 (생략 시 embedding 항목 미등록) */
   readonly embeddingHealthCheck?: () => Promise<void>;
+  /** Phase 30 C3: access-log SQLite dual-write 용 db (생략 시 stdout 만). */
+  readonly accessLogDb?: import('node:sqlite').DatabaseSync;
+  /** Phase 30 C3: 현재 active span 의 traceId 를 가져오는 함수 (옵션). */
+  readonly getTraceId?: () => string | undefined;
 }
 
 export interface GatewayServer {
@@ -89,7 +94,10 @@ export function createGatewayServer(
     maxRequests: config.rateLimit?.maxRequests ?? 60,
     maxKeys: config.rateLimit?.maxKeys ?? 10_000,
   });
-  const accessLogger = createAccessLogger(); // stdout JSON
+  const accessLogger = createAccessLogger({
+    db: deps.accessLogDb,
+    getTraceId: deps.getTraceId,
+  });
   const authRateLimiter = new AuthRateLimiter({
     maxFailures: 5,
     windowMs: 5 * 60_000,
@@ -149,6 +157,8 @@ export function createGatewayServer(
   registerAgentRunsMethods({ db: deps.agentDeps?.db ?? deps.financeDeps?.db });
   // Phase 30 A9: trace.* RPC 등록 (agentDeps/financeDeps 의 db 재사용).
   registerTraceMethods({ db: deps.agentDeps?.db ?? deps.financeDeps?.db });
+  // Phase 30 C5: audit.* RPC 등록 (감사 로그 조회).
+  registerAuditMethods({ db: deps.agentDeps?.db ?? deps.financeDeps?.db });
   if (deps.agentDeps) {
     registerAgentMethods(deps.agentDeps);
   }

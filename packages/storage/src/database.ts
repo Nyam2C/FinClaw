@@ -20,7 +20,7 @@ export interface DatabaseOptions {
 
 // ─── Schema ───
 
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 9;
 
 const SCHEMA_DDL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -230,6 +230,22 @@ CREATE TABLE IF NOT EXISTS spans (
   status_message  TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_spans_trace_start ON spans(trace_id, start_ns);
+
+-- Phase 30 C1: access_log — RPC 호출 1건당 1행 (sampling 없음). retention 30 일 default.
+CREATE TABLE IF NOT EXISTS access_log (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts           INTEGER NOT NULL,
+  method       TEXT NOT NULL,
+  params_hash  TEXT NOT NULL,
+  actor        TEXT,
+  ip           TEXT,
+  duration_ms  INTEGER NOT NULL,
+  status       TEXT NOT NULL,
+  error        TEXT,
+  trace_id     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_access_log_ts ON access_log(ts DESC);
+CREATE INDEX IF NOT EXISTS idx_access_log_method_ts ON access_log(method, ts DESC);
 `;
 
 type MigrationStep = string | ((db: DatabaseSync) => void);
@@ -418,6 +434,23 @@ CREATE TABLE IF NOT EXISTS portfolio_holdings (
       CREATE INDEX IF NOT EXISTS idx_spans_trace_start ON spans(trace_id, start_ns);
     `);
   },
+  // Phase 30 C1: access_log 테이블 — RPC 호출 1건당 1행 + retention purge 대상.
+  9: `
+    CREATE TABLE IF NOT EXISTS access_log (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts           INTEGER NOT NULL,
+      method       TEXT NOT NULL,
+      params_hash  TEXT NOT NULL,
+      actor        TEXT,
+      ip           TEXT,
+      duration_ms  INTEGER NOT NULL,
+      status       TEXT NOT NULL,
+      error        TEXT,
+      trace_id     TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_access_log_ts ON access_log(ts DESC);
+    CREATE INDEX IF NOT EXISTS idx_access_log_method_ts ON access_log(method, ts DESC);
+  `,
 };
 
 // ─── Internal helpers ───

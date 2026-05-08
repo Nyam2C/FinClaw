@@ -41,6 +41,7 @@ import {
   assertEmbeddingDimension,
   createEmbeddingProvider,
   createStorage,
+  purgeAccessLog,
   type EmbeddingProvider,
 } from '@finclaw/storage';
 import type {
@@ -560,6 +561,34 @@ async function main(): Promise<void> {
           await embeddingProvider.embedQuery('healthz');
         }
       : undefined,
+    // Phase 30 C3: access-log SQLite dual-write + traceId 부착.
+    accessLogDb: storage.db,
+    getTraceId: () => tracer.getCurrentContext()?.traceId,
+  });
+
+  // Phase 30 C4: access-log retention purge — 24h 주기 (scheduler internal cron 미지원이므로 setInterval).
+  // 기본 30 일, finclawConfig.accessLog.retentionDays 로 override.
+  const retentionDays = finclawConfig.accessLog?.retentionDays ?? 30;
+  const purgeIntervalMs = 24 * 60 * 60 * 1000;
+  const accessLogPurgeTimer = setInterval(() => {
+    try {
+      const removed = purgeAccessLog(storage.db, retentionDays);
+      logger.info('access_log.purged', {
+        event: 'access_log.purged',
+        removed,
+        retentionDays,
+      });
+    } catch (err) {
+      logger.warn('access_log.purge_failed', {
+        event: 'access_log.purge_failed',
+        error: (err as Error).message,
+      });
+    }
+  }, purgeIntervalMs);
+  // Node 가 timer 때문에 종료 안되는 것 방지 — daemon 모드에서만 활성.
+  accessLogPurgeTimer.unref();
+  lifecycle.register(async () => {
+    clearInterval(accessLogPurgeTimer);
   });
   logger.info('finance.* / memory.* / agent.* RPC methods wired');
   lifecycle.register(() => gateway.stop());

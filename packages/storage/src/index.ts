@@ -122,6 +122,13 @@ export {
   type SpanRow,
   type SpanTreeNode,
 } from './spans.js';
+export {
+  addAccessLog,
+  listAccessLog,
+  purgeAccessLog,
+  type AccessLogEntry,
+  type ListAccessLogOptions,
+} from './access-log.js';
 
 // ─── StorageAdapter factory ───
 
