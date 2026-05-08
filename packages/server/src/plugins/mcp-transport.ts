@@ -1,7 +1,10 @@
 import type { MCPServerSpec } from '@finclaw/types';
 // packages/server/src/plugins/mcp-transport.ts
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import {
+  getDefaultEnvironment,
+  StdioClientTransport,
+} from '@modelcontextprotocol/sdk/client/stdio.js';
 
 export interface MCPClientHandle {
   readonly client: Client;
@@ -19,7 +22,7 @@ export async function createMCPClient(spec: MCPServerSpec): Promise<MCPClientHan
   const transport = new StdioClientTransport({
     command: spec.command,
     args: [...spec.args],
-    env: spec.env ? { ...process.env, ...spec.env } : (process.env as Record<string, string>),
+    env: spec.env ? { ...getDefaultEnvironment(), ...spec.env } : undefined,
   });
   const client = new Client({ name: 'finclaw', version: '0.1.0' }, { capabilities: {} });
   await client.connect(transport);
