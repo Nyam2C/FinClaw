@@ -137,6 +137,11 @@ export class AnthropicAdapter implements ProviderAdapter {
             : {}),
           messages: toAnthropicMessages(nonSystemMessages),
           ...(toolsWithCache.length ? { tools: toolsWithCache } : {}),
+          ...(params.forceToolChoice
+            ? {
+                tool_choice: { type: 'tool' as const, name: params.forceToolChoice.name },
+              }
+            : {}),
           ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
         },
         { signal: params.abortSignal },

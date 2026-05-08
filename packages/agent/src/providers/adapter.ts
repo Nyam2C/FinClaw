@@ -13,6 +13,11 @@ export interface ProviderRequestParams {
   readonly temperature?: number;
   readonly maxTokens?: number;
   readonly abortSignal?: AbortSignal;
+  /**
+   * Phase 30 B2: 강제 도구 선택. provider 가 LLM API body 의 tool_choice 필드로 전달.
+   * 어댑터별 형식은 anthropic.ts / openai.ts 가 처리.
+   */
+  readonly forceToolChoice?: { readonly name: string };
 }
 
 /** 제공자 어댑터 인터페이스 */

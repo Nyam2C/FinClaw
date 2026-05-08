@@ -6,7 +6,7 @@ import type { ProviderAdapter, ProviderRequestParams } from '../providers/adapte
 import type { StreamEventListener, ExecutionResult } from './streaming.js';
 import { StreamStateMachine } from './streaming.js';
 import { TokenCounter } from './tokens.js';
-import { ExecutionToolDispatcher } from './tool-executor.js';
+import { ExecutionToolDispatcher, StructuredOutputValidationError } from './tool-executor.js';
 import { ToolInputBuffer } from './tool-input-buffer.js';
 
 /**
@@ -92,6 +92,10 @@ export class Runner {
 
     try {
       let turns = 0;
+      // Phase 30 B6: structured output retry 추적 (도구 이름별 violation 횟수).
+      const violationCount = new Map<string, number>();
+      // 다음 turn 에 강제할 도구 이름 (직전 turn 의 violation 결과 reaction).
+      let nextForceToolName: string | undefined;
 
       while (turns < this.maxTurns) {
         if (params.abortSignal?.aborted) {
@@ -102,6 +106,8 @@ export class Runner {
 
         // Phase 30 A7: turn 단위 span — provider.stream + tool.execute 가 자식 span.
         const turnIdx = turns;
+        const forceToolName = nextForceToolName;
+        nextForceToolName = undefined;
         const turnRun = async (): Promise<{
           continueLoop: boolean;
           abortReturn?: ExecutionResult;
@@ -110,7 +116,7 @@ export class Runner {
             'provider.stream',
             { provider: this.provider.providerId, model: params.model.model, turn: turnIdx },
             () =>
-              retry(() => this.streamLLMCall(params, messages, listener), {
+              retry(() => this.streamLLMCall(params, messages, listener, forceToolName), {
                 ...this.retryOptions,
                 shouldRetry: (error) => {
                   const reason = classifyFallbackError(error as Error);
@@ -136,6 +142,24 @@ export class Runner {
             { count: response.toolCalls.length, turn: turnIdx },
             () => this.toolExecutor.executeAll(response.toolCalls, params.abortSignal),
           );
+
+          // Phase 30 B6: structured output violation 처리. 도구별 1회 retry 후 두 번째 위반 시 throw.
+          for (let i = 0; i < results.length; i++) {
+            const r = results[i];
+            const call = response.toolCalls[i];
+            if (r?.structuredOutputViolation && call) {
+              const prev = violationCount.get(call.name) ?? 0;
+              if (prev >= 1) {
+                throw new StructuredOutputValidationError(
+                  call.name,
+                  r.content,
+                  `Tool '${call.name}' violated structured output schema after retry`,
+                );
+              }
+              violationCount.set(call.name, prev + 1);
+              nextForceToolName = call.name;
+            }
+          }
 
           messages.push({
             role: 'tool',
@@ -187,6 +211,7 @@ export class Runner {
     params: AgentRunParams,
     messages: ConversationMessage[],
     listener?: StreamEventListener,
+    forceToolName?: string,
   ): Promise<LLMCallResult> {
     // TODO(L4): FSM이 LLM 호출마다 새로 생성되어 실행 루프 전체의 상태를 추적하지 않음.
     //  현재 동작 문제 없으나, 루프 전체 상태 추적이 필요하면 execute() 레벨로 승격 필요.
@@ -210,6 +235,7 @@ export class Runner {
       temperature: params.temperature,
       maxTokens: params.maxTokens ?? params.model.maxOutputTokens,
       abortSignal: params.abortSignal,
+      ...(forceToolName ? { forceToolChoice: { name: forceToolName } } : {}),
     };
 
     for await (const chunk of this.provider.streamCompletion(requestParams)) {
