@@ -112,6 +112,13 @@ export interface RetrievalResult {
   readonly transactions: readonly InjectedTransaction[];
   readonly mode: 'hybrid' | 'fts-only';
   readonly auditLog: AuditLog;
+  /** Phase 30 D5: rerank 통계 (호출자가 agent_runs 에 부착). 미사용이면 undefined. */
+  readonly rerankMeta?: {
+    readonly model: string;
+    readonly scoresBefore: readonly number[];
+    readonly scoresAfter: readonly number[];
+    readonly swaps: number;
+  };
 }
 
 export interface MemoryRetrievalService {
@@ -122,6 +129,10 @@ export interface MemoryRetrievalServiceDeps {
   readonly db: DatabaseSync;
   readonly embeddingProvider?: EmbeddingProvider;
   readonly logger: FinClawLogger;
+  /** Phase 30 D5: 옵셔널 reranker — dedup 후 candidates 를 점수 재할당. 미주입 시 기존 동작. */
+  readonly reranker?: import('@finclaw/storage').Reranker;
+  /** rerank 후보 풀 크기 (기본 10). dedup 결과 상위 N 만 reranker 에 전달. */
+  readonly rerankTopKFirst?: number;
 }
 
 // ─── Symbol extraction ───
@@ -302,9 +313,54 @@ export class DefaultMemoryRetrievalService implements MemoryRetrievalService {
       });
     }
 
-    // 4. 정렬 + 상한
+    // 4. 정렬 + 상한 (rerank 미사용 시 기존 freshness 조정 점수 사용)
     candidates.sort((a, b) => b.adjustedScore - a.adjustedScore);
-    const snippets = candidates.slice(0, MAX_INJECTED_MEMORIES);
+    let snippets = candidates.slice(0, MAX_INJECTED_MEMORIES);
+
+    // Phase 30 D5: reranker 주입 시 1차 candidates 상위 N 을 cross-encoder 로 재정렬.
+    let rerankMeta: RetrievalResult['rerankMeta'];
+    const reranker = this.deps.reranker;
+    if (reranker && candidates.length > 0) {
+      const topKFirst = this.deps.rerankTopKFirst ?? 10;
+      const pool = candidates.slice(0, topKFirst);
+      try {
+        const scoresBefore = pool.map((c) => c.adjustedScore);
+        const scoresAfter = await reranker.rerank(
+          userQuery,
+          pool.map((c) => c.content),
+        );
+        const indexed = scoresAfter.map((score, originalIndex) => ({ score, originalIndex }));
+        indexed.sort((a, b) => b.score - a.score);
+        const finalSlice = indexed.slice(0, MAX_INJECTED_MEMORIES);
+        const reordered = finalSlice
+          .map((entry) => pool[entry.originalIndex])
+          .filter((c): c is MemorySnippet => c !== undefined);
+        // swaps: topKFinal 안 inversion 횟수.
+        let swaps = 0;
+        const finalIdx = finalSlice.map((e) => e.originalIndex);
+        for (let i = 0; i < finalIdx.length; i++) {
+          for (let j = i + 1; j < finalIdx.length; j++) {
+            const a = finalIdx[i];
+            const b = finalIdx[j];
+            if (a !== undefined && b !== undefined && a > b) {
+              swaps++;
+            }
+          }
+        }
+        snippets = reordered;
+        rerankMeta = {
+          model: reranker.id,
+          scoresBefore,
+          scoresAfter,
+          swaps,
+        };
+      } catch (err) {
+        logger.warn('Memory retrieval: rerank failed, using freshness-sorted snippets', {
+          event: 'memory.retrieval.rerank_failed',
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
 
     // 5. 거래 동시 주입
     const symbols = extractSymbols(userQuery);
@@ -340,6 +396,6 @@ export class DefaultMemoryRetrievalService implements MemoryRetrievalService {
     };
     logger.info('memory.injected', auditLog as unknown as Record<string, unknown>);
 
-    return { snippets, transactions, mode, auditLog };
+    return { snippets, transactions, mode, auditLog, rerankMeta };
   }
 }

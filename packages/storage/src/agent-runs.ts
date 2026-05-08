@@ -22,6 +22,8 @@ export interface AgentRunRow {
   trace_id: string | null;
   /** Phase 30 A8: 본 run 의 부모 span ID (16 hex). pipeline 진입 span 의 spanId. */
   parent_span_id: string | null;
+  /** Phase 30 D4: RAG re-rank 통계 (JSON.stringify 결과). null 이면 rerank 미사용. */
+  rerank_meta: string | null;
   error: string | null;
   created_at: number;
 }
@@ -48,6 +50,13 @@ export interface AddAgentRunInput {
   /** Phase 30 A8: 본 run 을 묶는 trace 컨텍스트. */
   traceId?: string;
   parentSpanId?: string;
+  /** Phase 30 D4: rerank 통계 (storage 가 JSON.stringify). */
+  rerankMeta?: {
+    readonly model: string;
+    readonly scoresBefore: readonly number[];
+    readonly scoresAfter: readonly number[];
+    readonly swaps: number;
+  };
   error?: string;
 }
 
@@ -78,6 +87,10 @@ function rowToAgentRun(row: AgentRunRow): AgentRun {
       row.used_memory_ids === null ? undefined : (JSON.parse(row.used_memory_ids) as string[]),
     traceId: row.trace_id === null ? undefined : row.trace_id,
     parentSpanId: row.parent_span_id === null ? undefined : row.parent_span_id,
+    rerankMeta:
+      row.rerank_meta === null
+        ? undefined
+        : (JSON.parse(row.rerank_meta) as AgentRun['rerankMeta']),
     error: row.error === null ? undefined : row.error,
     createdAt: row.created_at as Timestamp,
   };
@@ -96,8 +109,8 @@ export function addAgentRun(db: DatabaseSync, input: AddAgentRunInput): AgentRun
     `INSERT INTO agent_runs
      (id, agent_id, prompt, output, tool_calls_json, tokens_input, tokens_output,
       duration_ms, model_used, role, memory_id, used_memory_ids,
-      trace_id, parent_span_id, error, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      trace_id, parent_span_id, rerank_meta, error, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     input.agentId as string,
@@ -115,6 +128,7 @@ export function addAgentRun(db: DatabaseSync, input: AddAgentRunInput): AgentRun
       : null,
     input.traceId ?? null,
     input.parentSpanId ?? null,
+    input.rerankMeta ? JSON.stringify(input.rerankMeta) : null,
     input.error ?? null,
     createdAt as number,
   );

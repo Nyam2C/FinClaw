@@ -6,7 +6,7 @@ import * as sqliteVec from 'sqlite-vec';
 import { describe, expect, it } from 'vitest';
 import { openDatabase } from './database.js';
 
-describe('schema migration v5 → v9', () => {
+describe('schema migration v5 → v10', () => {
   it('preserves agent_runs and adds schedules + schedule_id + used_memory_ids columns', () => {
     const dir = mkdtempSync(join(tmpdir(), 'phase28-mig-'));
     const path = join(dir, 'db.sqlite');
@@ -32,10 +32,10 @@ describe('schema migration v5 → v9', () => {
         db.close();
       }
 
-      // 2) openDatabase 가 v9 으로 마이그레이션 (Phase 30 A3 + C1)
+      // 2) openDatabase 가 v10 으로 마이그레이션 (Phase 30 A3 + C1 + D4)
       const upgraded = openDatabase({ path, enableWAL: false });
       try {
-        expect(upgraded.schemaVersion).toBe(9);
+        expect(upgraded.schemaVersion).toBe(10);
         // schedules 테이블 존재
         const tbl = upgraded.db
           .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='schedules'`)
@@ -64,11 +64,13 @@ describe('schema migration v5 → v9', () => {
           .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='access_log'`)
           .get();
         expect(accessLog).toBeTruthy();
-        // 마이그레이션 후 schema_version meta 가 9 으로 갱신
+        // rerank_meta 컬럼 존재 (v10)
+        expect(cols.find((c) => c.name === 'rerank_meta')).toBeTruthy();
+        // 마이그레이션 후 schema_version meta 가 10 으로 갱신
         const ver = upgraded.db
           .prepare(`SELECT value FROM meta WHERE key='schema_version'`)
           .get() as { value: string };
-        expect(ver.value).toBe('9');
+        expect(ver.value).toBe('10');
       } finally {
         upgraded.close();
       }
@@ -77,7 +79,7 @@ describe('schema migration v5 → v9', () => {
     }
   });
 
-  it('idempotent: re-running openDatabase on v9 DB is a no-op', () => {
+  it('idempotent: re-running openDatabase on v10 DB is a no-op', () => {
     const dir = mkdtempSync(join(tmpdir(), 'phase28-mig-idem-'));
     const path = join(dir, 'db.sqlite');
     try {
@@ -85,7 +87,7 @@ describe('schema migration v5 → v9', () => {
       a.close();
       const b = openDatabase({ path, enableWAL: false });
       try {
-        expect(b.schemaVersion).toBe(9);
+        expect(b.schemaVersion).toBe(10);
       } finally {
         b.close();
       }

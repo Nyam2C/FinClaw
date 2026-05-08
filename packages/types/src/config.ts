@@ -14,11 +14,24 @@ export interface FinClawConfig {
   meta?: ConfigMeta;
   /** Phase 30 C4: access-log retention (SQLite 행 보존 기간). */
   accessLog?: AccessLogConfig;
+  /** Phase 30 D3: RAG re-ranking 토글. */
+  rag?: RagConfig;
 }
 
 export interface AccessLogConfig {
   /** 보존 기간 (일). 기본 30. 매일 04:00 (또는 24h interval) 에 oldest 삭제. */
   readonly retentionDays?: number;
+}
+
+export interface RagConfig {
+  rerank?: {
+    /** 기본 true. false 면 1차 hybrid 결과를 그대로 사용. */
+    readonly enabled?: boolean;
+    /** 1차 hybrid topK (기본 10). reranker 가 후보 풀로 사용. */
+    readonly topKFirst?: number;
+    /** rerank 후 최종 반환 topK (기본 3). */
+    readonly topKFinal?: number;
+  };
 }
 
 /** 모델 티어 — 라우팅 결정의 단위 (Phase 24) */

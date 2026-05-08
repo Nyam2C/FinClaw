@@ -20,7 +20,7 @@ export interface DatabaseOptions {
 
 // ─── Schema ───
 
-const SCHEMA_VERSION = 9;
+const SCHEMA_VERSION = 10;
 
 const SCHEMA_DDL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -208,6 +208,7 @@ CREATE TABLE IF NOT EXISTS agent_runs (
   schedule_id      TEXT REFERENCES schedules(id) ON DELETE SET NULL,
   trace_id         TEXT,
   parent_span_id   TEXT,
+  rerank_meta      TEXT,
   error            TEXT,
   created_at       INTEGER NOT NULL
 );
@@ -451,6 +452,13 @@ CREATE TABLE IF NOT EXISTS portfolio_holdings (
     CREATE INDEX IF NOT EXISTS idx_access_log_ts ON access_log(ts DESC);
     CREATE INDEX IF NOT EXISTS idx_access_log_method_ts ON access_log(method, ts DESC);
   `,
+  // Phase 30 D4: agent_runs.rerank_meta — RAG re-rank 통계 (model/scoresBefore/scoresAfter/swaps JSON).
+  10: (db: DatabaseSync) => {
+    const cols = db.prepare(`PRAGMA table_info('agent_runs')`).all() as Array<{ name: string }>;
+    if (!cols.some((c) => c.name === 'rerank_meta')) {
+      db.exec(`ALTER TABLE agent_runs ADD COLUMN rerank_meta TEXT;`);
+    }
+  },
 };
 
 // ─── Internal helpers ───

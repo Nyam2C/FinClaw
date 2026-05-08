@@ -40,7 +40,9 @@ import { GENERAL_SKILL_METADATA, registerGeneralTools } from '@finclaw/skills-ge
 import {
   assertEmbeddingDimension,
   createEmbeddingProvider,
+  createRerankerWithFallback,
   createStorage,
+  LocalReranker,
   purgeAccessLog,
   type EmbeddingProvider,
 } from '@finclaw/storage';
@@ -130,14 +132,23 @@ export function requireEnv(name: string, env: NodeJS.ProcessEnv = process.env): 
  * 인스턴스를 공유한다 (키 하나로 4 영역 활성). embeddingProvider 미주입 시 각 service
  * 가 자체적으로 FTS-only fallback 으로 동작.
  */
-function wireMemoryServices(deps: ConstructorParameters<typeof DefaultMemoryCaptureService>[0]): {
+function wireMemoryServices(
+  deps: ConstructorParameters<typeof DefaultMemoryCaptureService>[0],
+  retrievalExtras?: {
+    reranker?: import('@finclaw/storage').Reranker;
+    rerankTopKFirst?: number;
+  },
+): {
   memoryCaptureService: DefaultMemoryCaptureService;
   memoryRetrievalService: DefaultMemoryRetrievalService;
   attachMemoryService: DefaultAttachMemoryService;
 } {
   return {
     memoryCaptureService: new DefaultMemoryCaptureService(deps),
-    memoryRetrievalService: new DefaultMemoryRetrievalService(deps),
+    memoryRetrievalService: new DefaultMemoryRetrievalService({
+      ...deps,
+      ...retrievalExtras,
+    }),
     attachMemoryService: new DefaultAttachMemoryService(deps),
   };
 }
@@ -398,11 +409,23 @@ async function main(): Promise<void> {
   // - capture: 정규식 5종 명시적 선언 저장
   // - retrieval: hybrid (vector+FTS) RAG 주입, embeddingProvider 미주입 시 FTS-only fallback
   // - attach: agent.run output → memory 훅
-  const { memoryCaptureService, memoryRetrievalService, attachMemoryService } = wireMemoryServices({
-    db: storage.db,
-    embeddingProvider,
-    logger,
-  });
+  // Phase 30 D5: RAG re-ranker (config.rag.rerank.enabled 기본 true).
+  // LocalReranker (Xenova ONNX) 가 모델 미존재 시 mock 으로 자동 fallback.
+  const rerankCfg = finclawConfig.rag?.rerank;
+  const rerankEnabled = rerankCfg?.enabled !== false;
+  const reranker = rerankEnabled ? createRerankerWithFallback(new LocalReranker()) : undefined;
+
+  const { memoryCaptureService, memoryRetrievalService, attachMemoryService } = wireMemoryServices(
+    {
+      db: storage.db,
+      embeddingProvider,
+      logger,
+    },
+    {
+      reranker,
+      rerankTopKFirst: rerankCfg?.topKFirst,
+    },
+  );
 
   // Phase 30 A6: OTel tracer — span 을 SQLite spans 테이블에 SQL exporter 로 기록.
   const tracer = createTracer({ db: storage.db });
