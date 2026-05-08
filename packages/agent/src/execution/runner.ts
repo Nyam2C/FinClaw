@@ -9,6 +9,19 @@ import { TokenCounter } from './tokens.js';
 import { ExecutionToolDispatcher } from './tool-executor.js';
 import { ToolInputBuffer } from './tool-input-buffer.js';
 
+/**
+ * Phase 30 A7: 옵셔널 tracer adapter — agent 패키지가 server 의 tracer 에 직접 의존하지
+ * 않도록 최소 인터페이스만 받음. 상위 (server main.ts) 가 server 의 FinclawTracer
+ * 를 어댑팅하여 주입.
+ */
+export interface RunnerTracerAdapter {
+  withSpan<T>(
+    name: string,
+    attrs: Readonly<Record<string, unknown>>,
+    fn: () => Promise<T>,
+  ): Promise<T>;
+}
+
 export interface RunnerOptions {
   readonly provider: ProviderAdapter;
   readonly toolExecutor: ExecutionToolDispatcher;
@@ -16,6 +29,7 @@ export interface RunnerOptions {
   readonly laneId?: LaneId;
   readonly maxTurns?: number;
   readonly retryOptions?: RetryOptions;
+  readonly tracer?: RunnerTracerAdapter;
 }
 
 /** streamLLMCall 내부 반환값 */
@@ -46,6 +60,7 @@ export class Runner {
   private readonly laneId: LaneId;
   private readonly maxTurns: number;
   private readonly retryOptions: RetryOptions;
+  private readonly tracer?: RunnerTracerAdapter;
 
   constructor(options: RunnerOptions) {
     this.provider = options.provider;
@@ -54,6 +69,7 @@ export class Runner {
     this.laneId = options.laneId ?? 'main';
     this.maxTurns = options.maxTurns ?? 10;
     this.retryOptions = options.retryOptions ?? {};
+    this.tracer = options.tracer;
   }
 
   /**
@@ -84,41 +100,81 @@ export class Runner {
 
         turns++;
 
-        const response = await retry(() => this.streamLLMCall(params, messages, listener), {
-          ...this.retryOptions,
-          shouldRetry: (error) => {
-            const reason = classifyFallbackError(error as Error);
-            return reason === 'rate-limit' || reason === 'server-error' || reason === 'timeout';
-          },
-          signal: params.abortSignal,
-        });
+        // Phase 30 A7: turn 단위 span — provider.stream + tool.execute 가 자식 span.
+        const turnIdx = turns;
+        const turnRun = async (): Promise<{
+          continueLoop: boolean;
+          abortReturn?: ExecutionResult;
+        }> => {
+          const response = await this.runWithSpan(
+            'provider.stream',
+            { provider: this.provider.providerId, model: params.model.model, turn: turnIdx },
+            () =>
+              retry(() => this.streamLLMCall(params, messages, listener), {
+                ...this.retryOptions,
+                shouldRetry: (error) => {
+                  const reason = classifyFallbackError(error as Error);
+                  return (
+                    reason === 'rate-limit' || reason === 'server-error' || reason === 'timeout'
+                  );
+                },
+                signal: params.abortSignal,
+              }),
+          );
 
-        tokenCounter.add(response.usage);
-        messages.push(response.message);
+          tokenCounter.add(response.usage);
+          messages.push(response.message);
 
-        tokenCounter.checkThresholds(listener);
+          tokenCounter.checkThresholds(listener);
 
-        if (!response.toolCalls.length) {
+          if (!response.toolCalls.length) {
+            return { continueLoop: false };
+          }
+
+          const results = await this.runWithSpan(
+            'tool.execute',
+            { count: response.toolCalls.length, turn: turnIdx },
+            () => this.toolExecutor.executeAll(response.toolCalls, params.abortSignal),
+          );
+
+          messages.push({
+            role: 'tool',
+            content: results.map((r) => ({
+              type: 'tool_result' as const,
+              toolUseId: r.toolUseId,
+              content: r.content,
+              isError: r.isError,
+            })),
+          });
+          return { continueLoop: true };
+        };
+
+        const turnResult = await this.runWithSpan(
+          'agent.turn',
+          { turn: turnIdx, agentId: params.agentId },
+          turnRun,
+        );
+        if (!turnResult.continueLoop) {
           return buildResult('completed', messages, tokenCounter, startTime, turns);
         }
-
-        const results = await this.toolExecutor.executeAll(response.toolCalls, params.abortSignal);
-
-        messages.push({
-          role: 'tool',
-          content: results.map((r) => ({
-            type: 'tool_result' as const,
-            toolUseId: r.toolUseId,
-            content: r.content,
-            isError: r.isError,
-          })),
-        });
       }
 
       return buildResult('max_turns', messages, tokenCounter, startTime, turns);
     } finally {
       handle.release();
     }
+  }
+
+  /** Phase 30 A7: tracer 미주입 시 fn 그대로 실행 (의미적 동등). */
+  private async runWithSpan<T>(
+    name: string,
+    attrs: Readonly<Record<string, unknown>>,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    if (!this.tracer) {
+      return fn();
+    }
+    return this.tracer.withSpan(name, attrs, fn);
   }
 
   /**

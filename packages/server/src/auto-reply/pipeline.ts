@@ -1,6 +1,7 @@
 import type { FinClawLogger } from '@finclaw/infra';
 // packages/server/src/auto-reply/pipeline.ts
-import type { MsgContext, OutboundMessage, ChannelPlugin } from '@finclaw/types';
+import type { ChannelPlugin, MsgContext, OutboundMessage, TraceContext } from '@finclaw/types';
+import type { FinclawTracer } from '../observability/tracer.js';
 import type { BindingMatch } from '../process/binding-matcher.js';
 import type { CommandRegistry } from './commands/registry.js';
 import type { ExecutionAdapter } from './execution-adapter.js';
@@ -60,6 +61,8 @@ export interface PipelineDependencies {
   readonly memoryCaptureService?: MemoryCaptureService;
   /** Phase 26 C: 자동 회상 retrieval (hybrid/FTS). 미주입 시 retrieval 단계 no-op. */
   readonly memoryRetrievalService?: MemoryRetrievalService;
+  /** Phase 30 A6: 옵셔널 OTel tracer — 주입 시 각 stage 가 span 으로 묶임. */
+  readonly tracer?: FinclawTracer;
 }
 
 /**
@@ -84,11 +87,42 @@ export class AutoReplyPipeline {
 
   /** MessageRouter.onProcess 콜백으로 등록할 진입점 */
   async process(ctx: MsgContext, match: BindingMatch, signal: AbortSignal): Promise<void> {
+    const tracer = this.deps.tracer;
+    if (tracer) {
+      await tracer.withSpan(
+        'pipeline.process',
+        { sessionKey: ctx.sessionKey, channelId: ctx.channelId },
+        async () => this.runPipeline(ctx, match, signal),
+      );
+      return;
+    }
+    await this.runPipeline(ctx, match, signal);
+  }
+
+  private async runPipeline(
+    ctx: MsgContext,
+    match: BindingMatch,
+    signal: AbortSignal,
+  ): Promise<void> {
+    void match;
     const startTime = performance.now();
     const stagesExecuted: string[] = [];
+    const tracer = this.deps.tracer;
+    let rootTraceContext: TraceContext | undefined = tracer?.getCurrentContext();
 
     // AbortSignal.any: 외부 취소 + 파이프라인 타임아웃 결합
     const combinedSignal = AbortSignal.any([signal, AbortSignal.timeout(this.config.timeoutMs)]);
+
+    // tracer 미주입 환경 (test 등) 은 fn 을 그대로 실행 — 의미적 동등.
+    const stageSpan = async <T>(name: string, fn: () => Promise<T>): Promise<T> => {
+      if (!tracer) {
+        return fn();
+      }
+      return tracer.withSpan(`stage.${name}`, { sessionKey: ctx.sessionKey }, async (sctx) => {
+        rootTraceContext = sctx;
+        return fn();
+      });
+    };
 
     this.deps.observer?.onPipelineStart?.(ctx);
 
@@ -101,7 +135,7 @@ export class AutoReplyPipeline {
         return;
       }
       this.deps.observer?.onStageStart?.('normalize', ctx);
-      const normalizeResult = normalizeMessage(ctx);
+      const normalizeResult = await stageSpan('normalize', async () => normalizeMessage(ctx));
       stagesExecuted.push('normalize');
       this.deps.observer?.onStageComplete?.('normalize', normalizeResult);
 
@@ -117,11 +151,13 @@ export class AutoReplyPipeline {
         return;
       }
       this.deps.observer?.onStageStart?.('command', ctx);
-      const cmdResult = await commandStage(
-        normalized.normalizedBody,
-        this.deps.commandRegistry,
-        this.config.commandPrefix,
-        ctx,
+      const cmdResult = await stageSpan('command', async () =>
+        commandStage(
+          normalized.normalizedBody,
+          this.deps.commandRegistry,
+          this.config.commandPrefix,
+          ctx,
+        ),
       );
       stagesExecuted.push('command');
       this.deps.observer?.onStageComplete?.('command', cmdResult);
@@ -138,11 +174,14 @@ export class AutoReplyPipeline {
       let capturedMemory: MemoryCaptureResult | null = null;
       if (this.deps.memoryCaptureService) {
         this.deps.observer?.onStageStart?.('memory-capture', ctx);
-        capturedMemory = await memoryCaptureStage(
-          normalized.normalizedBody,
-          ctx.sessionKey,
-          this.deps.memoryCaptureService,
-          this.deps.logger,
+        const captureService = this.deps.memoryCaptureService;
+        capturedMemory = await stageSpan('memory-capture', async () =>
+          memoryCaptureStage(
+            normalized.normalizedBody,
+            ctx.sessionKey,
+            captureService,
+            this.deps.logger,
+          ),
         );
         stagesExecuted.push('memory-capture');
         this.deps.observer?.onStageComplete?.('memory-capture', {
@@ -159,13 +198,15 @@ export class AutoReplyPipeline {
       this.deps.observer?.onStageStart?.('ack', ctx);
       const channel = this.deps.getChannel(ctx.channelId as string);
       const noopChannel = { send: undefined, addReaction: undefined, sendTyping: undefined };
-      const ackResult = await ackStage(
-        channel ?? noopChannel,
-        '', // messageId — MsgContext에 없으므로 빈 문자열. MsgContext 확장 시 messageId 필드 추가 필요.
-        ctx.channelId as string,
-        ctx.chatId ?? ctx.senderId,
-        this.config.enableAck,
-        this.deps.logger,
+      const ackResult = await stageSpan('ack', async () =>
+        ackStage(
+          channel ?? noopChannel,
+          '', // messageId — MsgContext에 없으므로 빈 문자열. MsgContext 확장 시 messageId 필드 추가 필요.
+          ctx.channelId as string,
+          ctx.chatId ?? ctx.senderId,
+          this.config.enableAck,
+          this.deps.logger,
+        ),
       );
       stagesExecuted.push('ack');
       this.deps.observer?.onStageComplete?.('ack', ackResult);
@@ -205,14 +246,16 @@ export class AutoReplyPipeline {
             maxMessageLength: 2000,
           };
 
-      const ctxResult = await contextStage(
-        ctx,
-        normalized,
-        {
-          financeContextProvider: this.deps.financeContextProvider,
-          channelCapabilities: channelCaps,
-        },
-        combinedSignal,
+      const ctxResult = await stageSpan('context', async () =>
+        contextStage(
+          ctx,
+          normalized,
+          {
+            financeContextProvider: this.deps.financeContextProvider,
+            channelCapabilities: channelCaps,
+          },
+          combinedSignal,
+        ),
       );
       stagesExecuted.push('context');
       this.deps.observer?.onStageComplete?.('context', ctxResult);
@@ -243,11 +286,14 @@ export class AutoReplyPipeline {
       // 실패해도 파이프라인 진행 (best-effort) — 빈 retrievalResult 미주입.
       if (this.deps.memoryRetrievalService) {
         this.deps.observer?.onStageStart?.('memory-retrieval', ctx);
+        const retrievalService = this.deps.memoryRetrievalService;
         try {
-          const retrievalResult = await this.deps.memoryRetrievalService.searchRelevant({
-            userQuery: enrichedCtx.normalizedBody,
-            sessionKey: enrichedCtx.sessionKey,
-          });
+          const retrievalResult = await stageSpan('memory-retrieval', async () =>
+            retrievalService.searchRelevant({
+              userQuery: enrichedCtx.normalizedBody,
+              sessionKey: enrichedCtx.sessionKey,
+            }),
+          );
           enrichedCtx = { ...enrichedCtx, retrievalResult };
           stagesExecuted.push('memory-retrieval');
           this.deps.observer?.onStageComplete?.('memory-retrieval', {
@@ -274,10 +320,12 @@ export class AutoReplyPipeline {
         return;
       }
       this.deps.observer?.onStageStart?.('execute', ctx);
-      const execResult = await executeStage(
-        enrichedCtx,
-        this.deps.executionAdapter,
-        combinedSignal,
+      const execResult = await stageSpan('execute', async () =>
+        executeStage(
+          { ...enrichedCtx, traceContext: rootTraceContext },
+          this.deps.executionAdapter,
+          combinedSignal,
+        ),
       );
       stagesExecuted.push('execute');
       this.deps.observer?.onStageComplete?.('execute', execResult);
@@ -295,11 +343,8 @@ export class AutoReplyPipeline {
         return;
       }
       this.deps.observer?.onStageStart?.('deliver', ctx);
-      const deliverResult = await deliverResponse(
-        execResult.data,
-        enrichedCtx,
-        channel ?? noopChannel,
-        this.deps.logger,
+      const deliverResult = await stageSpan('deliver', async () =>
+        deliverResponse(execResult.data, enrichedCtx, channel ?? noopChannel, this.deps.logger),
       );
       stagesExecuted.push('deliver');
       this.deps.observer?.onStageComplete?.('deliver', deliverResult);

@@ -18,6 +18,10 @@ export interface AgentRunRow {
   memory_id: string | null;
   /** Phase 29 B4: RAG 인용으로 응답이 의존한 memory.id 배열 (JSON.stringify 결과) */
   used_memory_ids: string | null;
+  /** Phase 30 A8: 본 run 을 묶는 W3C trace ID (32 hex). nullable. */
+  trace_id: string | null;
+  /** Phase 30 A8: 본 run 의 부모 span ID (16 hex). pipeline 진입 span 의 spanId. */
+  parent_span_id: string | null;
   error: string | null;
   created_at: number;
 }
@@ -41,6 +45,9 @@ export interface AddAgentRunInput {
   memoryId?: string;
   /** Phase 29 B4: RAG 인용으로 응답이 의존한 memory.id 목록 (응답 후처리에서 채움) */
   usedMemoryIds?: string[];
+  /** Phase 30 A8: 본 run 을 묶는 trace 컨텍스트. */
+  traceId?: string;
+  parentSpanId?: string;
   error?: string;
 }
 
@@ -69,6 +76,8 @@ function rowToAgentRun(row: AgentRunRow): AgentRun {
     memoryId: row.memory_id === null ? undefined : row.memory_id,
     usedMemoryIds:
       row.used_memory_ids === null ? undefined : (JSON.parse(row.used_memory_ids) as string[]),
+    traceId: row.trace_id === null ? undefined : row.trace_id,
+    parentSpanId: row.parent_span_id === null ? undefined : row.parent_span_id,
     error: row.error === null ? undefined : row.error,
     createdAt: row.created_at as Timestamp,
   };
@@ -86,8 +95,9 @@ export function addAgentRun(db: DatabaseSync, input: AddAgentRunInput): AgentRun
   db.prepare(
     `INSERT INTO agent_runs
      (id, agent_id, prompt, output, tool_calls_json, tokens_input, tokens_output,
-      duration_ms, model_used, role, memory_id, used_memory_ids, error, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      duration_ms, model_used, role, memory_id, used_memory_ids,
+      trace_id, parent_span_id, error, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     input.agentId as string,
@@ -103,6 +113,8 @@ export function addAgentRun(db: DatabaseSync, input: AddAgentRunInput): AgentRun
     input.usedMemoryIds && input.usedMemoryIds.length > 0
       ? JSON.stringify(input.usedMemoryIds)
       : null,
+    input.traceId ?? null,
+    input.parentSpanId ?? null,
     input.error ?? null,
     createdAt as number,
   );

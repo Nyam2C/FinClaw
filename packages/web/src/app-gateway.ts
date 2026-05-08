@@ -411,6 +411,43 @@ export function createAgentClient(gateway: AppGateway): AgentClient {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Phase 30 A12: trace.* client (관찰성 — span tree 조회)
+// ─────────────────────────────────────────────────────────────────────
+
+export interface TraceSummary {
+  readonly trace_id: string;
+  readonly first_ns: number;
+  readonly last_ns: number | null;
+  readonly root_name: string;
+}
+
+export interface TraceClient {
+  list(params?: { since?: number; limit?: number }): Promise<{ traces: readonly TraceSummary[] }>;
+  get(traceId: string): Promise<{
+    traceId: string;
+    spans: readonly unknown[];
+    tree: readonly unknown[];
+    agentRuns: readonly unknown[];
+  }>;
+}
+
+export function createTraceClient(gateway: AppGateway): TraceClient {
+  return {
+    list: (params = {}) =>
+      gateway.send('trace.list', params as Record<string, unknown>) as Promise<{
+        traces: readonly TraceSummary[];
+      }>,
+    get: (traceId) =>
+      gateway.send('trace.get', { traceId }) as Promise<{
+        traceId: string;
+        spans: readonly unknown[];
+        tree: readonly unknown[];
+        agentRuns: readonly unknown[];
+      }>,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Phase 26 E: memory.* / agent.runs.* clients
 // ─────────────────────────────────────────────────────────────────────
 

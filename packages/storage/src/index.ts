@@ -115,6 +115,13 @@ export {
   type UpdateScheduleInput,
   type ListSchedulesOptions,
 } from './schedules.js';
+export {
+  addSpan,
+  listSpansByTrace,
+  getSpanTree,
+  type SpanRow,
+  type SpanTreeNode,
+} from './spans.js';
 
 // ─── StorageAdapter factory ───
 

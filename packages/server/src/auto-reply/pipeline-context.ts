@@ -1,11 +1,12 @@
 // packages/server/src/auto-reply/pipeline-context.ts
 import type {
-  MsgContext,
-  ChannelCapabilities,
-  Timestamp,
-  Portfolio,
   Alert,
+  ChannelCapabilities,
+  MsgContext,
   NewsItem,
+  Portfolio,
+  Timestamp,
+  TraceContext,
 } from '@finclaw/types';
 import type { RetrievalResult } from './stages/memory-retrieval.js';
 
@@ -49,6 +50,10 @@ export interface PipelineMsgContext extends MsgContext {
   // --- 기억 retrieval (Phase 26 C) ---
   /** Context 직후 retrieval 결과. execution-adapter 가 system prompt 에 주입. */
   readonly retrievalResult?: RetrievalResult;
+
+  // --- 관찰성 (Phase 30 A6) ---
+  /** Pipeline 진입 시 active span 의 trace/spanId. execute 단계가 agent_runs 부착에 사용. */
+  readonly traceContext?: TraceContext;
 }
 
 /** 시장 세션 상태 */

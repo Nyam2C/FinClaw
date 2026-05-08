@@ -20,7 +20,7 @@ export interface DatabaseOptions {
 
 // ─── Schema ───
 
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 const SCHEMA_DDL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -206,11 +206,30 @@ CREATE TABLE IF NOT EXISTS agent_runs (
   memory_id        TEXT REFERENCES memories(id) ON DELETE SET NULL,
   used_memory_ids  TEXT,
   schedule_id      TEXT REFERENCES schedules(id) ON DELETE SET NULL,
+  trace_id         TEXT,
+  parent_span_id   TEXT,
   error            TEXT,
   created_at       INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_agent_runs_created ON agent_runs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_agent_runs_agent ON agent_runs(agent_id, created_at DESC);
+-- idx_agent_runs_trace_id 는 ensurePostMigrationSchema 에서 보장 (v5 DB → v8 마이그레이션 시
+-- ALTER TABLE 으로 trace_id 컬럼이 추가된 후에만 인덱스 가능).
+
+CREATE TABLE IF NOT EXISTS spans (
+  trace_id        TEXT NOT NULL,
+  span_id         TEXT NOT NULL PRIMARY KEY,
+  parent_span_id  TEXT,
+  name            TEXT NOT NULL,
+  kind            TEXT NOT NULL,
+  start_ns        INTEGER NOT NULL,
+  end_ns          INTEGER,
+  attributes      TEXT NOT NULL DEFAULT '{}',
+  events          TEXT NOT NULL DEFAULT '[]',
+  status          TEXT NOT NULL DEFAULT 'unset',
+  status_message  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_spans_trace_start ON spans(trace_id, start_ns);
 `;
 
 type MigrationStep = string | ((db: DatabaseSync) => void);
@@ -371,6 +390,34 @@ CREATE TABLE IF NOT EXISTS portfolio_holdings (
       db.exec(`ALTER TABLE agent_runs ADD COLUMN used_memory_ids TEXT;`);
     }
   },
+  // Phase 30 A3: agent_runs.trace_id / parent_span_id + spans 테이블
+  8: (db: DatabaseSync) => {
+    const cols = db.prepare(`PRAGMA table_info('agent_runs')`).all() as Array<{ name: string }>;
+    if (!cols.some((c) => c.name === 'trace_id')) {
+      db.exec(`ALTER TABLE agent_runs ADD COLUMN trace_id TEXT;`);
+    }
+    if (!cols.some((c) => c.name === 'parent_span_id')) {
+      db.exec(`ALTER TABLE agent_runs ADD COLUMN parent_span_id TEXT;`);
+    }
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_agent_runs_trace_id ON agent_runs(trace_id);`);
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS spans (
+        trace_id        TEXT NOT NULL,
+        span_id         TEXT NOT NULL PRIMARY KEY,
+        parent_span_id  TEXT,
+        name            TEXT NOT NULL,
+        kind            TEXT NOT NULL,
+        start_ns        INTEGER NOT NULL,
+        end_ns          INTEGER,
+        attributes      TEXT NOT NULL DEFAULT '{}',
+        events          TEXT NOT NULL DEFAULT '[]',
+        status          TEXT NOT NULL DEFAULT 'unset',
+        status_message  TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_spans_trace_start ON spans(trace_id, start_ns);
+    `);
+  },
 };
 
 // ─── Internal helpers ───
@@ -430,6 +477,8 @@ function ensurePostMigrationSchema(db: DatabaseSync): void {
   db.exec(
     `CREATE INDEX IF NOT EXISTS idx_agent_runs_schedule ON agent_runs(schedule_id, created_at DESC) WHERE schedule_id IS NOT NULL;`,
   );
+  // Phase 30 A3: agent_runs.trace_id 인덱스 — 동일 이유로 마이그레이션 후 보장.
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_agent_runs_trace_id ON agent_runs(trace_id);`);
 }
 
 // ─── Public API ───

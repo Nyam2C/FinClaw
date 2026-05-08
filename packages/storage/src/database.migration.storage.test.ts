@@ -6,7 +6,7 @@ import * as sqliteVec from 'sqlite-vec';
 import { describe, expect, it } from 'vitest';
 import { openDatabase } from './database.js';
 
-describe('schema migration v5 → v7', () => {
+describe('schema migration v5 → v8', () => {
   it('preserves agent_runs and adds schedules + schedule_id + used_memory_ids columns', () => {
     const dir = mkdtempSync(join(tmpdir(), 'phase28-mig-'));
     const path = join(dir, 'db.sqlite');
@@ -32,10 +32,10 @@ describe('schema migration v5 → v7', () => {
         db.close();
       }
 
-      // 2) openDatabase 가 v7 으로 마이그레이션 (Phase 29 B3)
+      // 2) openDatabase 가 v8 으로 마이그레이션 (Phase 30 A3)
       const upgraded = openDatabase({ path, enableWAL: false });
       try {
-        expect(upgraded.schemaVersion).toBe(7);
+        expect(upgraded.schemaVersion).toBe(8);
         // schedules 테이블 존재
         const tbl = upgraded.db
           .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='schedules'`)
@@ -46,17 +46,24 @@ describe('schema migration v5 → v7', () => {
           c: number;
         };
         expect(cnt.c).toBe(1);
-        // schedule_id 컬럼 존재 (v6) + used_memory_ids 컬럼 존재 (v7)
+        // schedule_id 컬럼 존재 (v6) + used_memory_ids (v7) + trace_id/parent_span_id (v8)
         const cols = upgraded.db.prepare(`PRAGMA table_info('agent_runs')`).all() as Array<{
           name: string;
         }>;
         expect(cols.find((c) => c.name === 'schedule_id')).toBeTruthy();
         expect(cols.find((c) => c.name === 'used_memory_ids')).toBeTruthy();
-        // 마이그레이션 후 schema_version meta 가 7 으로 갱신
+        expect(cols.find((c) => c.name === 'trace_id')).toBeTruthy();
+        expect(cols.find((c) => c.name === 'parent_span_id')).toBeTruthy();
+        // spans 테이블 존재 (v8)
+        const spans = upgraded.db
+          .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='spans'`)
+          .get();
+        expect(spans).toBeTruthy();
+        // 마이그레이션 후 schema_version meta 가 8 으로 갱신
         const ver = upgraded.db
           .prepare(`SELECT value FROM meta WHERE key='schema_version'`)
           .get() as { value: string };
-        expect(ver.value).toBe('7');
+        expect(ver.value).toBe('8');
       } finally {
         upgraded.close();
       }
@@ -65,7 +72,7 @@ describe('schema migration v5 → v7', () => {
     }
   });
 
-  it('idempotent: re-running openDatabase on v7 DB is a no-op', () => {
+  it('idempotent: re-running openDatabase on v8 DB is a no-op', () => {
     const dir = mkdtempSync(join(tmpdir(), 'phase28-mig-idem-'));
     const path = join(dir, 'db.sqlite');
     try {
@@ -73,7 +80,7 @@ describe('schema migration v5 → v7', () => {
       a.close();
       const b = openDatabase({ path, enableWAL: false });
       try {
-        expect(b.schemaVersion).toBe(7);
+        expect(b.schemaVersion).toBe(8);
       } finally {
         b.close();
       }

@@ -64,6 +64,7 @@ import { SchedulerService } from './automation/scheduler.js';
 import { initChannels } from './channels/index.js';
 import type { GatewayServerConfig } from './gateway/rpc/types.js';
 import { createGatewayServer } from './gateway/server.js';
+import { createTracer } from './observability/tracer.js';
 import { loadPlugins } from './plugins/loader.js';
 import { ProcessLifecycle } from './process/lifecycle.js';
 import { MessageRouter } from './process/message-router.js';
@@ -402,6 +403,9 @@ async function main(): Promise<void> {
     logger,
   });
 
+  // Phase 30 A6: OTel tracer — span 을 SQLite spans 테이블에 SQL exporter 로 기록.
+  const tracer = createTracer({ db: storage.db });
+
   const pipeline = new AutoReplyPipeline(
     {
       enableAck: true,
@@ -418,6 +422,7 @@ async function main(): Promise<void> {
       getChannel: (id) => channelPluginRegistry.get(id),
       memoryCaptureService,
       memoryRetrievalService,
+      tracer,
     },
   );
 

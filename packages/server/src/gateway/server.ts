@@ -33,6 +33,7 @@ import { registerScheduleMethods, type ScheduleRpcDeps } from './rpc/methods/sch
 import { registerSessionMethods } from './rpc/methods/session.js';
 // 메서드 등록
 import { registerSystemMethods } from './rpc/methods/system.js';
+import { registerTraceMethods } from './rpc/methods/trace.js';
 import type { GatewayServerConfig } from './rpc/types.js';
 import { handleWsConnection } from './ws/connection.js';
 import { startHeartbeat } from './ws/heartbeat.js';
@@ -146,6 +147,8 @@ export function createGatewayServer(
   // Phase 26 D: agent.runs.* RPC 등록. agentDeps 또는 financeDeps 의 db 를 재사용
   // (둘 다 같은 storage.db 인스턴스를 가리키도록 main.ts 가 배선).
   registerAgentRunsMethods({ db: deps.agentDeps?.db ?? deps.financeDeps?.db });
+  // Phase 30 A9: trace.* RPC 등록 (agentDeps/financeDeps 의 db 재사용).
+  registerTraceMethods({ db: deps.agentDeps?.db ?? deps.financeDeps?.db });
   if (deps.agentDeps) {
     registerAgentMethods(deps.agentDeps);
   }
