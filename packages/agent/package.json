@@ -17,6 +17,6 @@
     "@finclaw/infra": "workspace:*",
     "@finclaw/types": "workspace:*",
     "openai": "^4",
-    "zod": "^4.0.0"
+    "zod": "^4.4.3"
   }
 }
