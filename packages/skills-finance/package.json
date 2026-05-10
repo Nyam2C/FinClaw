@@ -19,7 +19,7 @@
     "@finclaw/infra": "workspace:*",
     "@finclaw/storage": "workspace:*",
     "@finclaw/types": "workspace:*",
-    "feedsmith": "^2.9.0",
+    "feedsmith": "^2.9.4",
     "zod": "^4.0.0"
   }
 }
