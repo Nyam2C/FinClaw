@@ -173,4 +173,5 @@ export type {
   ToolHandler,
   ExecutionToolResult,
   RunnerOptions,
+  RunnerTracerAdapter,
 } from './execution/index.js';

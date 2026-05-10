@@ -17,4 +17,4 @@ export type { ToolHandler, ExecutionToolResult } from './tool-executor.js';
 export { TokenCounter } from './tokens.js';
 
 export { Runner } from './runner.js';
-export type { RunnerOptions } from './runner.js';
+export type { RunnerOptions, RunnerTracerAdapter } from './runner.js';

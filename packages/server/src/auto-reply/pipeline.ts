@@ -300,6 +300,18 @@ export class AutoReplyPipeline {
             action: 'continue',
             data: retrievalResult,
           });
+          // Phase 30 hotfix P0-3: rerankMeta 를 audit log 로 출력 (agent_runs.rerank_meta 부착은
+          // auto-reply 경로에 addAgentRun 자체 호출이 없어 이번 phase 범위 밖).
+          if (retrievalResult.rerankMeta) {
+            this.deps.logger.info('memory.rerank.observed', {
+              event: 'memory.rerank.observed',
+              sessionKey: ctx.sessionKey,
+              traceId: rootTraceContext?.traceId,
+              model: retrievalResult.rerankMeta.model,
+              topK: retrievalResult.rerankMeta.scoresAfter.length,
+              swaps: retrievalResult.rerankMeta.swaps,
+            });
+          }
         } catch (err) {
           this.deps.logger.warn('memory retrieval failed (suppressed)', {
             event: 'memory.retrieval.stage_error',

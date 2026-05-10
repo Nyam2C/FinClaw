@@ -10,6 +10,7 @@ import {
   InMemoryToolRegistry,
   ProfileHealthMonitor,
   Runner,
+  type RunnerTracerAdapter,
 } from '@finclaw/agent';
 import { DiscordAccountSchema, DiscordAdapter } from '@finclaw/channel-discord';
 import { ConfigValidationError, loadConfig, validateConfigStrict } from '@finclaw/config';
@@ -368,11 +369,19 @@ async function main(): Promise<void> {
     }
   });
 
+  // Phase 30 A6: OTel tracer — span 을 SQLite spans 테이블에 SQL exporter 로 기록.
+  // Phase 30 hotfix P0-2: Runner 에 tracer adapter 주입 — turn / provider.stream / tool.execute span 활성화.
+  const tracer = createTracer({ db: storage.db });
+  const tracerAdapter: RunnerTracerAdapter = {
+    withSpan: (name, attrs, fn) => tracer.withSpan(name, attrs, async () => fn()),
+  };
+
   const runnerFactory: RunnerFactory = (dispatcher) =>
     new Runner({
       provider: anthropicAdapter,
       toolExecutor: dispatcher,
       laneManager: lanes,
+      tracer: tracerAdapter,
     });
 
   // 4b. 실행 어댑터 (storage + toolRegistry 주입 — per-request dispatcher를 빌드)
@@ -426,9 +435,6 @@ async function main(): Promise<void> {
       rerankTopKFirst: rerankCfg?.topKFirst,
     },
   );
-
-  // Phase 30 A6: OTel tracer — span 을 SQLite spans 테이블에 SQL exporter 로 기록.
-  const tracer = createTracer({ db: storage.db });
 
   const pipeline = new AutoReplyPipeline(
     {
@@ -526,6 +532,8 @@ async function main(): Promise<void> {
     modelAliasIndex,
     fallbackChain: DEFAULT_FALLBACK_CHAIN,
     maxConsecutiveFailures,
+    // Phase 30 hotfix P0-1: schedule 실행을 새 trace 로 감싸 agent_runs.trace_id 부착.
+    tracer,
     onRunComplete: async (args) => {
       if (deliveryHook) {
         await deliveryHook(args);
@@ -571,6 +579,8 @@ async function main(): Promise<void> {
       attachMemoryService,
       // Phase 26 D: agent_runs 영속화 + agent.runs.* RPC 가 사용 (server.ts 에서 재패스).
       db: storage.db,
+      // Phase 30 hotfix P0-1: agent.run RPC 진입을 span 으로 감싸 traceId 강제.
+      tracer,
     },
     // Phase 28: schedule.* RPC 배선.
     scheduleDeps: { db: storage.db, scheduler },
