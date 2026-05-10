@@ -86,7 +86,7 @@ describe('Phase 30 B8 — forceToolChoice in providers', () => {
       const it2 = iter[Symbol.asyncIterator]();
       await it2.next();
 
-      const body = spy.mock.calls[0]?.[0] as Record<string, unknown>;
+      const body = spy.mock.calls[0]?.[0] as unknown as Record<string, unknown>;
       expect(body['tool_choice']).toEqual({
         type: 'function',
         function: { name: 'analyze_market' },
