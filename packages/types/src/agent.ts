@@ -109,6 +109,17 @@ export interface AgentRun {
   memoryId?: string;
   /** Phase 29 B: RAG 인용 추출 결과 (응답이 의존한 memory.id 배열) */
   usedMemoryIds?: string[];
+  /** Phase 30 A: 본 run 을 묶는 W3C trace ID (32 hex). */
+  traceId?: string;
+  /** Phase 30 A: 본 run 의 부모 span ID (16 hex; pipeline 진입 span). */
+  parentSpanId?: string;
+  /** Phase 30 D: RAG re-ranking 통계. */
+  rerankMeta?: {
+    readonly model: string;
+    readonly scoresBefore: readonly number[];
+    readonly scoresAfter: readonly number[];
+    readonly swaps: number;
+  };
   /** 실행 실패 시 에러 메시지 */
   error?: string;
   createdAt: Timestamp;

@@ -28,6 +28,7 @@ import {
 } from '../auto-reply/execution-adapter.js';
 import type { RouterHelper } from '../auto-reply/router-helper.js';
 import { buildDispatcher } from '../auto-reply/tool-dispatcher-adapter.js';
+import type { FinclawTracer } from '../observability/tracer.js';
 import { nextRunAt as computeNextRunAt, parseCron } from './cron.js';
 
 export interface SchedulerCallbacks {
@@ -62,6 +63,11 @@ export interface SchedulerDeps extends SchedulerCallbacks {
   readonly maxConsecutiveFailures?: number;
   /** 기본 timeout (ms). schedule.timeoutMs 가 우선. 기본 60_000. */
   readonly defaultTimeoutMs?: number;
+  /**
+   * Phase 30 hotfix P0-1: schedule 실행을 새 span 으로 감싸 active trace context 강제.
+   * 미주입 시 기존 동작 (agent_runs.trace_id NULL).
+   */
+  readonly tracer?: FinclawTracer;
 }
 
 const POLL_INTERVAL_MS = 60_000;
@@ -170,182 +176,209 @@ export class SchedulerService {
     let runId: string | null = null;
     let output = '';
     let error: string | undefined;
-    try {
-      const sessionKey = createSessionKey(`schedule-${s.id}-${randomUUID()}`);
-      const agentIdBrand = createAgentId(s.agentId as string);
-      const { dispatcher, toolDefinitions } = buildDispatcher(this.deps.toolRegistry, {
-        sessionId: sessionKey as string,
-        userId: 'scheduler',
-        channelId: 'scheduler',
-      });
-      const runner = this.deps.runnerFactory(dispatcher);
-      const userMsg: ConversationMessage = { role: 'user', content: s.prompt };
-      const abortController = new AbortController();
-      const timeoutMs = s.timeoutMs ?? this.deps.defaultTimeoutMs ?? 60_000;
-      const timer = setTimeout(() => abortController.abort(), timeoutMs);
-
-      const role = 'analysis' as const;
-      const decision = this.deps.router
-        ? this.deps.router({ role, toolNames: toolDefinitions.map((t) => t.name) })
-        : undefined;
-      const exposedTools = decision
-        ? toolDefinitions.filter((t) => decision.allowedToolNames.includes(t.name))
-        : toolDefinitions;
-      const buildParams = (model: ModelRef): AgentRunParams => ({
-        agentId: agentIdBrand,
-        sessionKey,
-        model,
-        systemPrompt: this.deps.systemPrompt,
-        messages: [userMsg],
-        tools: exposedTools.length > 0 ? [...exposedTools] : undefined,
-        abortSignal: abortController.signal,
-      });
-
-      let usedModelId: string | undefined;
+    // Phase 30 hotfix P0-1: schedule 실행을 새 trace 로 감싸 trace_id 가 agent_runs 에 비어있지 않게.
+    // tracer 미주입 시 traceCtx 는 빈 객체 — addAgentRun 의 traceId 부착도 자연 skip.
+    const tracer = this.deps.tracer;
+    const withSchedSpan = <T>(
+      fn: (ctx?: { traceId: string; parentSpanId?: string }) => Promise<T>,
+    ): Promise<T> => {
+      if (!tracer) {
+        return fn(undefined);
+      }
+      return tracer.withSpan(
+        'scheduler.run',
+        { scheduleId: s.id, agentId: s.agentId as string, manual: opts.manual },
+        async (ctx) => fn({ traceId: ctx.traceId, parentSpanId: ctx.spanId }),
+      );
+    };
+    return withSchedSpan(async (traceCtx) => {
       try {
-        let result;
-        if (decision && this.deps.modelCatalog && this.deps.modelAliasIndex) {
-          const others = (this.deps.fallbackChain ?? []).filter((m) => m !== decision.modelId);
-          const chain = [decision.modelId, ...others];
-          const catalog = this.deps.modelCatalog;
-          const aliasIndex = this.deps.modelAliasIndex;
-          const fallback = await runWithModelFallback(
-            {
-              models: chain.map((raw) => ({ raw })),
-              maxRetriesPerModel: 1,
-              retryBaseDelayMs: 500,
-              fallbackOn: DEFAULT_FALLBACK_TRIGGERS,
-              abortSignal: abortController.signal,
-              floor: decision.decision.floor,
-            },
-            async (resolved) =>
-              runner.execute(
-                buildParams({
-                  ...this.deps.defaultModel,
-                  provider: resolved.provider,
-                  model: resolved.modelId,
-                  contextWindow: resolved.entry.contextWindow,
-                  maxOutputTokens: Math.min(
-                    resolved.entry.maxOutputTokens,
-                    this.deps.defaultModel.maxOutputTokens,
-                  ),
-                }),
-              ),
-            (ref) => resolveModel(ref, catalog, aliasIndex),
-          );
-          result = fallback.result;
-          usedModelId = fallback.modelUsed.modelId;
-        } else {
-          const modelRef: ModelRef = decision
-            ? { ...this.deps.defaultModel, model: decision.modelId }
-            : this.deps.defaultModel;
-          result = await runner.execute(buildParams(modelRef));
-        }
-        output = extractAssistantText(result.messages);
-        const toolCalls = collectToolCalls(result.messages, startedAt);
-        const durationMs = Date.now() - startedAt;
-        const inserted = addAgentRun(this.deps.db, {
-          agentId: agentIdBrand,
-          prompt: s.prompt,
-          output,
-          toolCalls: JSON.stringify(toolCalls),
-          tokensInput: result.usage.inputTokens,
-          tokensOutput: result.usage.outputTokens,
-          durationMs,
-          modelUsed: usedModelId ?? this.deps.defaultModel.model,
-          role,
+        const sessionKey = createSessionKey(`schedule-${s.id}-${randomUUID()}`);
+        const agentIdBrand = createAgentId(s.agentId as string);
+        const { dispatcher, toolDefinitions } = buildDispatcher(this.deps.toolRegistry, {
+          sessionId: sessionKey as string,
+          userId: 'scheduler',
+          channelId: 'scheduler',
         });
-        runId = inserted.id;
-        this.deps.db.prepare('UPDATE agent_runs SET schedule_id = ? WHERE id = ?').run(s.id, runId);
-        this.deps.profileHealth.recordResult(this.deps.profileId ?? 'default', true);
-      } catch (runErr) {
-        if (runErr instanceof ModelFloorExhaustedError) {
-          error = `model_floor_exhausted: ${runErr.floor}`;
-        } else {
-          error = (runErr as Error).message;
-        }
-        const durationMs = Date.now() - startedAt;
-        const inserted = addAgentRun(this.deps.db, {
+        const runner = this.deps.runnerFactory(dispatcher);
+        const userMsg: ConversationMessage = { role: 'user', content: s.prompt };
+        const abortController = new AbortController();
+        const timeoutMs = s.timeoutMs ?? this.deps.defaultTimeoutMs ?? 60_000;
+        const timer = setTimeout(() => abortController.abort(), timeoutMs);
+
+        const role = 'analysis' as const;
+        const decision = this.deps.router
+          ? this.deps.router({ role, toolNames: toolDefinitions.map((t) => t.name) })
+          : undefined;
+        const exposedTools = decision
+          ? toolDefinitions.filter((t) => decision.allowedToolNames.includes(t.name))
+          : toolDefinitions;
+        const buildParams = (model: ModelRef): AgentRunParams => ({
           agentId: agentIdBrand,
-          prompt: s.prompt,
-          output: '',
-          durationMs,
-          modelUsed: this.deps.defaultModel.model,
-          role,
+          sessionKey,
+          model,
+          systemPrompt: this.deps.systemPrompt,
+          messages: [userMsg],
+          tools: exposedTools.length > 0 ? [...exposedTools] : undefined,
+          abortSignal: abortController.signal,
+        });
+
+        let usedModelId: string | undefined;
+        try {
+          let result;
+          if (decision && this.deps.modelCatalog && this.deps.modelAliasIndex) {
+            const others = (this.deps.fallbackChain ?? []).filter((m) => m !== decision.modelId);
+            const chain = [decision.modelId, ...others];
+            const catalog = this.deps.modelCatalog;
+            const aliasIndex = this.deps.modelAliasIndex;
+            const fallback = await runWithModelFallback(
+              {
+                models: chain.map((raw) => ({ raw })),
+                maxRetriesPerModel: 1,
+                retryBaseDelayMs: 500,
+                fallbackOn: DEFAULT_FALLBACK_TRIGGERS,
+                abortSignal: abortController.signal,
+                floor: decision.decision.floor,
+              },
+              async (resolved) =>
+                runner.execute(
+                  buildParams({
+                    ...this.deps.defaultModel,
+                    provider: resolved.provider,
+                    model: resolved.modelId,
+                    contextWindow: resolved.entry.contextWindow,
+                    maxOutputTokens: Math.min(
+                      resolved.entry.maxOutputTokens,
+                      this.deps.defaultModel.maxOutputTokens,
+                    ),
+                  }),
+                ),
+              (ref) => resolveModel(ref, catalog, aliasIndex),
+            );
+            result = fallback.result;
+            usedModelId = fallback.modelUsed.modelId;
+          } else {
+            const modelRef: ModelRef = decision
+              ? { ...this.deps.defaultModel, model: decision.modelId }
+              : this.deps.defaultModel;
+            result = await runner.execute(buildParams(modelRef));
+          }
+          output = extractAssistantText(result.messages);
+          const toolCalls = collectToolCalls(result.messages, startedAt);
+          const durationMs = Date.now() - startedAt;
+          const inserted = addAgentRun(this.deps.db, {
+            agentId: agentIdBrand,
+            prompt: s.prompt,
+            output,
+            toolCalls: JSON.stringify(toolCalls),
+            tokensInput: result.usage.inputTokens,
+            tokensOutput: result.usage.outputTokens,
+            durationMs,
+            modelUsed: usedModelId ?? this.deps.defaultModel.model,
+            role,
+            // Phase 30 hotfix P0-1: schedule 실행이 자체 trace 의 root, agent_runs 가 그 아래.
+            traceId: traceCtx?.traceId,
+            parentSpanId: traceCtx?.parentSpanId,
+          });
+          runId = inserted.id;
+          this.deps.db
+            .prepare('UPDATE agent_runs SET schedule_id = ? WHERE id = ?')
+            .run(s.id, runId);
+          this.deps.profileHealth.recordResult(this.deps.profileId ?? 'default', true);
+        } catch (runErr) {
+          if (runErr instanceof ModelFloorExhaustedError) {
+            error = `model_floor_exhausted: ${runErr.floor}`;
+          } else {
+            error = (runErr as Error).message;
+          }
+          const durationMs = Date.now() - startedAt;
+          const inserted = addAgentRun(this.deps.db, {
+            agentId: agentIdBrand,
+            prompt: s.prompt,
+            output: '',
+            durationMs,
+            modelUsed: this.deps.defaultModel.model,
+            role,
+            error,
+            // Phase 30 hotfix P0-1: traceId / parentSpanId 부착 (성공/실패 동일).
+            traceId: traceCtx?.traceId,
+            parentSpanId: traceCtx?.parentSpanId,
+          });
+          runId = inserted.id;
+          this.deps.db
+            .prepare('UPDATE agent_runs SET schedule_id = ? WHERE id = ?')
+            .run(s.id, runId);
+          this.deps.profileHealth.recordResult(this.deps.profileId ?? 'default', false);
+        } finally {
+          clearTimeout(timer);
+        }
+
+        // schedule.last_run + next_run_at 갱신.
+        let nextMs: number | null = null;
+        try {
+          const cron = parseCron(s.cron);
+          nextMs = computeNextRunAt(cron, Date.now());
+        } catch (cronErr) {
+          this.deps.logger.warn('scheduler.cron_invalid', {
+            event: 'scheduler.cron_invalid',
+            scheduleId: s.id,
+            cron: s.cron,
+            error: (cronErr as Error).message,
+          });
+        }
+        markScheduleRun(this.deps.db, s.id, runId, Date.now(), nextMs);
+
+        // 연속 실패 추적 + auto-disable.
+        const max = this.deps.maxConsecutiveFailures ?? 3;
+        const fresh = getSchedule(this.deps.db, s.id);
+        if (!fresh) {
+          // 레이스: 삭제된 schedule. 갱신만 skip.
+        } else if (error) {
+          const failures = fresh.consecutiveFailures + 1;
+          const shouldDisable = failures >= max;
+          updateSchedule(this.deps.db, s.id, {
+            consecutiveFailures: failures,
+            status: shouldDisable ? 'disabled' : 'failing',
+            ...(shouldDisable ? { enabled: false } : {}),
+          });
+        } else if (fresh.consecutiveFailures > 0 || fresh.status !== 'active') {
+          updateSchedule(this.deps.db, s.id, {
+            consecutiveFailures: 0,
+            status: 'active',
+          });
+        }
+
+        this.deps.logger.info(error ? 'schedule.failed' : 'schedule.triggered', {
+          event: error ? 'schedule.failed' : 'schedule.triggered',
+          scheduleId: s.id,
+          name: s.name,
+          agentRunId: runId,
+          durationMs: Date.now() - startedAt,
+          manual: opts.manual,
           error,
         });
-        runId = inserted.id;
-        this.deps.db.prepare('UPDATE agent_runs SET schedule_id = ? WHERE id = ?').run(s.id, runId);
-        this.deps.profileHealth.recordResult(this.deps.profileId ?? 'default', false);
-      } finally {
-        clearTimeout(timer);
-      }
 
-      // schedule.last_run + next_run_at 갱신.
-      let nextMs: number | null = null;
-      try {
-        const cron = parseCron(s.cron);
-        nextMs = computeNextRunAt(cron, Date.now());
-      } catch (cronErr) {
-        this.deps.logger.warn('scheduler.cron_invalid', {
-          event: 'scheduler.cron_invalid',
-          scheduleId: s.id,
-          cron: s.cron,
-          error: (cronErr as Error).message,
-        });
-      }
-      markScheduleRun(this.deps.db, s.id, runId, Date.now(), nextMs);
-
-      // 연속 실패 추적 + auto-disable.
-      const max = this.deps.maxConsecutiveFailures ?? 3;
-      const fresh = getSchedule(this.deps.db, s.id);
-      if (!fresh) {
-        // 레이스: 삭제된 schedule. 갱신만 skip.
-      } else if (error) {
-        const failures = fresh.consecutiveFailures + 1;
-        const shouldDisable = failures >= max;
-        updateSchedule(this.deps.db, s.id, {
-          consecutiveFailures: failures,
-          status: shouldDisable ? 'disabled' : 'failing',
-          ...(shouldDisable ? { enabled: false } : {}),
-        });
-      } else if (fresh.consecutiveFailures > 0 || fresh.status !== 'active') {
-        updateSchedule(this.deps.db, s.id, {
-          consecutiveFailures: 0,
-          status: 'active',
-        });
-      }
-
-      this.deps.logger.info(error ? 'schedule.failed' : 'schedule.triggered', {
-        event: error ? 'schedule.failed' : 'schedule.triggered',
-        scheduleId: s.id,
-        name: s.name,
-        agentRunId: runId,
-        durationMs: Date.now() - startedAt,
-        manual: opts.manual,
-        error,
-      });
-
-      if (this.deps.onRunComplete) {
-        try {
-          await this.deps.onRunComplete({
-            schedule: fresh ?? s,
-            agentRunId: runId,
-            output,
-            error,
-          });
-        } catch (deliveryErr) {
-          this.deps.logger.warn('schedule.delivery_failed', {
-            event: 'schedule.delivery_failed',
-            scheduleId: s.id,
-            error: (deliveryErr as Error).message,
-          });
+        if (this.deps.onRunComplete) {
+          try {
+            await this.deps.onRunComplete({
+              schedule: fresh ?? s,
+              agentRunId: runId,
+              output,
+              error,
+            });
+          } catch (deliveryErr) {
+            this.deps.logger.warn('schedule.delivery_failed', {
+              event: 'schedule.delivery_failed',
+              scheduleId: s.id,
+              error: (deliveryErr as Error).message,
+            });
+          }
         }
+        return { runId };
+      } finally {
+        handle.release();
+        this.active.delete(s.id);
       }
-      return { runId };
-    } finally {
-      handle.release();
-      this.active.delete(s.id);
-    }
+    });
   }
 }

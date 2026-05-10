@@ -126,6 +126,14 @@ export class OpenAIAdapter implements ProviderAdapter {
             ...toOpenAIMessages(params.messages.filter((m) => m.role !== 'system')),
           ],
           ...(params.tools?.length ? { tools: toOpenAITools(params.tools) } : {}),
+          ...(params.forceToolChoice
+            ? {
+                tool_choice: {
+                  type: 'function' as const,
+                  function: { name: params.forceToolChoice.name },
+                },
+              }
+            : {}),
           ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
           stream: true,
           stream_options: { include_usage: true },

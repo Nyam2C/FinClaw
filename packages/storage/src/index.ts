@@ -52,8 +52,11 @@ export {
 } from './embeddings/registry.js';
 export {
   mergeHybridResults,
+  rerankResults,
   type ChunkSearchResult,
   type HybridSearchOptions,
+  type RerankMeta,
+  type RerankOptions,
 } from './search/hybrid.js';
 export { searchFts } from './search/fts.js';
 export { searchVector } from './search/vector.js';
@@ -115,6 +118,23 @@ export {
   type UpdateScheduleInput,
   type ListSchedulesOptions,
 } from './schedules.js';
+export {
+  addSpan,
+  listSpansByTrace,
+  getSpanTree,
+  type SpanRow,
+  type SpanTreeNode,
+} from './spans.js';
+export {
+  addAccessLog,
+  listAccessLog,
+  purgeAccessLog,
+  type AccessLogEntry,
+  type ListAccessLogOptions,
+} from './access-log.js';
+export { type Reranker } from './rerank/index.js';
+export { LocalReranker, type LocalRerankerOptions } from './rerank/local.js';
+export { MockReranker, createRerankerWithFallback } from './rerank/mock.js';
 
 // ─── StorageAdapter factory ───
 

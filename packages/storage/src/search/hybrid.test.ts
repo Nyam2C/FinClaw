@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { mergeHybridResults, type ChunkSearchResult } from './hybrid.js';
+import type { Reranker } from '../rerank/index.js';
+import { mergeHybridResults, rerankResults, type ChunkSearchResult } from './hybrid.js';
 
 function vec(id: string, memoryId: string, score: number): ChunkSearchResult {
   return { chunkId: id, memoryId, text: `text-${id}`, score, source: 'vector' };
@@ -56,5 +57,73 @@ describe('mergeHybridResults', () => {
   it('empty input', () => {
     const results = mergeHybridResults([], []);
     expect(results).toHaveLength(0);
+  });
+});
+
+// ─── Phase 30 D8: rerankResults ───
+
+const fakeChunks = (n: number): ChunkSearchResult[] =>
+  Array.from({ length: n }, (_, i) => ({
+    chunkId: `c${i}`,
+    memoryId: `m${i}`,
+    text: `text-${i}`,
+    score: (n - i) / n,
+    source: 'hybrid' as const,
+  }));
+
+describe('Phase 30 D8 — rerankResults', () => {
+  it('returns top-K-final without reranker (slice only)', async () => {
+    const initial = fakeChunks(10);
+    const result = await rerankResults('q', initial, { topKFinal: 3 });
+    expect(result.chunks).toHaveLength(3);
+    expect(result.chunks.map((c) => c.chunkId)).toEqual(['c0', 'c1', 'c2']);
+    expect(result.rerankMeta).toBeUndefined();
+  });
+
+  it('returns empty when initial is empty (no reranker call)', async () => {
+    const reranker: Reranker = {
+      id: 'never-called',
+      async rerank() {
+        throw new Error('should not be called');
+      },
+    };
+    const result = await rerankResults('q', [], { reranker, topKFinal: 3 });
+    expect(result.chunks).toHaveLength(0);
+    expect(result.rerankMeta).toBeUndefined();
+  });
+
+  it('reorders with reverse reranker (mock-reverse) and reports swaps > 0', async () => {
+    const initial = fakeChunks(5);
+    const reverseReranker: Reranker = {
+      id: 'mock-reverse',
+      // 첫 번째에 가장 낮은 점수 → 마지막에 가장 높은 점수
+      async rerank(_q, candidates) {
+        return candidates.map((_, i) => i);
+      },
+    };
+    const result = await rerankResults('q', initial, {
+      reranker: reverseReranker,
+      topKFinal: 3,
+    });
+    expect(result.chunks.map((c) => c.chunkId)).toEqual(['c4', 'c3', 'c2']);
+    expect(result.rerankMeta?.model).toBe('mock-reverse');
+    expect(result.rerankMeta?.swaps).toBeGreaterThan(0);
+    expect(result.rerankMeta?.scoresAfter).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it('keeps order when reranker mirrors the initial order (swaps = 0)', async () => {
+    const initial = fakeChunks(5);
+    const sameOrder: Reranker = {
+      id: 'same',
+      async rerank(_q, candidates) {
+        return candidates.map((_, i) => candidates.length - i);
+      },
+    };
+    const result = await rerankResults('q', initial, {
+      reranker: sameOrder,
+      topKFinal: 3,
+    });
+    expect(result.chunks.map((c) => c.chunkId)).toEqual(['c0', 'c1', 'c2']);
+    expect(result.rerankMeta?.swaps).toBe(0);
   });
 });

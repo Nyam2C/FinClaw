@@ -42,7 +42,10 @@ export type RpcMethod =
   | 'chat.history'
   | 'system.health'
   | 'system.info'
-  | 'system.ping';
+  | 'system.ping'
+  | 'trace.get'
+  | 'trace.list'
+  | 'audit.list';
 
 /** JSON-RPC 2.0 요청 */
 export interface RpcRequest<T = unknown> {

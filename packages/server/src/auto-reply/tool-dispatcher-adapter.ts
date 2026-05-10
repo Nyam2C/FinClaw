@@ -49,6 +49,9 @@ export function buildDispatcher(
         );
         return result.content;
       },
+      // Phase 30 B6: 도구 정의의 outputSchema/enforce 를 dispatcher 에 전파.
+      outputSchema: tool.definition.outputSchema,
+      enforceStructuredOutput: tool.definition.enforceStructuredOutput,
     });
   }
 

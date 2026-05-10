@@ -10,10 +10,25 @@ import type {
 } from '@finclaw/agent';
 import { ModelFloorExhaustedError } from '@finclaw/agent';
 import type { ModelRef, TickerSymbol } from '@finclaw/types';
+import { z } from 'zod/v4';
 import { analyzeMarket } from './analysis/market-analysis.js';
 import type { PortfolioStore } from './portfolio/store.js';
 import { createPortfolioTracker, type QuoteService } from './portfolio/tracker.js';
 import type { NewsAggregator, AnalysisOptions, NewsCategory } from './types.js';
+
+/**
+ * Phase 30 B5: analyze_market 의 structured output schema.
+ *
+ * 모델이 자유 텍스트가 아닌 schema 일치 객체를 반환하게 강제.
+ * runner 가 schema 검증 → 1회 retry → StructuredOutputValidationError.
+ */
+export const AnalyzeMarketOutputSchema = z.object({
+  trend: z.enum(['up', 'down', 'flat']),
+  volatility: z.number().min(0),
+  drivers: z.array(z.string()).max(10),
+  /** 1차 — 추가 자유 텍스트 요약 (필수 아님). */
+  summary: z.string().optional(),
+});
 
 /** analyze_market 등록 시 modelRef 결정 fallback (router 미주입 시). minModel=opus 보호. */
 const ANALYZE_MARKET_FALLBACK_MODEL: ModelRef = {
@@ -134,6 +149,9 @@ export function registerAnalyzeMarketTool(
     accessesSensitiveData: false,
     isExternal: true,
     timeoutMs: 30_000,
+    // Phase 30 B5: structured output 강제 — 도구 결과는 schema 일치 객체.
+    outputSchema: AnalyzeMarketOutputSchema,
+    enforceStructuredOutput: true,
   };
 
   const executor: ToolExecutor = async (input) => {

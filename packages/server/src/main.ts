@@ -10,6 +10,7 @@ import {
   InMemoryToolRegistry,
   ProfileHealthMonitor,
   Runner,
+  type RunnerTracerAdapter,
 } from '@finclaw/agent';
 import { DiscordAccountSchema, DiscordAdapter } from '@finclaw/channel-discord';
 import { ConfigValidationError, loadConfig, validateConfigStrict } from '@finclaw/config';
@@ -40,7 +41,10 @@ import { GENERAL_SKILL_METADATA, registerGeneralTools } from '@finclaw/skills-ge
 import {
   assertEmbeddingDimension,
   createEmbeddingProvider,
+  createRerankerWithFallback,
   createStorage,
+  LocalReranker,
+  purgeAccessLog,
   type EmbeddingProvider,
 } from '@finclaw/storage';
 import type {
@@ -64,6 +68,7 @@ import { SchedulerService } from './automation/scheduler.js';
 import { initChannels } from './channels/index.js';
 import type { GatewayServerConfig } from './gateway/rpc/types.js';
 import { createGatewayServer } from './gateway/server.js';
+import { createTracer } from './observability/tracer.js';
 import { loadPlugins } from './plugins/loader.js';
 import { ProcessLifecycle } from './process/lifecycle.js';
 import { MessageRouter } from './process/message-router.js';
@@ -128,14 +133,23 @@ export function requireEnv(name: string, env: NodeJS.ProcessEnv = process.env): 
  * 인스턴스를 공유한다 (키 하나로 4 영역 활성). embeddingProvider 미주입 시 각 service
  * 가 자체적으로 FTS-only fallback 으로 동작.
  */
-function wireMemoryServices(deps: ConstructorParameters<typeof DefaultMemoryCaptureService>[0]): {
+function wireMemoryServices(
+  deps: ConstructorParameters<typeof DefaultMemoryCaptureService>[0],
+  retrievalExtras?: {
+    reranker?: import('@finclaw/storage').Reranker;
+    rerankTopKFirst?: number;
+  },
+): {
   memoryCaptureService: DefaultMemoryCaptureService;
   memoryRetrievalService: DefaultMemoryRetrievalService;
   attachMemoryService: DefaultAttachMemoryService;
 } {
   return {
     memoryCaptureService: new DefaultMemoryCaptureService(deps),
-    memoryRetrievalService: new DefaultMemoryRetrievalService(deps),
+    memoryRetrievalService: new DefaultMemoryRetrievalService({
+      ...deps,
+      ...retrievalExtras,
+    }),
     attachMemoryService: new DefaultAttachMemoryService(deps),
   };
 }
@@ -355,11 +369,19 @@ async function main(): Promise<void> {
     }
   });
 
+  // Phase 30 A6: OTel tracer — span 을 SQLite spans 테이블에 SQL exporter 로 기록.
+  // Phase 30 hotfix P0-2: Runner 에 tracer adapter 주입 — turn / provider.stream / tool.execute span 활성화.
+  const tracer = createTracer({ db: storage.db });
+  const tracerAdapter: RunnerTracerAdapter = {
+    withSpan: (name, attrs, fn) => tracer.withSpan(name, attrs, async () => fn()),
+  };
+
   const runnerFactory: RunnerFactory = (dispatcher) =>
     new Runner({
       provider: anthropicAdapter,
       toolExecutor: dispatcher,
       laneManager: lanes,
+      tracer: tracerAdapter,
     });
 
   // 4b. 실행 어댑터 (storage + toolRegistry 주입 — per-request dispatcher를 빌드)
@@ -396,11 +418,23 @@ async function main(): Promise<void> {
   // - capture: 정규식 5종 명시적 선언 저장
   // - retrieval: hybrid (vector+FTS) RAG 주입, embeddingProvider 미주입 시 FTS-only fallback
   // - attach: agent.run output → memory 훅
-  const { memoryCaptureService, memoryRetrievalService, attachMemoryService } = wireMemoryServices({
-    db: storage.db,
-    embeddingProvider,
-    logger,
-  });
+  // Phase 30 D5: RAG re-ranker (config.rag.rerank.enabled 기본 true).
+  // LocalReranker (Xenova ONNX) 가 모델 미존재 시 mock 으로 자동 fallback.
+  const rerankCfg = finclawConfig.rag?.rerank;
+  const rerankEnabled = rerankCfg?.enabled !== false;
+  const reranker = rerankEnabled ? createRerankerWithFallback(new LocalReranker()) : undefined;
+
+  const { memoryCaptureService, memoryRetrievalService, attachMemoryService } = wireMemoryServices(
+    {
+      db: storage.db,
+      embeddingProvider,
+      logger,
+    },
+    {
+      reranker,
+      rerankTopKFirst: rerankCfg?.topKFirst,
+    },
+  );
 
   const pipeline = new AutoReplyPipeline(
     {
@@ -418,6 +452,7 @@ async function main(): Promise<void> {
       getChannel: (id) => channelPluginRegistry.get(id),
       memoryCaptureService,
       memoryRetrievalService,
+      tracer,
     },
   );
 
@@ -497,6 +532,8 @@ async function main(): Promise<void> {
     modelAliasIndex,
     fallbackChain: DEFAULT_FALLBACK_CHAIN,
     maxConsecutiveFailures,
+    // Phase 30 hotfix P0-1: schedule 실행을 새 trace 로 감싸 agent_runs.trace_id 부착.
+    tracer,
     onRunComplete: async (args) => {
       if (deliveryHook) {
         await deliveryHook(args);
@@ -542,6 +579,8 @@ async function main(): Promise<void> {
       attachMemoryService,
       // Phase 26 D: agent_runs 영속화 + agent.runs.* RPC 가 사용 (server.ts 에서 재패스).
       db: storage.db,
+      // Phase 30 hotfix P0-1: agent.run RPC 진입을 span 으로 감싸 traceId 강제.
+      tracer,
     },
     // Phase 28: schedule.* RPC 배선.
     scheduleDeps: { db: storage.db, scheduler },
@@ -555,6 +594,34 @@ async function main(): Promise<void> {
           await embeddingProvider.embedQuery('healthz');
         }
       : undefined,
+    // Phase 30 C3: access-log SQLite dual-write + traceId 부착.
+    accessLogDb: storage.db,
+    getTraceId: () => tracer.getCurrentContext()?.traceId,
+  });
+
+  // Phase 30 C4: access-log retention purge — 24h 주기 (scheduler internal cron 미지원이므로 setInterval).
+  // 기본 30 일, finclawConfig.accessLog.retentionDays 로 override.
+  const retentionDays = finclawConfig.accessLog?.retentionDays ?? 30;
+  const purgeIntervalMs = 24 * 60 * 60 * 1000;
+  const accessLogPurgeTimer = setInterval(() => {
+    try {
+      const removed = purgeAccessLog(storage.db, retentionDays);
+      logger.info('access_log.purged', {
+        event: 'access_log.purged',
+        removed,
+        retentionDays,
+      });
+    } catch (err) {
+      logger.warn('access_log.purge_failed', {
+        event: 'access_log.purge_failed',
+        error: (err as Error).message,
+      });
+    }
+  }, purgeIntervalMs);
+  // Node 가 timer 때문에 종료 안되는 것 방지 — daemon 모드에서만 활성.
+  accessLogPurgeTimer.unref();
+  lifecycle.register(async () => {
+    clearInterval(accessLogPurgeTimer);
   });
   logger.info('finance.* / memory.* / agent.* RPC methods wired');
   lifecycle.register(() => gateway.stop());

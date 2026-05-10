@@ -48,9 +48,11 @@ describe('openDatabase', () => {
         'memory_chunks_vec_vector_chunks00',
         'messages',
         'meta',
+        'access_log',
         'portfolio_holdings',
         'portfolios',
         'schedules',
+        'spans',
         'transactions',
       ].toSorted(),
     );
@@ -79,7 +81,7 @@ describe('openDatabase', () => {
     const result = database.db
       .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
       .get() as unknown as { value: string };
-    expect(result.value).toBe('7');
+    expect(result.value).toBe('10');
   });
 
   it('sqlite-vec 로드 확인 — SELECT vec_version()', () => {

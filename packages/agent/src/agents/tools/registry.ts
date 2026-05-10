@@ -37,6 +37,16 @@ export interface RegisteredToolDefinition extends ToolDefinition {
   readonly timeoutMs?: number;
   /** 외부 API 호출 도구 여부 (true이면 CircuitBreaker 적용) */
   readonly isExternal?: boolean;
+  /**
+   * Phase 30 B1: structured output 강제용 출력 schema (Zod).
+   *
+   * 정의된 도구는 모델이 자유 텍스트가 아닌 schema 일치 객체를 반환해야 한다.
+   * 위반 시 runner 가 1회 retry 후 StructuredOutputValidationError 발생.
+   * Zod 의존을 types 에 두지 않기 위해 generic ZodType 만 받음 (zod runtime 비의존).
+   */
+  readonly outputSchema?: import('zod/v4').ZodType<unknown>;
+  /** Phase 30 B1: outputSchema 가 정의되어도 enforce 여부를 별도 토글 (false → 검증 skip). */
+  readonly enforceStructuredOutput?: boolean;
 }
 
 /** RegisteredToolDefinition → ToolDefinition 변환 (LLM API 전송용) */
