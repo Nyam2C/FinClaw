@@ -3,6 +3,7 @@ import { join } from 'node:path';
 // packages/server/src/main.ts
 import {
   AnthropicAdapter,
+  approxTokenCount,
   BUILT_IN_MODELS,
   buildModelAliasIndex,
   DEFAULT_FALLBACK_CHAIN,
@@ -436,6 +437,9 @@ async function main(): Promise<void> {
     },
   );
 
+  // Phase 31 C: 컨텍스트 압축용 토큰 카운터 + 요약기 (Anthropic 1회 호출).
+  const summarizer = (text: string) => anthropicAdapter.summarize(text, DEFAULT_MODEL.model);
+
   const pipeline = new AutoReplyPipeline(
     {
       enableAck: true,
@@ -453,6 +457,8 @@ async function main(): Promise<void> {
       memoryCaptureService,
       memoryRetrievalService,
       tracer,
+      tokenCounter: approxTokenCount,
+      summarizer,
     },
   );
 

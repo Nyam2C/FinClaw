@@ -156,6 +156,9 @@ export type {
   CompactionResult,
 } from './agents/context/index.js';
 export { evaluateContextWindow, compactContext } from './agents/context/index.js';
+// Phase 31 C — compaction wiring 어댑터.
+export { summarizeText } from './providers/anthropic.js';
+export { approxTokenCount } from './execution/token-fn.js';
 
 // ── Phase 9: Execution ──
 export {
