@@ -30,6 +30,7 @@ import type { RouterHelper } from '../auto-reply/router-helper.js';
 import { buildDispatcher } from '../auto-reply/tool-dispatcher-adapter.js';
 import type { FinclawTracer } from '../observability/tracer.js';
 import { nextRunAt as computeNextRunAt, parseCron } from './cron.js';
+import { resolveCronStaggerMs } from './stagger.js';
 
 export interface SchedulerCallbacks {
   /**
@@ -161,6 +162,20 @@ export class SchedulerService {
           /* swallow */
         }
         continue;
+      }
+      const staggerMs = resolveCronStaggerMs(s);
+      if (staggerMs > 0) {
+        const jitter = Math.floor(Math.random() * staggerMs);
+        if (jitter > 0) {
+          // 이번 폴링 skip — 다음 분 폴링이 재평가 (SQLite 동시 락 안전).
+          this.deps.logger.debug('schedule.staggered', {
+            event: 'schedule.staggered',
+            scheduleId: s.id,
+            cron: s.cron,
+            jitterMs: jitter,
+          });
+          continue;
+        }
       }
       void this.runOne(s, { manual: false });
     }
