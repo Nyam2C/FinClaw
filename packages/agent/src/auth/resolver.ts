@@ -33,6 +33,9 @@ export interface ResolverOptions {
 const ENV_KEY_MAP: Record<ProviderId, string> = {
   anthropic: 'ANTHROPIC_API_KEY',
   openai: 'OPENAI_API_KEY',
+  // Phase 32 W5: claude-cli 는 OAuth(구독) 인증이라 API 키 미사용 — 이 resolver 경로를 타지 않음.
+  // ProviderId 유니온 완전성 위해 매핑만 둠 (Anthropic 백엔드).
+  'claude-cli': 'ANTHROPIC_API_KEY',
 };
 
 /**

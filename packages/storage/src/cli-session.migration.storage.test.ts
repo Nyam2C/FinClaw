@@ -1,12 +1,14 @@
-import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import type { AgentId } from '@finclaw/types';
 import * as sqliteVec from 'sqlite-vec';
 import { describe, expect, it } from 'vitest';
 import { addAgentRun, getAgentRun, updateAgentRunCliSession } from './agent-runs.js';
 import { openDatabase } from './database.js';
+
+const AGENT = 'agent-cli' as AgentId;
 
 function hasColumn(db: DatabaseSync, table: string, col: string): boolean {
   const cols = db.prepare(`PRAGMA table_info('${table}')`).all() as Array<{ name: string }>;
@@ -92,7 +94,7 @@ describe('migration v10 → v11 (agent_runs.cli_session_id)', () => {
     const db = openDatabase({ path: ':memory:' });
     try {
       const run = addAgentRun(db.db, {
-        agentId: randomUUID(),
+        agentId: AGENT,
         prompt: 'p',
         output: 'o',
         cliSessionId: 'sess1',
