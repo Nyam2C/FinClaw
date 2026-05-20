@@ -2,6 +2,13 @@ import { getEventBus, createCircuitBreaker, type CircuitBreaker } from '@finclaw
 import type { ToolDefinition } from '@finclaw/types';
 import { z } from 'zod/v4';
 import type { ToolGroupId } from './groups.js';
+import {
+  appendHistory,
+  detectToolCallLoop,
+  hashToolCall,
+  hashToolResult,
+  type ToolCallRecord,
+} from './loop-detector.js';
 import type { PolicyRule } from './policy.js';
 import { evaluateToolPolicy } from './policy.js';
 import {
@@ -131,17 +138,6 @@ export interface ToolRegistryHooks {
   afterToolExecute?: (payload: AfterToolExecutePayload) => Promise<AfterToolExecutePayload>;
 }
 
-// ── 루프 감지 ──
-
-const LOOP_THRESHOLD = 5;
-const LOOP_WINDOW_MS = 10_000;
-
-function isToolLoop(timestamps: number[]): boolean {
-  const now = Date.now();
-  const recent = timestamps.filter((t) => now - t < LOOP_WINDOW_MS);
-  return recent.length >= LOOP_THRESHOLD;
-}
-
 // ── Zod 변환 헬퍼 ──
 
 function jsonSchemaToZod(prop: Record<string, unknown>): z.ZodType {
@@ -170,7 +166,8 @@ export class InMemoryToolRegistry implements ToolRegistry {
   private readonly policyRules: PolicyRule[] = [];
   private readonly guardOptions: ResultGuardOptions;
   private readonly breakers = new Map<string, CircuitBreaker>();
-  private readonly callTimestamps = new Map<string, number[]>();
+  private callHistory: ToolCallRecord[] = [];
+  private readonly warningKeysSeen = new Set<string>();
   private readonly hooks?: ToolRegistryHooks;
 
   constructor(options?: { resultGuard?: Partial<ResultGuardOptions>; hooks?: ToolRegistryHooks }) {
@@ -272,7 +269,7 @@ export class InMemoryToolRegistry implements ToolRegistry {
       }
 
       // ② 정책 평가
-      const policyResult = evaluateToolPolicy(
+      let policyResult = evaluateToolPolicy(
         {
           toolName: name,
           toolDefinition: tool.definition,
@@ -283,6 +280,36 @@ export class InMemoryToolRegistry implements ToolRegistry {
         this.policyRules,
       );
 
+      // ③ 루프 감지 (sha256 hash + circuit breaker) — verdict emit 직전이어야 다운스트림이
+      // 최종 verdict 를 정확히 관찰. OpenClaw tool-loop-detection.ts generic_repeat + circuit_breaker.
+      const loopResult = detectToolCallLoop(this.callHistory, name, input);
+      if (loopResult.stuck) {
+        const dedupeKey = loopResult.warningKey ?? '';
+        if (!this.warningKeysSeen.has(dedupeKey)) {
+          this.warningKeysSeen.add(dedupeKey);
+          bus.emit('tool:loop:detected', name, loopResult.detector, loopResult.count);
+        }
+        if (loopResult.level === 'critical') {
+          // global_circuit_breaker / repeat-critical — 차단. verdict 도 'deny' 강제.
+          bus.emit('tool:policy:verdict', name, 'deny', 'loop-detector');
+          bus.emit('tool:policy:deny', name, loopResult.message);
+          this.callHistory = appendHistory(this.callHistory, {
+            toolName: name,
+            argsHash: hashToolCall(name, input),
+            resultHash: hashToolResult(undefined, new Error(loopResult.message)),
+          });
+          bus.emit('tool:execute:end', name, context.sessionId, Date.now() - startTime);
+          return guardToolResult({ content: loopResult.message, isError: true }, this.guardOptions);
+        }
+        // warning — 9-stage 결과를 require-approval 로 override.
+        policyResult = {
+          ...policyResult,
+          finalVerdict: 'require-approval',
+          decidingStage: 'loop-detector',
+          reason: loopResult.message,
+        };
+      }
+
       bus.emit('tool:policy:verdict', name, policyResult.finalVerdict, policyResult.decidingStage);
 
       if (policyResult.finalVerdict === 'deny') {
@@ -292,18 +319,6 @@ export class InMemoryToolRegistry implements ToolRegistry {
           { content: `Tool "${name}" denied: ${policyResult.reason}`, isError: true },
           this.guardOptions,
         );
-      }
-
-      if (policyResult.finalVerdict === 'require-approval') {
-        console.warn(`[ToolRegistry] Tool "${name}" requires approval (auto-approved)`);
-      }
-
-      // ③ 루프 감지
-      const timestamps = this.callTimestamps.get(name) ?? [];
-      timestamps.push(Date.now());
-      this.callTimestamps.set(name, timestamps.slice(-LOOP_THRESHOLD));
-      if (isToolLoop(timestamps)) {
-        console.warn(`[ToolRegistry] Tool loop detected for "${name}", forcing require-approval`);
       }
 
       // ④ beforeToolExecute 훅
@@ -363,6 +378,15 @@ export class InMemoryToolRegistry implements ToolRegistry {
           guarded = modified.result;
         }
 
+        // ⑧ Phase 31 D — 루프 감지용 호출 이력 기록.
+        this.callHistory = appendHistory(this.callHistory, {
+          toolName: name,
+          argsHash: hashToolCall(name, input),
+          resultHash: guarded.isError
+            ? hashToolResult(undefined, new Error(guarded.content))
+            : hashToolResult(guarded.content, undefined),
+        });
+
         bus.emit('tool:execute:end', name, context.sessionId, Date.now() - startTime);
         return guarded;
       } finally {
@@ -371,6 +395,11 @@ export class InMemoryToolRegistry implements ToolRegistry {
       }
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error);
+      this.callHistory = appendHistory(this.callHistory, {
+        toolName: name,
+        argsHash: hashToolCall(name, input),
+        resultHash: hashToolResult(undefined, error),
+      });
       bus.emit('tool:execute:error', name, context.sessionId, errMsg);
       bus.emit('tool:execute:end', name, context.sessionId, Date.now() - startTime);
       return guardToolResult(
