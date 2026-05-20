@@ -20,7 +20,7 @@ export interface DatabaseOptions {
 
 // ─── Schema ───
 
-const SCHEMA_VERSION = 10;
+const SCHEMA_VERSION = 11;
 
 const SCHEMA_DDL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -209,6 +209,7 @@ CREATE TABLE IF NOT EXISTS agent_runs (
   trace_id         TEXT,
   parent_span_id   TEXT,
   rerank_meta      TEXT,
+  cli_session_id   TEXT,
   error            TEXT,
   created_at       INTEGER NOT NULL
 );
@@ -459,6 +460,16 @@ CREATE TABLE IF NOT EXISTS portfolio_holdings (
       db.exec(`ALTER TABLE agent_runs ADD COLUMN rerank_meta TEXT;`);
     }
   },
+  // Phase 32 G1: agent_runs.cli_session_id — CLI 발급 세션 ID (audit). multi-turn 영속은 conversations.metadata(W1).
+  11: (db: DatabaseSync) => {
+    const cols = db.prepare(`PRAGMA table_info('agent_runs')`).all() as Array<{ name: string }>;
+    if (!cols.some((c) => c.name === 'cli_session_id')) {
+      db.exec(`ALTER TABLE agent_runs ADD COLUMN cli_session_id TEXT;`);
+    }
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_agent_runs_cli_session ON agent_runs(cli_session_id) WHERE cli_session_id IS NOT NULL;`,
+    );
+  },
 };
 
 // ─── Internal helpers ───
@@ -520,6 +531,10 @@ function ensurePostMigrationSchema(db: DatabaseSync): void {
   );
   // Phase 30 A3: agent_runs.trace_id 인덱스 — 동일 이유로 마이그레이션 후 보장.
   db.exec(`CREATE INDEX IF NOT EXISTS idx_agent_runs_trace_id ON agent_runs(trace_id);`);
+  // Phase 32 G1: agent_runs.cli_session_id 인덱스 — fresh DB SCHEMA_DDL 이 컬럼 만든 뒤 인덱스 보장.
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_agent_runs_cli_session ON agent_runs(cli_session_id) WHERE cli_session_id IS NOT NULL;`,
+  );
 }
 
 // ─── Public API ───

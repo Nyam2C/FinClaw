@@ -6,7 +6,7 @@ import * as sqliteVec from 'sqlite-vec';
 import { describe, expect, it } from 'vitest';
 import { openDatabase } from './database.js';
 
-describe('schema migration v5 → v10', () => {
+describe('schema migration v5 → v11', () => {
   it('preserves agent_runs and adds schedules + schedule_id + used_memory_ids columns', () => {
     const dir = mkdtempSync(join(tmpdir(), 'phase28-mig-'));
     const path = join(dir, 'db.sqlite');
@@ -32,10 +32,10 @@ describe('schema migration v5 → v10', () => {
         db.close();
       }
 
-      // 2) openDatabase 가 v10 으로 마이그레이션 (Phase 30 A3 + C1 + D4)
+      // 2) openDatabase 가 v11 으로 마이그레이션 (Phase 30 A3 + C1 + D4, Phase 32 G1)
       const upgraded = openDatabase({ path, enableWAL: false });
       try {
-        expect(upgraded.schemaVersion).toBe(10);
+        expect(upgraded.schemaVersion).toBe(11);
         // schedules 테이블 존재
         const tbl = upgraded.db
           .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='schedules'`)
@@ -66,11 +66,13 @@ describe('schema migration v5 → v10', () => {
         expect(accessLog).toBeTruthy();
         // rerank_meta 컬럼 존재 (v10)
         expect(cols.find((c) => c.name === 'rerank_meta')).toBeTruthy();
-        // 마이그레이션 후 schema_version meta 가 10 으로 갱신
+        // cli_session_id 컬럼 존재 (v11)
+        expect(cols.find((c) => c.name === 'cli_session_id')).toBeTruthy();
+        // 마이그레이션 후 schema_version meta 가 11 으로 갱신
         const ver = upgraded.db
           .prepare(`SELECT value FROM meta WHERE key='schema_version'`)
           .get() as { value: string };
-        expect(ver.value).toBe('10');
+        expect(ver.value).toBe('11');
       } finally {
         upgraded.close();
       }
@@ -79,7 +81,7 @@ describe('schema migration v5 → v10', () => {
     }
   });
 
-  it('idempotent: re-running openDatabase on v10 DB is a no-op', () => {
+  it('idempotent: re-running openDatabase on v11 DB is a no-op', () => {
     const dir = mkdtempSync(join(tmpdir(), 'phase28-mig-idem-'));
     const path = join(dir, 'db.sqlite');
     try {
@@ -87,7 +89,7 @@ describe('schema migration v5 → v10', () => {
       a.close();
       const b = openDatabase({ path, enableWAL: false });
       try {
-        expect(b.schemaVersion).toBe(10);
+        expect(b.schemaVersion).toBe(11);
       } finally {
         b.close();
       }

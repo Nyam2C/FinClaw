@@ -6,6 +6,8 @@ import {
   approxTokenCount,
   BUILT_IN_MODELS,
   buildModelAliasIndex,
+  createProviderAdapter,
+  DEFAULT_CLAUDE_BACKEND,
   DEFAULT_FALLBACK_CHAIN,
   InMemoryModelCatalog,
   InMemoryToolRegistry,
@@ -261,7 +263,30 @@ async function main(): Promise<void> {
   logger.info('Discord adapter logged in');
 
   // 4. Agent 레이어 (툴 레지스트리 + 러너 팩토리)
-  const anthropicAdapter = new AnthropicAdapter(anthropicKey);
+  // Phase 32 F: dual-path provider — config.provider 로 SDK / claude-cli 전환 (기본 SDK).
+  const sdkAdapter = new AnthropicAdapter(anthropicKey);
+  const providerAdapter = createProviderAdapter({
+    kind: finclawConfig.provider ?? 'anthropic-sdk',
+    apiKey: anthropicKey,
+    cliBackend: finclawConfig.cliBackend
+      ? {
+          ...DEFAULT_CLAUDE_BACKEND,
+          command: finclawConfig.cliBackend.command ?? 'claude',
+          reliability: finclawConfig.cliBackend.watchdog
+            ? { watchdog: finclawConfig.cliBackend.watchdog }
+            : undefined,
+        }
+      : undefined,
+    defaultTimeoutMs: finclawConfig.cliBackend?.timeoutMs ?? 60_000,
+    sdkFallback: sdkAdapter, // W2: CLI auth 만료 시 SDK 위임 (CLI 모드일 때만 쓰임)
+  });
+  logger.info('provider.initialized', {
+    event: 'provider.initialized',
+    providerKind: finclawConfig.provider ?? 'anthropic-sdk',
+    ...(finclawConfig.provider === 'claude-cli'
+      ? { note: 'CLI mode: streaming/caching/tool_use disabled' }
+      : {}),
+  });
   const lanes = new ConcurrencyLaneManager();
   const toolRegistry = new InMemoryToolRegistry();
 
@@ -428,6 +453,19 @@ async function main(): Promise<void> {
     }
   });
 
+  // Phase 32 P1-1: CLI 모드는 tool_use 를 bypass — 등록된 도구가 비활성임을 부팅 시 경고로 가시화.
+  // (CLI adapter 의 streamCompletion 은 text-only 라 skills-finance/general 도구가 호출되지 않음.)
+  if (finclawConfig.provider === 'claude-cli') {
+    const toolCount = toolRegistry.list().length;
+    if (toolCount > 0) {
+      logger.warn('provider.cli_tools_disabled', {
+        event: 'provider.cli_tools_disabled',
+        toolCount,
+        note: 'CLI mode bypasses tool_use; registered tools are inactive. Use provider=anthropic-sdk for live data.',
+      });
+    }
+  }
+
   // Phase 30 A6: OTel tracer — span 을 SQLite spans 테이블에 SQL exporter 로 기록.
   // Phase 30 hotfix P0-2: Runner 에 tracer adapter 주입 — turn / provider.stream / tool.execute span 활성화.
   const tracer = createTracer({ db: storage.db });
@@ -437,7 +475,7 @@ async function main(): Promise<void> {
 
   const runnerFactory: RunnerFactory = (dispatcher) =>
     new Runner({
-      provider: anthropicAdapter,
+      provider: providerAdapter,
       toolExecutor: dispatcher,
       laneManager: lanes,
       tracer: tracerAdapter,
@@ -496,7 +534,8 @@ async function main(): Promise<void> {
   );
 
   // Phase 31 C: 컨텍스트 압축용 토큰 카운터 + 요약기 (Anthropic 1회 호출).
-  const summarizer = (text: string) => anthropicAdapter.summarize(text, DEFAULT_MODEL.model);
+  // Phase 32 F: 요약기는 항상 SDK adapter 사용 (.summarize 는 AnthropicAdapter 전용 메서드).
+  const summarizer = (text: string) => sdkAdapter.summarize(text, DEFAULT_MODEL.model);
 
   const pipeline = new AutoReplyPipeline(
     {
