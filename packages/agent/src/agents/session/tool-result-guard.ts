@@ -88,24 +88,3 @@ export function truncateToolResult<T extends ToolResultLike>(
 
   return { ...block, content: newContent };
 }
-
-/**
- * 메시지 배열 일괄 처리 — 모든 user 메시지의 tool_result block guard.
- */
-export function applyToolResultGuard<T extends { role: string; content: unknown }>(
-  messages: T[],
-  maxChars: number = HARD_MAX_TOOL_RESULT_CHARS,
-): T[] {
-  return messages.map((msg) => {
-    if (msg.role !== 'user' || !Array.isArray(msg.content)) {
-      return msg;
-    }
-    const newContent = (msg.content as Array<{ type?: string }>).map((block) => {
-      if (block.type === 'tool_result') {
-        return truncateToolResult(block as ToolResultLike, maxChars);
-      }
-      return block;
-    });
-    return { ...msg, content: newContent };
-  });
-}
