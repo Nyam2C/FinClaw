@@ -79,6 +79,8 @@ export interface FinClawEventMap {
   'tool:circuit:change': (name: string, from: string, to: string) => void;
   /** Phase 31 D: sha256 기반 루프 감지 — generic_repeat / global_circuit_breaker. */
   'tool:loop:detected': (name: string, detector: string, count: number) => void;
+  /** Phase 31 E: 거대 tool_result 자동 truncate (Claude 400 oversize 방지). */
+  'tool:result:truncated': (callId: string, originalChars: number, maxChars: number) => void;
 
   // ── Phase 7: Session events ──
   'session:lock:acquire': (sessionId: string, pid: number) => void;

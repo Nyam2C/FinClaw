@@ -1,6 +1,16 @@
-import { retry, type RetryOptions, ConcurrencyLaneManager, type LaneId } from '@finclaw/infra';
+import {
+  retry,
+  type RetryOptions,
+  ConcurrencyLaneManager,
+  getEventBus,
+  type LaneId,
+} from '@finclaw/infra';
 // packages/agent/src/execution/runner.ts
 import type { AgentRunParams, ConversationMessage, ToolCall, TokenUsage } from '@finclaw/types';
+import {
+  HARD_MAX_TOOL_RESULT_CHARS,
+  truncateToolResult,
+} from '../agents/session/tool-result-guard.js';
 import { classifyFallbackError } from '../errors.js';
 import type { ProviderAdapter, ProviderRequestParams } from '../providers/adapter.js';
 import type { StreamEventListener, ExecutionResult } from './streaming.js';
@@ -161,15 +171,25 @@ export class Runner {
             }
           }
 
-          messages.push({
-            role: 'tool',
-            content: results.map((r) => ({
+          // Phase 31 E: 거대 tool result 를 messages push 직전 truncate (Claude 400 oversize 방지).
+          const guardedBlocks = results.map((r) => {
+            const block = {
               type: 'tool_result' as const,
               toolUseId: r.toolUseId,
               content: r.content,
               isError: r.isError,
-            })),
+            };
+            if (r.content.length > HARD_MAX_TOOL_RESULT_CHARS) {
+              getEventBus().emit(
+                'tool:result:truncated',
+                r.toolUseId,
+                r.content.length,
+                HARD_MAX_TOOL_RESULT_CHARS,
+              );
+            }
+            return truncateToolResult(block, HARD_MAX_TOOL_RESULT_CHARS);
           });
+          messages.push({ role: 'tool', content: guardedBlocks });
           return { continueLoop: true };
         };
 
