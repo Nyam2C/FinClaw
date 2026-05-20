@@ -70,6 +70,25 @@ export type { ProviderAdapter, ProviderRequestParams } from './providers/adapter
 export { AnthropicAdapter } from './providers/anthropic.js';
 export { OpenAIAdapter } from './providers/openai.js';
 
+// ─── providers (Phase 32 Backend-as-CLI) ───
+export { createProviderAdapter } from './providers/factory.js';
+export type { ProviderKind, ProviderFactoryConfig } from './providers/factory.js';
+export { CliProviderAdapter } from './providers/claude-cli/adapter.js';
+export { runCliAgent } from './providers/claude-cli/runner.js';
+export { CliFailoverError, classifyCliError } from './providers/claude-cli/errors.js';
+export type { CliFailoverReason } from './providers/claude-cli/errors.js';
+export {
+  DEFAULT_CLAUDE_BACKEND,
+  resolveClaudeBackend,
+  normalizeClaudeModel,
+} from './providers/claude-cli/backends.js';
+export type {
+  CliBackendConfig,
+  CliWatchdogProfile,
+  CliReliabilityConfig,
+  CliOutputMode,
+} from './providers/claude-cli/types.js';
+
 // ─── auth: cooldown ───
 export { CooldownTracker } from './auth/cooldown.js';
 export type { CooldownEntry } from './auth/cooldown.js';

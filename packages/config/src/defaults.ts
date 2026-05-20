@@ -57,6 +57,8 @@ const DEFAULTS = Object.freeze({
     automation: { strictFallback: true, logVerbose: true },
     override: { allowClientHint: true, respectMinModel: true },
   },
+  // Phase 32 W6: 기본 SDK 경로 유지 → CLI opt-in, 회귀 0.
+  provider: 'anthropic-sdk',
 }) satisfies FinClawConfig;
 
 /** 기본값을 유저 설정에 병합 (유저 값 우선) */

@@ -196,6 +196,27 @@ export const FinClawConfigSchema = z.strictObject({
       lastTouchedAt: z.string().optional(),
     })
     .optional(),
+  // Phase 32 W6: 백엔드 경로 선택 (top-level, 기존 agents.defaults.provider 와 분리).
+  provider: z.enum(['anthropic-sdk', 'claude-cli']).optional(),
+  cliBackend: z
+    .strictObject({
+      command: z.string().optional(),
+      timeoutMs: z.number().int().positive().optional(),
+      watchdog: z
+        .strictObject({
+          fresh: z
+            .strictObject({ noOutputTimeoutRatio: z.number().min(0.05).max(0.95).optional() })
+            .partial()
+            .optional(),
+          resume: z
+            .strictObject({ noOutputTimeoutRatio: z.number().min(0.05).max(0.95).optional() })
+            .partial()
+            .optional(),
+        })
+        .partial()
+        .optional(),
+    })
+    .optional(),
 });
 
 export type ValidatedFinClawConfig = z.infer<typeof FinClawConfigSchema>;
