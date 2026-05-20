@@ -453,6 +453,19 @@ async function main(): Promise<void> {
     }
   });
 
+  // Phase 32 P1-1: CLI 모드는 tool_use 를 bypass — 등록된 도구가 비활성임을 부팅 시 경고로 가시화.
+  // (CLI adapter 의 streamCompletion 은 text-only 라 skills-finance/general 도구가 호출되지 않음.)
+  if (finclawConfig.provider === 'claude-cli') {
+    const toolCount = toolRegistry.list().length;
+    if (toolCount > 0) {
+      logger.warn('provider.cli_tools_disabled', {
+        event: 'provider.cli_tools_disabled',
+        toolCount,
+        note: 'CLI mode bypasses tool_use; registered tools are inactive. Use provider=anthropic-sdk for live data.',
+      });
+    }
+  }
+
   // Phase 30 A6: OTel tracer — span 을 SQLite spans 테이블에 SQL exporter 로 기록.
   // Phase 30 hotfix P0-2: Runner 에 tracer adapter 주입 — turn / provider.stream / tool.execute span 활성화.
   const tracer = createTracer({ db: storage.db });
