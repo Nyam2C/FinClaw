@@ -40,10 +40,13 @@ import {
 } from '@finclaw/skills-finance';
 import { GENERAL_SKILL_METADATA, registerGeneralTools } from '@finclaw/skills-general';
 import {
+  addSchedule,
   assertEmbeddingDimension,
   createEmbeddingProvider,
   createRerankerWithFallback,
   createStorage,
+  deleteSchedule,
+  listSchedules,
   LocalReranker,
   purgeAccessLog,
   type EmbeddingProvider,
@@ -54,7 +57,10 @@ import type {
   FinClawConfig,
   ModelRef,
   Schedule,
+  ScheduleRpc,
+  Timestamp,
 } from '@finclaw/types';
+import { createAgentId } from '@finclaw/types';
 import { DefaultAttachMemoryService } from './auto-reply/agent-memory-hook.js';
 import { registerBuiltInCommands } from './auto-reply/commands/built-in.js';
 import { InMemoryCommandRegistry } from './auto-reply/commands/registry.js';
@@ -64,6 +70,7 @@ import { AutoReplyPipeline } from './auto-reply/pipeline.js';
 import { buildToolMetaIndex, makeRouterHelper } from './auto-reply/router-helper.js';
 import { DefaultMemoryCaptureService } from './auto-reply/stages/memory-capture.js';
 import { DefaultMemoryRetrievalService } from './auto-reply/stages/memory-retrieval.js';
+import { CronParseError, nextRunAt as computeNextRunAt, parseCron } from './automation/cron.js';
 import { deliverScheduleResult } from './automation/delivery.js';
 import { SchedulerService } from './automation/scheduler.js';
 import { initChannels } from './channels/index.js';
@@ -257,7 +264,58 @@ async function main(): Promise<void> {
   const anthropicAdapter = new AnthropicAdapter(anthropicKey);
   const lanes = new ConcurrencyLaneManager();
   const toolRegistry = new InMemoryToolRegistry();
-  registerGeneralTools(toolRegistry);
+
+  // Phase 31 F: agent 가 호출할 ScheduleRpc — gateway schedule.* 핸들러와 동일 로직을 wrap.
+  // 핸들러가 inline RpcMethodHandler 라 export 되지 않으므로 storage + cron 유틸을 직접 호출.
+  // agent 발화는 web/broadcast 채널로 송출 (deliveryTarget 미지정 시 기본값).
+  const scheduleRpc: ScheduleRpc = {
+    async create(req) {
+      const cron = parseCron(req.cron);
+      const next = computeNextRunAt(cron, Date.now());
+      const created = addSchedule(storage.db, {
+        name: req.name,
+        cron: req.cron,
+        agentId: createAgentId('default'),
+        prompt: req.prompt,
+        deliveryChannel: 'web',
+        deliveryTarget: 'broadcast',
+        enabled: req.enabled,
+        nextRunAt: next === null ? undefined : (next as Timestamp),
+      });
+      return { id: created.id, nextRunAt: created.nextRunAt ?? null };
+    },
+    async list(req) {
+      const items = listSchedules(storage.db, { limit: req.limit });
+      return {
+        schedules: items.map((s) => ({
+          id: s.id,
+          name: s.name,
+          cron: s.cron,
+          enabled: s.enabled,
+          status: s.status,
+          consecutiveFailures: s.consecutiveFailures,
+          nextRunAt: s.nextRunAt,
+        })),
+      };
+    },
+    async delete(req) {
+      deleteSchedule(storage.db, req.scheduleId);
+    },
+    async testCron(req) {
+      try {
+        const cron = parseCron(req.cron);
+        const next = computeNextRunAt(cron, Date.now());
+        return { valid: true, nextRunAt: next === null ? undefined : next };
+      } catch (err) {
+        if (err instanceof CronParseError) {
+          return { valid: false, reason: err.message };
+        }
+        throw err;
+      }
+    },
+  };
+
+  registerGeneralTools(toolRegistry, { scheduleRpc });
 
   // 4a. 모델 카탈로그 + 별칭 인덱스 + 프로필 건강 모니터.
   // (스킬 등록보다 먼저 생성 — Phase 24 E 의 analyze_market 등록 시점에 주입 필요.)
