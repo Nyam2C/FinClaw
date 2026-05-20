@@ -24,6 +24,8 @@ export interface AgentRunRow {
   parent_span_id: string | null;
   /** Phase 30 D4: RAG re-rank 통계 (JSON.stringify 결과). null 이면 rerank 미사용. */
   rerank_meta: string | null;
+  /** Phase 32 G1: CLI 발급 세션 ID (audit). */
+  cli_session_id: string | null;
   error: string | null;
   created_at: number;
 }
@@ -57,6 +59,8 @@ export interface AddAgentRunInput {
     readonly scoresAfter: readonly number[];
     readonly swaps: number;
   };
+  /** Phase 32 G1: CLI 발급 세션 ID (scheduler/rpc 경로에서 audit 기록). */
+  cliSessionId?: string;
   error?: string;
 }
 
@@ -91,6 +95,7 @@ function rowToAgentRun(row: AgentRunRow): AgentRun {
       row.rerank_meta === null
         ? undefined
         : (JSON.parse(row.rerank_meta) as AgentRun['rerankMeta']),
+    cliSessionId: row.cli_session_id === null ? undefined : row.cli_session_id,
     error: row.error === null ? undefined : row.error,
     createdAt: row.created_at as Timestamp,
   };
@@ -109,8 +114,8 @@ export function addAgentRun(db: DatabaseSync, input: AddAgentRunInput): AgentRun
     `INSERT INTO agent_runs
      (id, agent_id, prompt, output, tool_calls_json, tokens_input, tokens_output,
       duration_ms, model_used, role, memory_id, used_memory_ids,
-      trace_id, parent_span_id, rerank_meta, error, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      trace_id, parent_span_id, rerank_meta, cli_session_id, error, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     input.agentId as string,
@@ -129,6 +134,7 @@ export function addAgentRun(db: DatabaseSync, input: AddAgentRunInput): AgentRun
     input.traceId ?? null,
     input.parentSpanId ?? null,
     input.rerankMeta ? JSON.stringify(input.rerankMeta) : null,
+    input.cliSessionId ?? null,
     input.error ?? null,
     createdAt as number,
   );
@@ -191,5 +197,20 @@ export function linkMemoryToAgentRun(
   const result = db
     .prepare('UPDATE agent_runs SET memory_id = ? WHERE id = ?')
     .run(memoryId, agentRunId);
+  return result.changes > 0;
+}
+
+/**
+ * Phase 32 G1: agent_runs.cli_session_id 를 갱신 (CLI 응답의 session_id audit 기록).
+ * @returns 갱신 성공 여부 (해당 id 행 존재 여부)
+ */
+export function updateAgentRunCliSession(
+  db: DatabaseSync,
+  agentRunId: string,
+  cliSessionId: string,
+): boolean {
+  const result = db
+    .prepare('UPDATE agent_runs SET cli_session_id = ? WHERE id = ?')
+    .run(cliSessionId, agentRunId);
   return result.changes > 0;
 }

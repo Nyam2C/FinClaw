@@ -120,6 +120,8 @@ export interface AgentRun {
     readonly scoresAfter: readonly number[];
     readonly swaps: number;
   };
+  /** Phase 32 G1: CLI 발급 세션 ID (audit). */
+  cliSessionId?: string;
   /** 실행 실패 시 에러 메시지 */
   error?: string;
   createdAt: Timestamp;
