@@ -30,6 +30,7 @@ import type { RouterHelper } from '../auto-reply/router-helper.js';
 import { buildDispatcher } from '../auto-reply/tool-dispatcher-adapter.js';
 import type { FinclawTracer } from '../observability/tracer.js';
 import { nextRunAt as computeNextRunAt, parseCron } from './cron.js';
+import { resolveCronStaggerMs } from './stagger.js';
 
 export interface SchedulerCallbacks {
   /**
@@ -71,6 +72,24 @@ export interface SchedulerDeps extends SchedulerCallbacks {
 }
 
 const POLL_INTERVAL_MS = 60_000;
+
+/**
+ * Exponential backoff delays (in ms) indexed by consecutive error count.
+ * After the last entry the delay stays constant.
+ * OpenClaw src/cron/service/timer.ts:107-119 이식.
+ */
+const ERROR_BACKOFF_SCHEDULE_MS = [
+  30_000, // 1st error  →  30 s
+  60_000, // 2nd error  →   1 min
+  5 * 60_000, // 3rd error  →   5 min
+  15 * 60_000, // 4th error  →  15 min
+  60 * 60_000, // 5th+ error →  60 min
+];
+
+export function errorBackoffMs(consecutiveErrors: number): number {
+  const idx = Math.min(consecutiveErrors - 1, ERROR_BACKOFF_SCHEDULE_MS.length - 1);
+  return ERROR_BACKOFF_SCHEDULE_MS[Math.max(0, idx)];
+}
 
 export class SchedulerService {
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -161,6 +180,20 @@ export class SchedulerService {
           /* swallow */
         }
         continue;
+      }
+      const staggerMs = resolveCronStaggerMs(s);
+      if (staggerMs > 0) {
+        const jitter = Math.floor(Math.random() * staggerMs);
+        if (jitter > 0) {
+          // 이번 폴링 skip — 다음 분 폴링이 재평가 (SQLite 동시 락 안전).
+          this.deps.logger.debug('schedule.staggered', {
+            event: 'schedule.staggered',
+            scheduleId: s.id,
+            cron: s.cron,
+            jitterMs: jitter,
+          });
+          continue;
+        }
       }
       void this.runOne(s, { manual: false });
     }
@@ -326,6 +359,23 @@ export class SchedulerService {
             error: (cronErr as Error).message,
           });
         }
+        // Phase 31 B — 실패 시 backoff override (cron 의 다음 발화보다 backoff 가 나중이면 적용).
+        if (error && nextMs !== null) {
+          const failures = s.consecutiveFailures + 1;
+          const backoffMs = errorBackoffMs(failures);
+          const backoffNextMs = Date.now() + backoffMs;
+          if (backoffNextMs > nextMs) {
+            nextMs = backoffNextMs;
+            this.deps.logger.info('schedule.backoff_applied', {
+              event: 'schedule.backoff_applied',
+              scheduleId: s.id,
+              consecutiveFailures: failures,
+              backoffMs,
+              nextRunAt: backoffNextMs,
+            });
+          }
+        }
+
         markScheduleRun(this.deps.db, s.id, runId, Date.now(), nextMs);
 
         // 연속 실패 추적 + auto-disable.

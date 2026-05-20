@@ -63,6 +63,10 @@ export interface PipelineDependencies {
   readonly memoryRetrievalService?: MemoryRetrievalService;
   /** Phase 30 A6: 옵셔널 OTel tracer — 주입 시 각 stage 가 span 으로 묶임. */
   readonly tracer?: FinclawTracer;
+  /** Phase 31 C: 토큰 카운터 — summarizer 와 함께 주입 시 execute 단계 compaction 활성. */
+  readonly tokenCounter?: (text: string) => number;
+  /** Phase 31 C: 요약기 (Anthropic 1회 호출). tokenCounter 와 함께 주입돼야 동작. */
+  readonly summarizer?: (text: string) => Promise<string>;
 }
 
 /**
@@ -334,7 +338,12 @@ export class AutoReplyPipeline {
       this.deps.observer?.onStageStart?.('execute', ctx);
       const execResult = await stageSpan('execute', async () =>
         executeStage(
-          { ...enrichedCtx, traceContext: rootTraceContext },
+          {
+            ...enrichedCtx,
+            traceContext: rootTraceContext,
+            tokenCounter: this.deps.tokenCounter,
+            summarizer: this.deps.summarizer,
+          },
           this.deps.executionAdapter,
           combinedSignal,
         ),

@@ -11,6 +11,7 @@ export type * from './gateway.js';
 export type * from './finance.js';
 export type * from './notification.js';
 export type * from './automation.js';
+export type * from './schedule-rpc.js';
 export type * from './trace.js';
 
 // 런타임 값 (const enum 대체)

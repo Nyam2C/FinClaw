@@ -65,6 +65,11 @@ export class AnthropicAdapter implements ProviderAdapter {
     this.client = new Anthropic({ apiKey, baseURL: baseUrl });
   }
 
+  /** Phase 31 C — compactContext 의 summarizer 로 주입. SDK 1회 호출 요약. */
+  summarize(text: string, model: string): Promise<string> {
+    return summarizeText(text, this.client, model);
+  }
+
   // TODO(L3): params.tools를 SDK 호출에 전달해야 함 (Phase 9+ 도구 사용 기능)
   async chatCompletion(params: ProviderRequestParams): Promise<unknown> {
     // system 메시지 분리 (Anthropic API는 system을 별도 파라미터로 받음).
@@ -247,4 +252,25 @@ function wrapAnthropicError(error: unknown): Error {
     });
   }
   return error;
+}
+
+// Phase 31 C — compactContext 의 summarizer 인자로 주입.
+// Anthropic SDK 1회 호출로 텍스트를 300자 이내 한국어 요약.
+export async function summarizeText(
+  text: string,
+  client: Anthropic,
+  model: string,
+): Promise<string> {
+  const resp = await client.messages.create({
+    model,
+    max_tokens: 512,
+    messages: [{ role: 'user', content: `다음 대화 내용을 300자 이내로 요약:\n\n${text}` }],
+  });
+  const block = resp.content[0];
+  if (block?.type === 'text' && block.text.trim()) {
+    return block.text;
+  }
+  // 빈/비-text 응답을 '' 로 반환하면 compactContext 1단계가 tokenCounter('')=0 으로
+  // "요약 성공" 오판 → 전체 대화를 빈 요약으로 치환한다. throw 하여 폴백(2/3단계)으로 넘긴다.
+  throw new Error('summarizeText: empty or non-text response from model');
 }
