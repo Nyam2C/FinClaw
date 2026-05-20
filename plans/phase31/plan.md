@@ -44,7 +44,7 @@ Cron expression 이 정각 패턴(`"0 * * * *"`, `"0 0 * * *"` 등)이면 0~5분
 
 ### 전제
 
-- `packages/server/src/automation/scheduler.ts:78-94` 매분 폴러 + `findDueSchedules` 가 동일 분에 due 인 모든 schedule 을 동시 큐잉.
+- `packages/server/src/automation/scheduler.ts:133-167` `tick()` 매분 폴러 + `findDueSchedules` 가 동일 분에 due 인 모든 schedule 을 동시 큐잉. (인스펙션 결과: 라인 78-94 는 부정확, 실제 `tick` 메서드 위치)
 - 사용자가 12시 보고 + 매시간 알림 + 매일 아침 요약 등 정각 schedule 5개 이상 등록 시 즉시 위험.
 
 ### 작업
@@ -332,6 +332,13 @@ describe('errorBackoffMs', () => {
   - **server/auto-reply 어디서도 import 안 함** → dead code
 - OpenClaw 는 `cli-runner.ts` 의 prompt 빌드 직전에 호출. FinClaw 는 SDK 직호출이라 `runner.ts` 또는 `context.ts` stage 가 자연스러운 자리.
 
+### 인스펙션 결과 (Phase 31 보강)
+
+- **PipelineMsgContext** 의 정확 위치는 `packages/server/src/auto-reply/pipeline-context.ts:18-56` (plan 1차 검토의 pipeline.ts 인용은 부정확). 현재 필드: normalizedBody, mentions, urls, channelCapabilities, userRoles, isAdmin, resolvedModel, marketSession, activeAlerts, portfolioSnapshot, watchlist, newsContext, capturedMemory, retrievalResult, traceContext. **tokenCounter / summarizer 필드 없음 → 본 phase 신규 추가**
+- **`compactContext` 시그니처** (`packages/agent/src/agents/context/compaction.ts:43-44`): `(entries, options, summarizer: (text:string)=>Promise<string>, tokenCounter: (text:string)=>number)`. 둘 다 함수 시그니처 — 외부 주입
+- **`summarize` 함수 anthropic.ts 에 미존재** → 본 phase 신규 작성 필요 (`packages/agent/src/providers/anthropic.ts` 에 `summarizeText(text: string): Promise<string>` 추가 — Anthropic SDK 1회 호출, ~30 LOC)
+- **`tokenCounter` 함수 시그니처는 미존재**, `TokenCounter` 클래스만 `packages/agent/src/execution/tokens.ts:12-23` 에 존재. **함수 어댑터** 필요: `(text) => approxTokenCount(text)` — Anthropic 의 `countTokens` API 또는 간이 추정 (~4 chars/token) ~10 LOC
+
 ### 작업
 
 **옵션 1 (권장)**: `packages/agent/src/execution/runner.ts` 의 turn loop 진입 직전.
@@ -342,7 +349,11 @@ describe('errorBackoffMs', () => {
 
 **파일:**
 
-- `packages/server/src/auto-reply/stages/context.ts` (수정, ~15 LOC)
+- `packages/server/src/auto-reply/stages/context.ts` (수정, ~15 LOC — compaction 호출)
+- `packages/server/src/auto-reply/pipeline-context.ts` (수정, ~5 LOC — tokenCounter/summarizer 필드 추가)
+- `packages/agent/src/providers/anthropic.ts` (수정, ~30 LOC — `summarizeText` 신규 export)
+- `packages/agent/src/execution/tokens.ts` 또는 신규 `packages/agent/src/execution/token-fn.ts` (수정/신규, ~10 LOC — 함수 시그니처 어댑터 `approxTokenCount`)
+- `packages/server/src/main.ts` (수정, ~10 LOC — pipeline 초기화 시 anthropic.summarizeText + approxTokenCount 주입)
 - `packages/server/test/auto-reply/stages/context.compaction.test.ts` (신규, ~50 LOC)
 
 #### C1. context stage 통합
@@ -392,19 +403,65 @@ if (windowState.status === 'critical' || windowState.status === 'exceeded') {
 return { ...ctx, transcript: finalTranscript };
 ```
 
-#### C2. 의존성 주입
+#### C2. 의존성 주입 (Phase 31 보강)
 
-`pipeline-context.ts` (또는 상응) 에 `tokenCounter` + `summarizer` 추가:
+**파일 1**: `packages/agent/src/providers/anthropic.ts` 에 `summarizeText` 추가 (~30 LOC):
 
 ```ts
-export interface PipelineContext {
-  // ... 기존
-  tokenCounter: (text: string) => number;
-  summarizer: (text: string) => Promise<string>;
+// 본 함수가 compactContext 의 summarizer 인자로 주입됨.
+export async function summarizeText(
+  text: string,
+  client: Anthropic,
+  model: string,
+): Promise<string> {
+  const resp = await client.messages.create({
+    model,
+    max_tokens: 512,
+    messages: [{ role: 'user', content: `다음 대화 내용을 300자 이내로 요약:\n\n${text}` }],
+  });
+  const block = resp.content[0];
+  return block?.type === 'text' ? block.text : '';
 }
 ```
 
-`main.ts` 에서 pipeline 초기화 시 anthropic adapter 의 token counter + summarize 함수 주입.
+**파일 2**: `packages/agent/src/execution/token-fn.ts` (신규, ~10 LOC):
+
+```ts
+// compactContext 의 tokenCounter 인자로 주입되는 함수 시그니처 어댑터.
+// 정밀도 ±5% — Anthropic 의 countTokens API 우선 활용 가능하나 1차는 char/4 근사.
+export function approxTokenCount(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+```
+
+**파일 3**: `packages/server/src/auto-reply/pipeline-context.ts:18-56` 인터페이스에 readonly 필드 추가 (Phase 30 traceContext 패턴 따라):
+
+```ts
+export interface PipelineMsgContext extends MsgContext {
+  // ... 기존 필드
+  readonly traceContext?: TraceContext;
+  // === Phase 31 C ===
+  readonly tokenCounter?: (text: string) => number;
+  readonly summarizer?: (text: string) => Promise<string>;
+}
+```
+
+**파일 4**: `packages/server/src/main.ts` 의 pipeline 초기화 위치에 wiring:
+
+```ts
+import { summarizeText, approxTokenCount } from '@finclaw/agent';
+
+// anthropicClient + modelInfo 가 이미 있음
+const summarizer = (text: string) => summarizeText(text, anthropicClient, modelInfo.id);
+const tokenCounter = approxTokenCount;
+
+// pipeline context factory 에 주입 (PipelineMsgContext readonly 필드라 ctx 생성 시 한번에)
+const baseCtx: PipelineMsgContext = {
+  ...existingCtx,
+  tokenCounter,
+  summarizer,
+};
+```
 
 #### C3. 테스트
 
@@ -460,6 +517,16 @@ describe('context stage compaction', () => {
 
 - `registry.ts:124-133` 의 `isToolLoop` (5 calls / 10s window) + `:295-297` 의 console.warn 코멘트만 — verdict 변경 없음 (검증 완료).
 - OpenClaw 의 detection 은 _result hash_ 까지 봐서 "결과가 안 변하면" stuck 판정 — 의미적 동등성. FinClaw 도 도입 시 동일 효용.
+
+### 인스펙션 결과 (Phase 31 보강)
+
+- **실제 위치**: `isToolLoop` 정의 `registry.ts:139-143`, 9-stage policy 평가 호출 + console.warn 자리 `registry.ts:274-299` (plan 1차 검토의 124-133/295-297 는 근접하나 약간 어긋남)
+- **`evaluateToolPolicy` 반환 shape**:
+  ```ts
+  policyResult: { finalVerdict: 'allow' | 'deny' | 'require-approval'; decidingStage: number; reason?: string }
+  ```
+- **finalVerdict 는 const string** — mutate 불가. warning 시 override 는 새 변수 패턴 또는 `policyResult = { ...policyResult, finalVerdict: 'require-approval' }` 재할당 필요
+- **`bus.emit('tool:policy:verdict', ...)`** 가 verdict 직후 즉시 호출 → loop detection 의 override 가 emit 보다 **먼저** 실행되어야 다운스트림 (auto-reply observer / agent_runs) 이 정확한 최종 verdict 관찰 가능
 
 ### 작업
 
@@ -650,9 +717,10 @@ class InMemoryToolRegistry {
   private warningKeysSeen = new Set<string>();
 
   async execute(name: string, params: unknown): Promise<ToolResult> {
-    // ... 기존 9-stage policy 통과 후
+    // === 9-stage policy 평가 직후, bus.emit 직전 (registry.ts:285 자리) ===
+    let policyResult = evaluateToolPolicy({ ... }, this.policyRules);
 
-    // === 추가: 루프 감지 (verdict 변경 가능) ===
+    // === 추가: 루프 감지 (verdict override 가능) ===
     const loopResult = detectToolCallLoop(this.callHistory, name, params);
     if (loopResult.stuck) {
       const dedupeKey = loopResult.warningKey ?? '';
@@ -668,16 +736,29 @@ class InMemoryToolRegistry {
         });
       }
       if (loopResult.level === 'critical') {
-        // global_circuit_breaker — 차단
+        // global_circuit_breaker — 차단. bus.emit 도 'deny' 로 강제.
+        bus.emit('tool:policy:verdict', name, 'deny', /* decidingStage */ 99);
         return {
           ok: false,
           error: { code: 'tool.loop_blocked', message: loopResult.message },
         };
       }
-      // warning — verdict 를 require-approval 로 강제 (실제 차단)
-      // policyResult.finalVerdict = 'require-approval';  ← 9-stage 정책 결과 override
+      // warning — 9-stage 결과를 require-approval 로 override (immutable shape 패턴)
+      policyResult = {
+        ...policyResult,
+        finalVerdict: 'require-approval',
+        decidingStage: 99, // loop-detector 가 새 stage
+        reason: loopResult.message,
+      };
     }
     // === 추가 끝 ===
+
+    bus.emit('tool:policy:verdict', name, policyResult.finalVerdict, policyResult.decidingStage);
+
+    if (policyResult.finalVerdict === 'deny') { /* 기존 */ }
+    if (policyResult.finalVerdict === 'require-approval') {
+      // 기존 console.warn 제거 (Phase 31). loop 가 트리거한 경우는 위 logger.warn 에 이미 기록됨
+    }
 
     // ... 기존 hooks + 실행 ...
     const result = /* tool 실제 실행 */;
@@ -792,12 +873,13 @@ describe('detectToolCallLoop', () => {
 ### 완료 조건
 
 - 단위 테스트 6개 모두 통과
-- `registry.ts:295-297` 의 `console.warn` 코드 제거 확인
+- `registry.ts` 의 `isToolLoop` 함수 + 관련 `LOOP_THRESHOLD`/`LOOP_WINDOW_MS` 상수 + `console.warn` 코드 제거 확인 (`grep -n 'isToolLoop\|LOOP_THRESHOLD' packages/agent/src/agents/tools/registry.ts` → 0)
 - 통합 테스트: `market.fetch({symbol:'AAPL'})` 를 동일 결과로 30회 호출 시 31회째 `tool.loop_blocked` 에러 반환
+- **9-stage 호환성 회귀 0**: `bus.emit('tool:policy:verdict', ...)` 의 최종 verdict 가 loop override 후 값을 전달 (deny/require-approval). auto-reply observer 또는 agent_runs 의 toolCallsJson 에서 verdict 가 정확히 기록되는지 확인
 
 ### 추정
 
-**반나절** (이식 1.5h + registry 통합 1.5h + 테스트 1h)
+**반나절** (이식 1.5h + registry 통합 1.5h + 9-stage 호환성 검증 30m + 테스트 1h)
 
 ---
 
@@ -812,6 +894,23 @@ describe('detectToolCallLoop', () => {
 - 사용자 도메인이 시세/뉴스/거래 → tool result 가 큰 JSON 일 가능성 매우 높음 (예: yahoo-finance 일봉 365건 ~50KB).
 - OpenClaw `pi-embedded-runner/tool-result-truncation.ts` 가 _OpenClaw 자체_ 디렉토리 — 외부 패키지 아님 (사실 정정).
 - FinClaw 의 transcript 메시지 형식은 Anthropic SDK 의 `MessageParam` (content blocks 배열).
+
+### 인스펙션 결과 (Phase 31 보강)
+
+- **실제 위치**: `packages/agent/src/execution/runner.ts:164-172` — tool 결과 messages 배열에 push 하는 자리:
+  ```ts
+  messages.push({
+    role: 'tool',
+    content: results.map((r) => ({
+      type: 'tool_result' as const,
+      toolUseId: r.toolUseId,
+      content: r.content,
+      isError: r.isError,
+    })),
+  });
+  ```
+- **메시지 형식**: FinClaw 의 `ConversationMessage` 는 `role: 'tool'` + `content: ToolResultBlock[]` (Anthropic SDK 의 `MessageParam` 과 약간 다른 자체 정의). `toolUseId` 는 camelCase (Anthropic SDK 는 `tool_use_id` snake_case)
+- **truncateToolResult 시그니처 조정**: OpenClaw 원본은 `Anthropic.ToolResultBlockParam` 직접 사용. FinClaw 는 자체 `ToolResultBlock` 타입 사용 → import 경로 + 필드명만 매핑 (snake → camel). 알고리즘 동일.
 
 ### 작업
 
@@ -930,34 +1029,55 @@ export function applyToolResultGuard(
 
 본 plan **옵션 1** 채택 — Anthropic API 호출 직전 guard 가 명확.
 
-`runner.ts` 의 tool_result append 자리:
+`runner.ts:164-172` (정확 위치, 인스펙션 확정):
 
 ```ts
-import { truncateToolResult, HARD_MAX_TOOL_RESULT_CHARS } from '../agents/session/tool-result-guard.js';
+import {
+  truncateToolResult,
+  HARD_MAX_TOOL_RESULT_CHARS,
+} from '../agents/session/tool-result-guard.js';
 
-// 기존:
-const toolResultBlock: Anthropic.ToolResultBlockParam = {
-  type: 'tool_result',
-  tool_use_id: callId,
-  content: rawContent,
-};
+// 기존 (line 164-172):
+messages.push({
+  role: 'tool',
+  content: results.map((r) => ({
+    type: 'tool_result' as const,
+    toolUseId: r.toolUseId,
+    content: r.content,
+    isError: r.isError,
+  })),
+});
 
 // 변경:
-const guardedBlock = truncateToolResult({
-  type: 'tool_result',
-  tool_use_id: callId,
-  content: rawContent,
-}, HARD_MAX_TOOL_RESULT_CHARS);
-
-if (guardedBlock !== /* ... */) {
-  this.logger.warn('tool_result.truncated', {
-    event: 'tool_result.truncated',
-    callId,
-    originalChars: /* 측정 */,
-    truncatedChars: HARD_MAX_TOOL_RESULT_CHARS,
-  });
-}
+const guardedBlocks = results.map((r) => {
+  const block = {
+    type: 'tool_result' as const,
+    toolUseId: r.toolUseId,
+    content: r.content,
+    isError: r.isError,
+  };
+  const guarded = truncateToolResult(block, HARD_MAX_TOOL_RESULT_CHARS);
+  // truncate 가 실제로 일어났는지 비교 (content 가 string 인 경우 length, array 면 합산)
+  const originalChars =
+    typeof r.content === 'string'
+      ? r.content.length
+      : Array.isArray(r.content)
+        ? r.content.reduce((s, c) => s + (typeof c?.text === 'string' ? c.text.length : 0), 0)
+        : 0;
+  if (originalChars > HARD_MAX_TOOL_RESULT_CHARS) {
+    this.logger.warn('tool_result.truncated', {
+      event: 'tool_result.truncated',
+      callId: r.toolUseId,
+      originalChars,
+      truncatedChars: HARD_MAX_TOOL_RESULT_CHARS,
+    });
+  }
+  return guarded;
+});
+messages.push({ role: 'tool', content: guardedBlocks });
 ```
+
+**주의**: FinClaw 의 `ToolResultBlock` 은 `toolUseId` (camelCase). `truncateToolResult` 의 시그니처도 동일 camelCase 로 작성. Anthropic SDK 의 `tool_use_id` (snake_case) 와 매핑은 Anthropic 호출 직전 변환 단계가 따로 있음 (영향 없음).
 
 #### E3. 테스트
 
@@ -1050,13 +1170,85 @@ describe('truncateToolResult', () => {
 - FinClaw 의 도구는 **Zod v4** schema (OpenClaw 의 TypeBox 와 다름).
 - agent 가 RPC 를 호출하는 패턴은 `packages/skills-finance/src/*` 가 표준 — 그 패턴 따라간다.
 
+### 인스펙션 결과 (Phase 31 보강)
+
+- **`ScheduleRpc` 인터페이스 미정의**: `packages/types/src/` 검색 결과 `Schedule` (`automation.ts:13`) 만 있고 RPC 클라이언트 인터페이스 부재. `packages/types/src/gateway.ts:1-48` 의 `RpcMethod` 유니온에 `'schedule.create' | 'schedule.list' | ...` 만 등록 — request/response 타입 미정의
+- **신규 추출 필요**: 본 phase 의 추가 작업으로 `packages/types/src/schedule-rpc.ts` 신규 작성 (~40 LOC). 요청·응답 타입 8개 (3 action × create/list/delete + testCron)
+- **server 측 schema 일치 검증**: `packages/server/src/gateway/rpc/methods/schedule.ts` 의 Zod schema 와 새 types/schedule-rpc.ts 가 컴파일타임 호환되어야 함 — `satisfies` 또는 별도 호환성 테스트로 보장
+
 ### 작업
 
 **파일:**
 
+- `packages/types/src/schedule-rpc.ts` (신규, ~40 LOC — ScheduleRpc 인터페이스 + 요청/응답 타입)
+- `packages/types/src/index.ts` (수정, re-export ~2 LOC)
 - `packages/skills-general/src/schedule-tool.ts` (신규, ~100 LOC — Zod schema + 도구 정의)
 - `packages/skills-general/src/index.ts` (수정, re-export + register)
+- `packages/server/src/main.ts` (수정, ~15 LOC — ScheduleRpc 구현체 생성 + skills-general 등록)
 - `packages/skills-general/test/schedule-tool.test.ts` (신규, ~60 LOC — mock RPC)
+
+#### F0. ScheduleRpc 인터페이스 추출 (신규, 본 phase 추가)
+
+`packages/types/src/schedule-rpc.ts`:
+
+```ts
+// Phase 31 F — agent 도구가 호출할 ScheduleRpc 클라이언트 인터페이스
+import type { Schedule } from './automation.js';
+
+export interface ScheduleCreateRequest {
+  name: string;
+  cron: string;
+  prompt: string;
+  enabled?: boolean;
+}
+export interface ScheduleCreateResponse {
+  id: string;
+  nextRunAt: number;
+}
+export interface ScheduleListRequest {
+  limit?: number;
+}
+export interface ScheduleListResponse {
+  schedules: ReadonlyArray<
+    Pick<
+      Schedule,
+      'id' | 'name' | 'cron' | 'enabled' | 'status' | 'consecutiveFailures' | 'nextRunAt'
+    >
+  >;
+}
+export interface ScheduleDeleteRequest {
+  scheduleId: string;
+}
+export interface TestCronRequest {
+  cron: string;
+}
+export interface TestCronResponse {
+  valid: boolean;
+  nextRunAt?: number;
+  reason?: string;
+}
+
+export interface ScheduleRpc {
+  create(req: ScheduleCreateRequest): Promise<ScheduleCreateResponse>;
+  list(req: ScheduleListRequest): Promise<ScheduleListResponse>;
+  delete(req: ScheduleDeleteRequest): Promise<void>;
+  testCron(req: TestCronRequest): Promise<TestCronResponse>;
+}
+```
+
+`packages/server/src/main.ts` 에서 `gateway/rpc/methods/schedule.ts` 의 핸들러 함수를 ScheduleRpc 형태로 wrap 하여 skills-general 에 주입:
+
+```ts
+import { handleScheduleCreate, handleScheduleList, ... } from './gateway/rpc/methods/schedule.js';
+
+const scheduleRpc: ScheduleRpc = {
+  create: (req) => handleScheduleCreate(deps, req),
+  list: (req) => handleScheduleList(deps, req),
+  delete: (req) => handleScheduleDelete(deps, req),
+  testCron: (req) => handleTestCron(deps, req),
+};
+const generalTools = registerGeneralTools({ rpc: scheduleRpc });
+```
 
 #### F1. 도구 정의 (Zod, FinClaw 표준)
 
@@ -1297,20 +1489,38 @@ describe('schedule.manage tool', () => {
 - [ ] `pnpm lint` 0 경고
 - [ ] CLAUDE.md 의 Phase 31 변경 이력 추가 (선택)
 
-## 추정 합계
+## 추정 합계 (Phase 31 보강 반영)
 
-| 밀스톤                  | LOC (이식 + 통합)                   | 시간             |
-| ----------------------- | ----------------------------------- | ---------------- |
-| A. Stagger              | 47 + 5 + 50(test)                   | 1h               |
-| B. Backoff              | 12 + 15 + 40(test)                  | 30m              |
-| C. Compaction 배선      | 0 + 15 + 50(test)                   | 30m              |
-| D. Tool-Loop 2-Detector | 180 + 30 + 120(test)                | 4h               |
-| E. Tool-Result Guard    | 80 + 10 + 80(test)                  | 1h               |
-| F. Schedule Tool        | 100 + 20 + 60(test)                 | 4h               |
-| 통합 검증               | —                                   | 1h               |
-| **합계**                | **419 + 95 + 400(test) = ~914 LOC** | **~12h (1.5일)** |
+| 밀스톤                  | LOC (이식 + 통합)                     | 시간           | 보강 메모                                                                                          |
+| ----------------------- | ------------------------------------- | -------------- | -------------------------------------------------------------------------------------------------- |
+| A. Stagger              | 47 + 5 + 50(test)                     | 1h             | continue 패턴 그대로                                                                               |
+| B. Backoff              | 12 + 15 + 40(test)                    | 30m            | 변경 없음                                                                                          |
+| C. Compaction 배선      | 0 + 65 + 50(test)                     | 1.5h           | summarizeText 신규(30) + approxTokenCount(10) + pipeline-context(5) + main.ts(10) + context.ts(15) |
+| D. Tool-Loop 2-Detector | 180 + 50 + 120(test)                  | 5h             | 9-stage verdict override + bus.emit 검증 30m 추가                                                  |
+| E. Tool-Result Guard    | 80 + 15 + 80(test)                    | 1h             | ConversationMessage 매핑 (snake→camel)                                                             |
+| F. Schedule Tool        | 100 + 55 + 60(test)                   | 5h             | ScheduleRpc 추출(40) + main.ts wiring(15)                                                          |
+| 통합 검증               | —                                     | 1h             |                                                                                                    |
+| **합계**                | **419 + 205 + 400(test) = ~1024 LOC** | **~15h (2일)** |                                                                                                    |
 
-OpenClaw 직접 이식 ~240 LOC + FinClaw 통합 ~95 LOC + 테스트 ~400 LOC.
+OpenClaw 직접 이식 ~240 LOC + FinClaw 통합 ~205 LOC + 테스트 ~400 LOC.
+
+### OpenClaw 테스트 이식 검토 (Phase 31 보강)
+
+OpenClaw 원본의 단위 테스트 일부는 vitest 호환 가능 — 신규 작성 대신 이식이 LOC 절감. 검토 대상:
+
+- `src/cron/__tests__/stagger.test.ts` — vitest, 의존성 없음 → 거의 그대로 이식 가능
+- `src/agents/__tests__/tool-loop-detection.test.ts` — vitest, 의존성 없음 → 2 detector 부분만 추출 이식
+- `src/agents/pi-embedded-runner/__tests__/tool-result-truncation.test.ts` — vitest → 이식 가능
+
+본 plan 의 테스트 400 LOC 중 ~150 LOC 는 이식, ~250 LOC 는 FinClaw 통합 새 작성. 결과는 동일하나 첫 작성 부담 감소.
+
+### F 의 prompt injection 결정 (Phase 31 보강)
+
+agent 가 Discord 사용자 발화로부터 임의 cron + 임의 prompt 를 schedule.create 호출 가능 → schedule 발동 시 그 prompt 가 agent.run 으로 흘러감. **사용자 1인 환경** 이므로 위험 낮음 (자기 자신이 prompt injection 시도해도 본인 피해만). 따라서:
+
+- **결정**: 별도 sanitization 도입 X. cron expression 만 `testCron` RPC 로 사전 검증 (이미 plan 명시)
+- **단**, 잠재 위험을 audit log 에 기록 — `schedule.created_by_agent` 이벤트 + agent_runs 의 toolCallsJson 에 schedule.manage 호출 기록 보존 (자연스럽게 따라옴)
+- 후속 phase 에서 채널 다중화 / 다중 사용자 도입 시 재검토
 
 ## 후속 (Phase 32 별도 트랙)
 
@@ -1320,3 +1530,15 @@ OpenClaw 직접 이식 ~240 LOC + FinClaw 통합 ~95 LOC + 테스트 ~400 LOC.
 - **FailoverError 양방향 매핑** (선택) — multi-provider 도입 의도가 생기면.
 - **Cache Trace 8-stage** (선택) — audit 강화 의도가 생기면.
 - **Markdown 1차 source 메모리** (선택) — 메모리 git 추적 원할 때.
+
+### Phase 30 잔여 작업 (별도 처리 — 본 Phase 와 합치지 않음)
+
+Phase 30 review.md §8 의 이월 항목 — 본 plan 의 OpenClaw adoption 과 도메인 분리되므로 별도 phase 또는 phase 32 합류 후보:
+
+- `agent_runs.rerank_meta` 자동 부착 wire-up (auto-reply 경로에 addAgentRun 도입 또는 agent.run RPC 의 retrieval 단계 추가)
+- depth ≥ 3 실측 통합 테스트 (RPC/scheduler 경로의 turn/tool span 검증)
+- P0-4 `GatewayServerDeps.db` 의존 일원화
+- P1 cleanup 6건: ensureColumn helper / rerankResults generic / web→`@finclaw/types` / createAccessLogger 단순화 / outputSchema 통합 type / purgeAccessLog 즉시 1회
+- 분석 도구 추가: `analyze_news`, `analyze_portfolio_risk` 등 (Phase 30 B5 자연 미달분)
+
+**결정 보류**: 위 항목들을 phase 32 에 합칠지 phase 31.5 hotfix 로 분리할지 phase 31 종료 후 결정.
