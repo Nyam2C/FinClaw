@@ -41,15 +41,88 @@ OpenClaw `src/agents/cli-runner.ts:35-359` + `cli-backends.ts:36-95` 의 핵심 
 
 ### 사실 검증 (HIGH 신뢰도, deep-dive + 직접 코드 확인)
 
-| 항목                             | OpenClaw 원본 위치                 | FinClaw 적용 위치                                            | 검증 방식        |
-| -------------------------------- | ---------------------------------- | ------------------------------------------------------------ | ---------------- |
-| `runCliAgent` core               | `src/agents/cli-runner.ts:35-359`  | `packages/agent/src/providers/claude-cli/runner.ts` (신규)   | 직접 인용        |
-| `DEFAULT_CLAUDE_BACKEND` config  | `src/agents/cli-backends.ts:36-95` | `packages/agent/src/providers/claude-cli/backends.ts` (신규) | 직접 인용        |
-| `clearEnv` 메커니즘              | `cli-runner.ts:225-232`            | `claude-cli/runner.ts:env` 빌드 부                           | 직접 인용        |
-| Watchdog ratio                   | `cli-runner/reliability.ts:1-80`   | `claude-cli/reliability.ts` (신규)                           | 직접 인용        |
-| `enqueueCliRun` queue            | `cli-runner/helpers.ts:24-40`      | `claude-cli/queue.ts` (신규)                                 | 직접 인용        |
-| `parseCliJson` / `parseCliJsonl` | `cli-runner/helpers.ts` 부분       | `claude-cli/parsers.ts` (신규)                               | 직접 인용        |
-| Process supervisor               | `src/process/supervisor/index.ts`  | FinClaw `packages/server/src/process/` 기존 활용 (확장)      | 기존 인프라 활용 |
+| 항목                             | OpenClaw 원본 위치                 | FinClaw 적용 위치                                                                                                                       | 검증 방식 |
+| -------------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| `runCliAgent` core               | `src/agents/cli-runner.ts:35-359`  | `packages/agent/src/providers/claude-cli/runner.ts` (신규)                                                                              | 직접 인용 |
+| `DEFAULT_CLAUDE_BACKEND` config  | `src/agents/cli-backends.ts:36-95` | `packages/agent/src/providers/claude-cli/backends.ts` (신규)                                                                            | 직접 인용 |
+| `clearEnv` 메커니즘              | `cli-runner.ts:225-232`            | `claude-cli/runner.ts:env` 빌드 부                                                                                                      | 직접 인용 |
+| Watchdog ratio                   | `cli-runner/reliability.ts:1-80`   | `claude-cli/reliability.ts` (신규)                                                                                                      | 직접 인용 |
+| `enqueueCliRun` queue            | `cli-runner/helpers.ts:24-40`      | `claude-cli/queue.ts` (신규)                                                                                                            | 직접 인용 |
+| `parseCliJson` / `parseCliJsonl` | `cli-runner/helpers.ts` 부분       | `claude-cli/parsers.ts` (신규)                                                                                                          | 직접 인용 |
+| Process supervisor               | `src/process/supervisor/index.ts`  | `packages/agent/src/providers/claude-cli/spawn.ts` (신규 — 기존 `server/src/process/spawn.ts` `safeSpawn` 은 no-output watchdog 미지원) | 신규 작성 |
+
+---
+
+## 인스펙션 결과 (Phase 32 보강 — post-phase31, 2026-05-20)
+
+> phase31(Runtime Resilience)이 main 에 머지된 직후, plan 의 모든 구체 사실(경로/라인/통합지점/인터페이스)을 현재 코드와 대조한 결과. **본 보강은 아래 밀스톤 본문의 해당 서술을 OVERRIDE 한다.** (검증 20항목 중 일치/부분 11 · 어긋남 9)
+
+### 공통 — provider 인터페이스 재-grounding
+
+- **`ProviderAdapter` 실제 형태** (`packages/agent/src/providers/adapter.ts:24-29`):
+  ```ts
+  interface ProviderAdapter {
+    readonly providerId: ProviderId; // 'anthropic' | 'openai'
+    chatCompletion(params: ProviderRequestParams): Promise<unknown>;
+    streamCompletion(params: ProviderRequestParams): AsyncIterable<StreamChunk>; // ★ async generator
+  }
+  ```
+  plan F1 이 가정한 `id` / `supportsStreaming` / `supportsPromptCaching` / `supportsToolUse` 멤버와 `StreamCompletionRequest` / `StreamCompletionResponse` 타입은 **전부 미존재**. `CliProviderAdapter` 는:
+  - `readonly providerId` (멤버명 `id` 아님). `ProviderId`(`models/catalog.ts:4`) 에 `'claude-cli'` 추가 — **W5 결정 참조**.
+  - `streamCompletion` 은 **`async *` generator** 로 `runCliAgent` 의 일괄 결과를 `{type:'text_delta',text}` → `{type:'usage',usage:{inputTokens,outputTokens,cacheReadTokens,cacheWriteTokens}}` → `{type:'done'}` 순으로 yield (Runner `runner.ts:263` `for await` 호환).
+- **`ProviderRequestParams`** (`adapter.ts:8-21`): `model`(modelId 아님)·`messages`·`tools`·`systemPrompt`·`temperature`·`maxTokens`·`abortSignal`·`forceToolChoice`. **`metadata`/`timeoutMs` 없음** → plan F1 의 `req.metadata?.cliSessionId`/`req.timeoutMs`/`req.modelId` 동작 불가 (cliSessionId 주입은 W1).
+- **`StreamChunk`** (`models/provider-normalize.ts:28-34`) 6-variant. CLI usage 매핑: input→inputTokens, output→outputTokens, cacheRead→cacheReadTokens, cacheWrite→cacheWriteTokens.
+
+### 밀스톤 C (spawn) 재-grounding
+
+- `packages/server/src/process/` 는 **Discord 라우팅 모듈**(supervisor 아님). 가장 가까운 것 = `process/spawn.ts:41` `safeSpawn(SpawnOptions): Promise<SpawnResult>` (SIGTERM→2s→SIGKILL `:113-120` + AbortSignal timeout, **but no-output watchdog 없음**).
+- 따라서 C2 `spawnWithWatchdog` 는 **`packages/agent/src/providers/claude-cli/spawn.ts` 신규 작성** (server 확장 아님). no-output 슬라이딩 윈도우가 핵심 차별.
+- OpenClaw 라인 검증: `cli-runner.ts`(397 LOC, clearEnv `:225`), `cli-backends.ts`(195, `:36`/`:57`), `cli-runner/helpers.ts` `enqueueCliRun` 실제 `:22`(plan `:24-40` ±2 오차).
+
+### 밀스톤 E (FailoverError) 재-grounding
+
+- 기존 `FailoverError`(`errors.ts:13-25`, phase9) **이미 존재**. `FallbackReason='rate-limit'|'server-error'|'timeout'|'context-overflow'|'model-unavailable'`(dash). plan 의 `CliFailoverError`+`CliFailoverReason`(underscore, `auth`/`format`/`model_not_found`) 는 **별개 신규 타입** — 의도 OK.
+- `classifyFallbackError`(`errors.ts:38`)는 401/403(auth)→`null`(폴백 비대상). `DEFAULT_FALLBACK_TRIGGERS`(`fallback.ts:80`)에 auth 없음. → CLI auth 만료 SDK fallback 은 `runWithModelFallback` 로 불가 (W2).
+
+### 밀스톤 F (dual-path 통합 지점) 재-grounding
+
+- AnthropicAdapter 주입 지점: `main.ts:264` `new AnthropicAdapter(anthropicKey)` → `:438-444` `runnerFactory` `new Runner({ provider: anthropicAdapter, ... })`. dual-path 전환 = **main.ts:264 의 provider 생성을 factory 로 교체**.
+- `new AnthropicAdapter({ apiKey, defaultTimeoutMs })` → **`new AnthropicAdapter(cfg.apiKey)`** (생성자 `(apiKey: string, baseUrl?: string)`, `anthropic.ts:64`. defaultTimeoutMs 미지원).
+- config: `packages/config/src/schema.ts` → **`zod-schema.ts`** (`FinClawConfigSchema`, **`z.strictObject`** → 미선언 top-level 키 거부, `provider`/`cliBackend` 명시 추가 필수). 기존 `agents.defaults.provider`(`:17`)와 의미 분리 (W6).
+
+### 밀스톤 G (cli_session_id + auth fallback) 재-grounding
+
+- **`StorageAdapter`(`types/src/storage.ts:5-19`)에 `updateAgentRun` 없음.** agent_runs 는 free 함수(`storage/src/agent-runs.ts`)로 raw db 조작. plan G2 `this.storage.updateAgentRun(...)` 는 존재하지 않는 API.
+- **auto-reply 경로는 agent_runs 미기록**(`pipeline.ts:308`). `addAgentRun` 호출처 = `automation/scheduler.ts:302/328`, `gateway/rpc/methods/agent.ts:116` 뿐.
+- **`Runner`(`runner.ts:66-83`)는 storage/runId/logger/fallbackProvider 멤버 없음.** plan G2 의 Runner 내부 fallback+persist 설계 불가.
+- 정합 재배치: 신규 `updateAgentRunCliSession(db, agentRunId, cliSessionId)` free 함수 + `AddAgentRunInput.cliSessionId?` + `AgentRunRow.cli_session_id`. 마이그레이션은 `database.ts` MIGRATIONS[11] + SCHEMA_DDL(`:195-214`) 양쪽. **SCHEMA_VERSION=10 확인 → v10→v11 정확.**
+
+### 본문 라인 교정표 (OVERRIDE)
+
+| plan.md 위치               | 교정안                                                                                                                                                                         |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| `:484` C2 주석             | FinClaw 엔 supervisor 없음(server/process=Discord 라우팅). standalone 신규. safeSpawn 은 overall timeout 만, no-output watchdog 없음                                           |
+| `:1239` F 파일             | `config/src/zod-schema.ts` (z.strictObject → top-level provider/cliBackend 명시 추가)                                                                                          |
+| `:1247-1251` F1 import     | `import type { ProviderAdapter, ProviderRequestParams } from '../adapter.js'; import type { StreamChunk } from '../models/provider-normalize.js';` (StreamCompletion\* 미존재) |
+| `:1261-1297` F1 클래스     | `readonly providerId: 'claude-cli'`; capability 플래그 제거; `chatCompletion()` + `async *streamCompletion(params): AsyncIterable<StreamChunk>` (text_delta→usage→done yield)  |
+| `:1300-1308` extractPrompt | `params.messages`, model→`params.model`, timeoutMs→adapter 옵션                                                                                                                |
+| `:1320` F2 ProviderId      | 기존 `ProviderId='anthropic'                                                                                                                                                   | 'openai'`(catalog.ts:4)와 충돌 → factory 타입은 `ProviderKind` 로 rename, catalog ProviderId 에 'claude-cli' 추가(W5) |
+| `:1333` F2 anthropic 생성  | `new AnthropicAdapter(cfg.apiKey)`                                                                                                                                             |
+| `:1351-1354` F3 schema     | 심볼 `FinClawConfigSchema`(zod-schema.ts:154), `z.strictObject`, top-level 추가                                                                                                |
+| `:1448` F4 test            | `expect(a.providerId).toBe('anthropic')` (`.id` 없음)                                                                                                                          |
+| `:1482-1484` G 파일        | Runner 무관. auth fallback → `claude-cli/adapter.ts`(또는 factory 래퍼). `agent-runs.ts` 신규 `updateAgentRunCliSession`                                                       |
+| `:1499-1518` G2 코드       | 전면 재작성: Runner 무관. CliProviderAdapter 가 SDK adapter 주입받아 `catch (CliFailoverError && reason==='auth')` 시 SDK 위임. storage 갱신은 adapter 외부                    |
+| `:1530/1541` G3 test       | `new CliProviderAdapter({ ..., sdkFallback: sdk })` 단위로                                                                                                                     |
+
+### W1~W7 결정 (기본값 채택 — 본 plan 의 결정사항으로 확정)
+
+- **W1 (cliSessionId 영속 위치):** **conversations.metadata** (`types/src/storage.ts:28`, 이미 nullable JSON; auto-reply 가 매 턴 upsert `execution-adapter.ts:587`)에 멀티턴 `--resume` session 저장. `agent_runs.cli_session_id` 컬럼은 **audit 용**(scheduler/rpc 경로 기록). 단순함 우선.
+- **W2 (auth fallback 경로):** `CliProviderAdapter` 가 생성자 옵션으로 SDK adapter(`sdkFallback`)를 주입받아, `runCliAgent` 가 `CliFailoverError(reason==='auth')` throw 시 내부에서 SDK 로 위임. `runWithModelFallback` 미사용(cross-provider 차단 + auth 비-트리거).
+- **W3 (에러 타입 이원화):** `CliFailoverError` 는 기존 `FailoverError` 와 별개 유지. CLI 에러를 상위 retry/fallback 루프에 흘리지 않음(분류 실패 방지). CLI adapter 내부에서 완결.
+- **W4 (provider 전환 이벤트):** 신규 이벤트 미추가(plan 범위). 필요 시 `events.ts:131` 뒤 신규 블록(보강 시 위치 명시). `model:fallback` 재사용 X(model-id 시맨틱 불일치).
+- **W5 (ProviderId 유니온):** `catalog.ts:4` `ProviderId` 에 **`'claude-cli'` 추가**. 파급(normalize/breaker registry) 검토 — CLI 는 Anthropic 백엔드이므로 토큰/cost 정규화는 'anthropic' 경로 재사용 가능. (대안: providerId='anthropic' 유지 + 내부 플래그 — 본 plan 은 명시성 위해 'claude-cli' 추가 채택.)
+- **W6 (config 키 의미):** top-level `provider: 'anthropic-sdk'|'claude-cli'`(백엔드 경로 선택) 추가. 기존 `agents.defaults.provider`(모델 벤더 의미)와 **분리** — 스키마/문서에서 명시. `defaults.ts` 기본값에 `provider: 'anthropic-sdk'`(회귀 0) 반영.
+- **W7 (Runner provider 슬롯 단일성):** Runner.provider 는 1개. auth fallback 은 adapter 레이어에서 완결 → Runner 는 정상 chunk 스트림만 수신 (W2 와 동일 결론).
 
 ---
 
