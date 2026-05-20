@@ -39,14 +39,12 @@ export class StructuredOutputValidationError extends Error {
   }
 }
 
-const MAX_RESULT_CHARS = 10_000;
-
 /**
  * 도구 디스패치 및 병렬 실행
  *
  * - 등록된 ToolHandler에 도구 호출을 디스패치
  * - 미등록 도구는 isError: true로 반환
- * - 결과 크기 제한 (MAX_RESULT_CHARS: 10,000자)
+ * - 결과 크기 가드는 runner 의 Phase 31 E guard(truncateToolResult, 400K + 이벤트)가 단독 담당
  * - 병렬 실행 (Promise.all)
  */
 export class ExecutionToolDispatcher {
@@ -78,10 +76,7 @@ export class ExecutionToolDispatcher {
     }
 
     try {
-      let result = await handler.execute(call.input, signal);
-      if (result.length > MAX_RESULT_CHARS) {
-        result = result.slice(0, MAX_RESULT_CHARS) + '\n... [truncated]';
-      }
+      const result = await handler.execute(call.input, signal);
 
       // Phase 30 B6: outputSchema enforce 시 result(JSON 문자열) 를 검증.
       // 검증 실패 → isError + structuredOutputViolation. runner 가 다음 turn 에 동일 도구를 다시 호출하도록 모델에 안내.

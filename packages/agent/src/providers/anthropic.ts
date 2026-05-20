@@ -267,5 +267,10 @@ export async function summarizeText(
     messages: [{ role: 'user', content: `다음 대화 내용을 300자 이내로 요약:\n\n${text}` }],
   });
   const block = resp.content[0];
-  return block?.type === 'text' ? block.text : '';
+  if (block?.type === 'text' && block.text.trim()) {
+    return block.text;
+  }
+  // 빈/비-text 응답을 '' 로 반환하면 compactContext 1단계가 tokenCounter('')=0 으로
+  // "요약 성공" 오판 → 전체 대화를 빈 요약으로 치환한다. throw 하여 폴백(2/3단계)으로 넘긴다.
+  throw new Error('summarizeText: empty or non-text response from model');
 }

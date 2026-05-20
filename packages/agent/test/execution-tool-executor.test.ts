@@ -81,9 +81,9 @@ describe('ExecutionToolDispatcher', () => {
     });
   });
 
-  describe('결과 크기 제한', () => {
-    it('10,000자 초과 결과를 절삭한다', async () => {
-      const longResult = 'x'.repeat(15_000);
+  describe('결과 크기', () => {
+    it('큰 결과를 절삭하지 않고 그대로 통과시킨다 (크기 가드는 runner E guard 담당)', async () => {
+      const longResult = 'x'.repeat(500_000);
       dispatcher.register('verbose_tool', {
         execute: async () => longResult,
       });
@@ -92,23 +92,8 @@ describe('ExecutionToolDispatcher', () => {
         { id: 'call_4', name: 'verbose_tool', input: {} },
       ]);
 
-      const r = results[0];
-      expect(r?.content.length).toBeLessThanOrEqual(10_000 + 20); // + '\n... [truncated]'
-      expect(r?.content).toContain('... [truncated]');
-      expect(r?.isError).toBe(false);
-    });
-
-    it('정확히 10,000자는 절삭하지 않는다', async () => {
-      const exactResult = 'y'.repeat(10_000);
-      dispatcher.register('exact_tool', {
-        execute: async () => exactResult,
-      });
-
-      const results = await dispatcher.executeAll([
-        { id: 'call_5', name: 'exact_tool', input: {} },
-      ]);
-
-      expect(results[0]?.content).toBe(exactResult);
+      expect(results[0]?.content).toBe(longResult);
+      expect(results[0]?.isError).toBe(false);
     });
   });
 

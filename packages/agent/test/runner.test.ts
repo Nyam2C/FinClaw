@@ -1,6 +1,7 @@
-import { ConcurrencyLaneManager } from '@finclaw/infra';
+import { ConcurrencyLaneManager, getEventBus } from '@finclaw/infra';
 import type { AgentRunParams } from '@finclaw/types';
 import { describe, it, expect, beforeEach } from 'vitest';
+import { HARD_MAX_TOOL_RESULT_CHARS } from '../src/agents/session/tool-result-guard.js';
 import type { RunnerOptions } from '../src/execution/runner.js';
 import { Runner } from '../src/execution/runner.js';
 import type { StreamEvent } from '../src/execution/streaming.js';
@@ -143,6 +144,46 @@ describe('Runner', () => {
 
       expect(result.status).toBe('max_turns');
       expect(result.turns).toBe(3);
+    });
+  });
+
+  describe('거대 tool result truncate (Phase 31 E)', () => {
+    it('tool result 가 400K 초과 시 truncate + tool:result:truncated emit', async () => {
+      const provider = createMockProvider([
+        [
+          { type: 'tool_use_start', id: 'call_big', name: 'big_tool' },
+          { type: 'tool_input_delta', delta: '{}' },
+          { type: 'tool_use_end' },
+          { type: 'usage', usage: { inputTokens: 10, outputTokens: 5 } },
+          { type: 'done' },
+        ],
+        [
+          { type: 'text_delta', text: '완료' },
+          { type: 'usage', usage: { inputTokens: 20, outputTokens: 5 } },
+          { type: 'done' },
+        ],
+      ]);
+
+      const huge = 'x'.repeat(HARD_MAX_TOOL_RESULT_CHARS + 100_000);
+      toolExecutor.register('big_tool', { execute: async () => huge });
+
+      const events: Array<{ chars: number; max: number }> = [];
+      const listener = (_id: string, chars: number, max: number) => events.push({ chars, max });
+      getEventBus().on('tool:result:truncated', listener);
+
+      const runner = createRunner(provider);
+      const result = await runner.execute(createBaseParams());
+      getEventBus().off('tool:result:truncated', listener);
+
+      expect(events).toHaveLength(1);
+      expect(events[0]?.chars).toBe(huge.length);
+      expect(events[0]?.max).toBe(HARD_MAX_TOOL_RESULT_CHARS);
+
+      const toolMsg = result.messages.find((m) => m.role === 'tool');
+      const blocks = Array.isArray(toolMsg?.content)
+        ? (toolMsg.content as Array<{ content: string }>)
+        : [];
+      expect(blocks[0]?.content.length).toBeLessThanOrEqual(HARD_MAX_TOOL_RESULT_CHARS);
     });
   });
 

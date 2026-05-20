@@ -1,4 +1,4 @@
-import { resetEventBus } from '@finclaw/infra';
+import { getEventBus, resetEventBus } from '@finclaw/infra';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type {
   RegisteredToolDefinition,
@@ -153,5 +153,43 @@ describe('InMemoryToolRegistry', () => {
     const result = await hookRegistry.execute('test-tool', {}, makeCtx());
 
     expect(result.content).toBe('Hooked!');
+  });
+
+  // ── 루프 감지 통합 (Phase 31 D) ──
+
+  it('동일 args+result 반복이 critical 임계에 도달하면 차단한다', async () => {
+    registry.register(makeDef(), okExecutor);
+
+    const verdicts: Array<{ verdict: string; stage: string }> = [];
+    const loops: Array<{ detector: string; count: number }> = [];
+    getEventBus().on('tool:policy:verdict', (_n, verdict, stage) =>
+      verdicts.push({ verdict, stage }),
+    );
+    getEventBus().on('tool:loop:detected', (_n, detector, count) =>
+      loops.push({ detector, count }),
+    );
+
+    // 1~20회는 통과 (warning 은 require-approval override 후 실행됨)
+    for (let i = 0; i < 20; i += 1) {
+      const r = await registry.execute('test-tool', {}, makeCtx());
+      expect(r.isError).toBe(false);
+    }
+
+    // 21회째 — history 20건 identical → streak 20 ≥ CRITICAL_THRESHOLD → 차단
+    const blocked = await registry.execute('test-tool', {}, makeCtx());
+    expect(blocked.isError).toBe(true);
+    expect(blocked.content).toContain('infinite loop');
+
+    expect(verdicts).toContainEqual({ verdict: 'deny', stage: 'loop-detector' });
+    expect(loops.some((l) => l.detector === 'generic_repeat')).toBe(true);
+  });
+
+  it('서로 다른 args 는 누적 streak 을 만들지 않아 차단되지 않는다', async () => {
+    registry.register(makeDef(), okExecutor);
+
+    for (let i = 0; i < 25; i += 1) {
+      const r = await registry.execute('test-tool', { n: i }, makeCtx());
+      expect(r.isError).toBe(false);
+    }
   });
 });
