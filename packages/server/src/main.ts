@@ -11,6 +11,7 @@ import {
   DEFAULT_FALLBACK_CHAIN,
   InMemoryModelCatalog,
   InMemoryToolRegistry,
+  NEWS_BRIEF_SCHEDULE_ID,
   ProfileHealthMonitor,
   Runner,
   type RunnerTracerAdapter,
@@ -30,12 +31,15 @@ import {
 import {
   ALERT_SKILL_METADATA,
   KeyRotator,
+  KisClient,
+  KisTokenManager,
   MARKET_SKILL_METADATA,
   NEWS_SKILL_METADATA,
   readKeyArray,
+  registerAlertTools,
+  registerBrokerageTools,
   registerMarketTools,
   registerNewsTools,
-  registerAlertTools,
   type AlertSkillHandle,
   type MarketSkillHandle,
   type NewsSkillHandle,
@@ -83,6 +87,8 @@ import { loadPlugins } from './plugins/loader.js';
 import { ProcessLifecycle } from './process/lifecycle.js';
 import { MessageRouter } from './process/message-router.js';
 import { loadPrompt } from './prompts/loader.js';
+import { BrokerageSyncService } from './services/brokerage-sync-service.js';
+import { NewsMemorizer } from './services/news-memorizer.js';
 
 /** 기본 게이트웨이 설정 */
 const defaultConfig: GatewayServerConfig = {
@@ -430,6 +436,56 @@ async function main(): Promise<void> {
     logger.info('market/news tools unavailable — skipping alerts');
   }
 
+  // Phase 33 B-4/B-6: 한국투자증권(KIS) read-only 잔고 동기화 tool.
+  // 키 미설정 시 등록 skip (server 정상 부팅). 자동화는 SDK 모드 전용(§B-0).
+  const kisAppKey = process.env.KIS_APP_KEY;
+  const kisAppSecret = process.env.KIS_APP_SECRET;
+  const kisAccountNo = process.env.KIS_ACCOUNT_NO;
+  const kisAccountProductCode = process.env.KIS_ACCOUNT_PRODUCT_CODE ?? '01';
+  const kisEnv = (process.env.KIS_ENV ?? 'prod') as 'prod' | 'vts';
+
+  /** 1인 사용자 기본 portfolio 보장 — 없으면 'default' 생성. */
+  const resolveDefaultPortfolioId = (): string => {
+    const existing = storage.db
+      .prepare('SELECT id FROM portfolios ORDER BY updated_at ASC LIMIT 1')
+      .get() as { id: string } | undefined;
+    if (existing) {
+      return existing.id;
+    }
+    storage.db
+      .prepare(`INSERT INTO portfolios (id, name, currency, updated_at) VALUES (?, ?, ?, ?)`)
+      .run('default', 'Default', 'USD', Date.now());
+    return 'default';
+  };
+
+  let brokerageSyncService: BrokerageSyncService | undefined;
+  if (kisAppKey && kisAppSecret && kisAccountNo) {
+    const creds = {
+      env: kisEnv,
+      appKey: kisAppKey,
+      appSecret: kisAppSecret,
+      accountNo: kisAccountNo,
+      accountProductCode: kisAccountProductCode,
+    };
+    const kisClient = new KisClient(creds, new KisTokenManager(creds));
+    brokerageSyncService = new BrokerageSyncService({
+      db: storage.db,
+      client: kisClient,
+      logger,
+      resolvePortfolioId: resolveDefaultPortfolioId,
+    });
+    const syncService = brokerageSyncService;
+    registerBrokerageTools(toolRegistry, {
+      syncHoldings: async () => {
+        const r = await syncService.run();
+        return { holdingsCount: r.holdingsCount, marketsScanned: r.marketsScanned };
+      },
+    });
+    logger.info('Brokerage (KIS) tools registered', { env: kisEnv });
+  } else {
+    logger.info('KIS not configured — skipping brokerage tools');
+  }
+
   // Phase 29 D9: MCP 도구 group=mcp 정책 — require-approval (사용자 결정 5).
   toolRegistry.addPolicyRule({
     pattern: 'mcp:*',
@@ -620,6 +676,13 @@ async function main(): Promise<void> {
     | null = null;
   const maxFailRaw = process.env.AUTOMATION_MAX_CONSECUTIVE_FAILURES;
   const maxConsecutiveFailures = maxFailRaw ? Number(maxFailRaw) : 3;
+  // Phase 33 C: news-brief schedule 출력을 심볼별 financial memory 로 적재.
+  const newsMemorizer = new NewsMemorizer({
+    db: storage.db,
+    embeddingProvider,
+    logger,
+    sessionKey: 'news-brief',
+  });
   const scheduler = new SchedulerService({
     db: storage.db,
     toolRegistry,
@@ -640,6 +703,17 @@ async function main(): Promise<void> {
     onRunComplete: async (args) => {
       if (deliveryHook) {
         await deliveryHook(args);
+      }
+      // Phase 33 C: news-brief schedule 출력만 memories 로 적재 (§B-3 id 화이트리스트).
+      if (args.schedule.id === NEWS_BRIEF_SCHEDULE_ID && !args.error) {
+        try {
+          await newsMemorizer.absorb({ agentRunId: args.agentRunId, output: args.output });
+        } catch (memErr) {
+          logger.warn('news_memorizer.failed', {
+            event: 'news_memorizer.failed',
+            error: (memErr as Error).message,
+          });
+        }
       }
     },
   });

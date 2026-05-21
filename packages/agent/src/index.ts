@@ -197,3 +197,6 @@ export type {
   RunnerOptions,
   RunnerTracerAdapter,
 } from './execution/index.js';
+
+// ── Phase 33: News brief cron prompt ──
+export { NEWS_BRIEF_PROMPT, NEWS_BRIEF_SCHEDULE_ID } from './prompts/news-brief.js';
