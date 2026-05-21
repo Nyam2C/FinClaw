@@ -267,6 +267,20 @@ sequenceDiagram
 | `ALPHA_VANTAGE_KEY` | 미설정 시 market/news 도구 등록 자체를 건너뜀                           |
 | `COINGECKO_API_KEY` | 미설정 시 crypto 시세만 비활성 (market 등록은 둘 중 하나만 있어도 진행) |
 
+### 선택 — 증권사 연동 (한국투자증권 KIS, read-only)
+
+| 변수                       | 설명                                     |
+| -------------------------- | ---------------------------------------- |
+| `KIS_ENV`                  | `prod`(실전) \| `vts`(모의). 기본 `prod` |
+| `KIS_APP_KEY`              | KIS Open API app key                     |
+| `KIS_APP_SECRET`           | KIS Open API app secret                  |
+| `KIS_ACCOUNT_NO`           | 계좌번호 CANO (8자리)                    |
+| `KIS_ACCOUNT_PRODUCT_CODE` | 계좌상품코드 ACNT_PRDT_CD (기본 `01`)    |
+
+`KIS_APP_KEY`/`KIS_APP_SECRET`/`KIS_ACCOUNT_NO` 중 하나라도 미설정 시 brokerage 도구 등록을 건너뛴다(`KIS not configured` 로그). KIS 연동은 **read-only**(잔고 조회만, 매매 없음)이며, 동기화된 보유 종목은 `portfolio_holdings.source='kis'` 로 저장되어 거래 파생(`source='tx'`) holdings 와 분리된다.
+
+> ⚠️ **자동화는 SDK 모드 전용(§B-0):** `brokerage_sync_holdings`·뉴스 요약 cron 같은 도구 호출은 `provider` 미지정 또는 `anthropic-sdk` 모드에서만 동작한다. CLI 모드(`provider:'claude-cli'`)는 `tool_use` 를 yield 하지 않아 KIS sync·뉴스 메모리화 도구가 비활성이다 (수동 대화 전용).
+
 ### 선택 — Gateway / Web UI 인증
 
 | 변수                                  | 기본값               | 비고                                                  |

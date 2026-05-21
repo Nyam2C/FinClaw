@@ -27,6 +27,7 @@ export const FINANCIAL_REDACT_PATTERNS: readonly RegExp[] = [
   /\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/g, // 카드번호
   /\b\d{3}-\d{2}-\d{4}\b/g, // SSN
   /\b\d{10,14}\b/g, // 계좌번호 (10-14자리)
+  /Bearer\s+[A-Za-z0-9._-]{20,}/g, // Phase 33 D: KIS access token (Bearer eyJ...)
 ];
 
 // ── HTML 태그 제거 ──

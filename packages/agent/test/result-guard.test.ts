@@ -68,6 +68,18 @@ describe('guardToolResult', () => {
     expect(result.content).toContain('[REDACTED]');
   });
 
+  it('KIS Bearer 토큰을 마스킹한다 (Phase 33 D)', () => {
+    const token = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.abcdefghij1234567890';
+    const result = guardToolResult(
+      { content: `authorization: Bearer ${token}`, isError: false },
+      defaultOptions,
+    );
+
+    expect(result.wasRedacted).toBe(true);
+    expect(result.content).not.toContain(token);
+    expect(result.content).toContain('[REDACTED]');
+  });
+
   it('redactFinancialData=false이면 금융 데이터를 마스킹하지 않는다', () => {
     const result = guardToolResult(
       { content: 'Card: 4111-1111-1111-1111', isError: false },
@@ -119,7 +131,7 @@ describe('guardToolResult', () => {
 });
 
 describe('FINANCIAL_REDACT_PATTERNS', () => {
-  it('3종의 패턴이 정의되어 있다', () => {
-    expect(FINANCIAL_REDACT_PATTERNS).toHaveLength(3);
+  it('4종의 패턴이 정의되어 있다', () => {
+    expect(FINANCIAL_REDACT_PATTERNS).toHaveLength(4);
   });
 });

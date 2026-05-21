@@ -19,17 +19,17 @@
 - **시장**: 한국 + 해외(미국) 주식 모두 지원 — KIS 는 두 endpoint 분리(domestic-stock / overseas-stock)
 - **권한**: **read-only 만** — 잔고 조회 (`inquire-balance`) 만 사용. 매매 endpoint(주문/취소) 호출 금지. 메모리 원칙(`매매 실행 도구는 기본 넣지 말 것`) 유지
 - **계좌**: 본인 1개 계좌 (CANO + ACNT_PRDT_CD 단일 쌍)
-- **운영 환경**: 사용자 본인 맥북 단일 — Phase 32 의 Backend-as-CLI 후속이므로 LLM 호출은 Claude CLI 경유
+- **운영 환경**: 사용자 본인 맥북 단일 — 자동화(cron)는 **SDK 모드 전용**(`provider` 미지정/`anthropic-sdk`). Phase 32 의 CLI 모드는 tool_use 비활성이라 도구 기반 자동화와 비양립(인스펙션 보강 §B-0 참조). 비용 0(CLI)는 수동 대화 전용, 자동화 시간엔 SDK.
 - **사용 시나리오**: 매일 09:00 KST cron → KIS 동기화 → 각 보유 종목 24h 뉴스 요약 → Discord DM → memories 자동 적재
 
 ### 사용자 결정 사항 (Phase 33 시작 전)
 
 본 Phase 진입 전 다음 5 가지 정책 결정이 필요. 미결정 시 각 트랙 시작 직전 확정:
 
-1. **충돌 해결 정책** — 사용자가 직접 add 한 transactions 와 KIS 가 가져온 holdings 가 충돌하는 경우. 본 plan 은 **`portfolio_holdings` 는 KIS 가 source of truth (덮어씀)** , `transactions` 는 사용자 수동 입력 유지(KIS 체결 내역은 가져오지 않음) 정책 채택. 단순화 + 회계 무결성을 사용자에게 위임.
+1. **충돌 해결 정책** — 사용자가 직접 add 한 transactions 와 KIS 가 가져온 holdings 가 충돌하는 경우. **확정(인스펙션 §B-5): `portfolio_holdings` 에 `source` 컬럼('kis'|'tx') 추가(v11→v12).** `recomputeHoldings` 는 `source='tx'` row 만 DELETE/재계산하고 KIS row 는 보존. KIS 가 잔고 source of truth, `transactions` 는 사용자 수동 입력 유지(KIS 체결 내역 미수집). (원래 plan 의 "덮어씀" 은 recomputeHoldings 가 KIS row 를 wipe 하는 충돌을 못 다룸 — source 컬럼 분리로 교정.)
 2. **모의 vs 실전 도메인** — 본 plan 은 `KIS_ENV=prod|vts` config 키로 분기. 기본값 `prod`. 테스트 시 `vts` (모의) 로 안전하게 검증.
 3. **메모리 폭증 정책** — 매일 N 종목 × 1년 = 365N 메모리. 본 plan 은 **`type='financial'` 메모리에 90일 이상 자동 archival** 정책 추가. archival 된 메모리는 RAG 검색 대상에서 제외하되 memories 테이블에는 유지(읽기 전용 원칙).
-4. **뉴스 요약의 metadata 인덱싱** — 자동 적재되는 메모리에 `symbol`, `briefDate` 메타 필요. 본 plan 은 `memories.metadata` JSON 컬럼 추가 (v11 → v12 마이그레이션) 또는 기존 `tags` 활용 결정. **기존 tags 활용 권장** (스키마 변경 최소화).
+4. **뉴스 요약의 metadata 인덱싱** — 자동 적재되는 메모리에 `symbol`, `briefDate` 메타 필요. **확정(인스펙션 §B-1): `memories.metadata` JSON 에 `{kind:'news-brief', symbol, briefDate}` 적재.** memories 에 `tags` 컬럼이 없고 `metadata TEXT DEFAULT '{}'` 만 존재하므로, metadata 활용이 스키마 변경 0 의 실제 경로 (원래 "tags 활용" 은 부정확).
 5. **KIS 토큰 갱신 주기** — Access token 24h 유효. 본 plan 은 cron 호출 직전에 토큰 만료 체크 후 자동 갱신, 갱신 실패 시 Discord 알림 + 해당 회차 skip(다음날 재시도).
 
 ### 사실 검증 (HIGH 신뢰도, 직접 코드 확인)
@@ -43,6 +43,59 @@
 | KIS API 어댑터                 | 신규                                   | `packages/skills-finance/src/brokerage/kis/` (신규)                              | 신규           |
 | 매일 뉴스 cron                 | ✅ Phase 28 자동화                     | `packages/server/src/automation/scheduler.ts` (기존 활용)                        | 기존           |
 | Cron 출력 hook                 | ❌ delivery 만, 후처리 없음            | `packages/server/src/automation/delivery.ts` 후속 hook 추가                      | 신규           |
+
+---
+
+## 인스펙션 보강 (post-phase32, base `567c07f`, 2026-05-21)
+
+> Phase 31(Runtime Resilience) + Phase 32(Backend-as-CLI) 머지 후 본 plan 의 전제·경로·라인을 실코드로 재검증. **본 보강은 아래 밀스톤 본문의 어긋난 서술을 OVERRIDE 한다.** (검증 22항목: 일치 7 · 부분 4 · 어긋남 11, 치명 2 — 모두 아래 반영.) 사용자 결정 2건 확정(★#1 SDK 전용, ★#2 source 컬럼).
+
+### ★ B-0. CLI 모드 비양립 — phase33 자동화는 SDK 모드 전용 (가장 중요, 확정)
+
+- cron 은 chat 과 **동일한 단일 Runner/provider** 공유: `main.ts:476` `runnerFactory = new Runner({ provider: providerAdapter })` → `main.ts:626` SchedulerService 주입. provider = `createProviderAdapter({ kind: config.provider ?? 'anthropic-sdk' })`.
+- cron 의 KIS 동기화·뉴스 요약은 **agent 의 tool call** (`scheduler.ts:231-257` exposedTools 주입 + `:300` collectToolCalls).
+- **CLI 모드(`provider:'claude-cli'`)는 `tool_use` 미yield → skills-finance 전체 침묵 비활성** (phase32 review §6-1, P1-1; `main.ts` 부팅 `provider.cli_tools_disabled` 경고).
+- **결정(사용자 확정): phase33 자동화는 SDK 모드 전제.** CLI(비용 0)는 수동 대화 전용, 자동화 시간엔 SDK. 두 모드는 동시 활성 불가.
+
+### B-1. memories: `tags` 없음 → `metadata` JSON (결정 #4 교정)
+
+- `memories` 에 `tags` 컬럼 없음, `metadata TEXT DEFAULT '{}'`(JSON)만 존재 (`storage/src/database.ts:53-61`; `MemoryEntry`도 `metadata?` 만, `types/src/storage.ts:32`).
+- 적재: `{kind:'news-brief', symbol, briefDate}` 를 `metadata` 에. **스키마 변경 0 결론 유지** (수단만 tags→metadata).
+- 저장 API: `createMemory` 헬퍼 **없음** → **`addMemoryWithEmbedding(db, entry, provider)`** (또는 `addMemory(db, entry)`). content sha256 dedup 자동. `sourceAgentRunId` 등 부가정보는 metadata 에.
+
+### B-2. archival(결정 #3): 1차는 신선도 감쇠 (스키마 0)
+
+- `archiveOlderThan` 헬퍼·`archived` 컬럼 모두 **없음**. retrieval 이 이미 `FRESHNESS_HALF_LIFE_DAYS=90` 반감기 적용(`memory-retrieval.ts:20`) → 90일 지난 financial 메모리 가중치 ≈37% 로 자연 강등, 임계 0.65 통과 어려움.
+- **1차: 명시적 archival 없이 신선도 감쇠만.** 진짜 row 정리가 필요하면 `archived` 컬럼 = v11→v12 추가 (1개월 사용 후 폭증 실측 시 후속).
+
+### B-3. 적재 hook 지점 (C1 재grounding)
+
+- `memory-capture.ts` 는 **유저 발화 regex(fact/preference)만** — cron 출력 무관, financial 미지원. 재사용 X.
+- cron 출력 후처리 hook 는 **이미 존재**: `scheduler.ts:411 onRunComplete` → `main.ts:640 deliveryHook`. news-memorizer 는 `onRunComplete` 분기에 추가 (delivery.ts 자체 수정 불요).
+- schedule 식별: `Schedule` 에 `tags` 없음(`automation.ts:13`) → `schedule.tags?.includes('news-brief')` 불가. **name/prompt 컨벤션 매칭 또는 news-brief schedule id 화이트리스트.**
+
+### B-4. KIS sync 의 schedule 형태 (B3 재설계)
+
+- `schedules` 테이블에 `action`/`payload` 컬럼 **없음**. 컬럼=`(id,name,cron,agent_id,prompt,delivery_channel,delivery_target,enabled,timeout_ms,status,...)`(`database.ts:175-192`). 스케줄은 **agent prompt 실행**이지 RPC dispatch 아님. B3 의 `action:'rpc', payload:{method:...}` 는 **존재하지 않는 schedule 종류**.
+- **확정: KIS sync 를 agent tool 로 등록** → 뉴스 cron prompt 가 동기화+요약을 한 번에 호출 (B-0 SDK 전제와 정합, 기존 scheduler 재사용).
+
+### B-5. portfolio_holdings 충돌 — source 컬럼 분리 (결정 #1 확정)
+
+- `portfolio_holdings(portfolio_id,symbol,quantity,average_cost)` 는 `recomputeHoldings`(transactions 파생)로만 채워지며 `addTransaction`/`update`/`delete` 가 매번 **전체 DELETE 후 재계산**(`transactions.ts:101`).
+- **확정(사용자): `portfolio_holdings` 에 `source TEXT NOT NULL DEFAULT 'tx'`('kis'|'tx') 컬럼 추가 (v11→v12).** `recomputeHoldings` 는 `WHERE source='tx'` 만 DELETE/재계산 → KIS row 보존. KIS sync 는 `source='kis'` 로 직접 INSERT/replace.
+- `replaceAllHoldings` 는 신규(`upsertHolding` 미존재 → 직접 INSERT). `holdings.ts` 파일 없음 → `transactions.ts` 확장 또는 신규 `holdings.ts`.
+- `NormalizedHolding` 의 `market/currentPrice/currency/asOf` 는 현 holdings 컬럼에 없음 → **정규화 타입은 메모리 내부용**, DB 저장은 `(quantity,average_cost,source)`. 추가 필드가 정말 필요하면 v12 컬럼.
+
+### B-6. config / secret 경로 (D1 교정)
+
+- `config/src/loader.ts` **없음**. provider 시크릿은 **`server/src/main.ts` 의 `process.env`/`readKeyArray`** 패턴(`main.ts:351,384`). KIS 키(`KIS_APP_KEY`/`KIS_APP_SECRET`/`KIS_CANO`/`KIS_ACNT_PRDT_CD`/`KIS_ENV`)도 main.ts 에서 로드 + 미설정 시 brokerage 등록 skip (market/news 의 `:361-382` 패턴). config zod 추가는 패턴 이탈.
+- `FINANCIAL_REDACT_PATTERNS`(`agent/src/agents/tools/result-guard.ts:26`)에 KIS Bearer 토큰 패턴 추가.
+
+### B-7. 라인/버전 교정
+
+- `SCHEMA_VERSION=11`(phase32). 신규 마이그레이션 = **v11→v12** (source 컬럼). 결정 #4 숫자 정확.
+- transactions 자동 주입: `memory-retrieval.ts:301-318` → **실제 365-383**. memories 임계/신선도 컷 = 286-318. 임계 0.65/반감기 90/상한 3 = 정확.
+- KIS 어댑터 패턴: `market/providers/*` + `provider-registry.ts` 구조, register→handle 반환→financeDeps 재배선. broadcaster `schedule.completed` 패턴(`delivery.ts:96`)으로 `brokerage.sync.completed` 추가 가능.
 
 ---
 

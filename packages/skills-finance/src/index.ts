@@ -24,3 +24,6 @@ export {
   readKeyArray,
   type KeyRotatorOptions,
 } from './shared/key-rotator.js';
+export * from './brokerage/kis/index.js';
+export { registerBrokerageTools } from './brokerage/tools.js';
+export type { BrokerageToolDeps } from './brokerage/tools.js';

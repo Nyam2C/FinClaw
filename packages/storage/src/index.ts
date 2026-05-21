@@ -91,10 +91,12 @@ export {
   updateTransaction,
   deleteTransaction,
   recomputeHoldings,
+  replaceAllHoldings,
   type Transaction,
   type AddTransactionInput,
   type ListTransactionsOptions,
   type UpdateTransactionInput,
+  type KisHoldingInput,
 } from './transactions.js';
 export {
   addAgentRun,

@@ -50,6 +50,8 @@ function rowToSchedule(row: ScheduleRow): Schedule {
 // ─── 입력 타입 ───
 
 export interface AddScheduleInput {
+  /** 지정 시 그 id 로 INSERT (prebuilt/seed 용). 미지정 시 randomUUID. */
+  id?: string;
   name: string;
   cron: string;
   agentId: AgentId;
@@ -90,7 +92,7 @@ const MAX_LIST_LIMIT = 500;
 // ─── CRUD ───
 
 export function addSchedule(db: DatabaseSync, input: AddScheduleInput): Schedule {
-  const id = randomUUID();
+  const id = input.id ?? randomUUID();
   const now = Date.now();
   const enabled = input.enabled === false ? 0 : 1;
 
