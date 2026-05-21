@@ -17,6 +17,7 @@ import {
   evaluateContextWindow,
   ExecutionToolDispatcher as ToolDispatcherCtor,
   resolveModel,
+  ROUTER_MODEL_ID,
   runWithModelFallback,
   tierToModelId,
   type LlmRouter,
@@ -317,6 +318,31 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
         });
       } else {
         this.deps.profileHealth?.recordResult(profileId, true);
+      }
+
+      // Phase 34 D-0: 라우터 Haiku 토큰을 메인 호출과 분리하여 byModel 집계.
+      // ROUTER_MODEL_ID 의 catalog pricing 으로 비용 환산 → "≤$0.0005" 완료조건 검증 가능.
+      if (
+        routed?.routerUsage &&
+        (routed.routerUsage.inputTokens > 0 || routed.routerUsage.outputTokens > 0)
+      ) {
+        const routerPricing = this.deps.modelCatalog?.getModel(ROUTER_MODEL_ID)?.pricing;
+        this.deps.profileHealth?.recordResult(profileId, {
+          success: true,
+          modelId: ROUTER_MODEL_ID,
+          tokens: {
+            input: routed.routerUsage.inputTokens,
+            output: routed.routerUsage.outputTokens,
+          },
+          costUsd: routerPricing
+            ? calculateEstimatedCost(
+                routed.routerUsage.inputTokens,
+                routed.routerUsage.outputTokens,
+                routerPricing,
+              )
+            : 0,
+          isFallback: false,
+        });
       }
 
       const content = extractAssistantText(result.messages);

@@ -535,3 +535,33 @@ describe('RunnerExecutionAdapter + LLM 라우터 (Phase 34)', () => {
     expect(calls).toHaveLength(1);
   });
 });
+
+describe('Phase 34 라우팅 로깅', () => {
+  it('pipeline.routed 로그에 intent/tier/allowedToolNames/reason 포함', async () => {
+    const logged: Array<{ msg: string; meta: Record<string, unknown> }> = [];
+    const logger = {
+      info: (msg: string, meta: Record<string, unknown>) => logged.push({ msg, meta }),
+      warn: () => {},
+      error: () => {},
+      debug: () => {},
+    } as unknown as import('@finclaw/infra').FinClawLogger;
+    const { runnerFactory } = makeFakeRunnerFactory([{ role: 'assistant', content: 'ok' }]);
+    const adapter = new RunnerExecutionAdapter({
+      runnerFactory,
+      defaultModel: DEFAULT_MODEL,
+      systemPrompt: 'sp',
+      logger,
+      routerLlm: mockRouter({
+        intent: 'fetch',
+        modelTier: 'haiku',
+        allowedToolNames: [],
+        reason: 'r',
+      }),
+    });
+    await adapter.execute(makePipelineCtx(), AbortSignal.timeout(5000));
+    const routedLog = logged.find((l) => l.meta.event === 'pipeline.routed');
+    expect(routedLog).toBeDefined();
+    expect(routedLog?.meta).toMatchObject({ intent: 'fetch', tier: 'haiku', reason: 'r' });
+    expect(routedLog?.meta.allowedToolNames).toEqual([]);
+  });
+});
