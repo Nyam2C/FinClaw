@@ -16,10 +16,13 @@ import {
   DEFAULT_FALLBACK_TRIGGERS,
   evaluateContextWindow,
   ExecutionToolDispatcher as ToolDispatcherCtor,
-  modelIdToTier,
   resolveModel,
+  ROUTER_MODEL_ID,
   runWithModelFallback,
+  tierToModelId,
+  type LlmRouter,
   type ModelRole,
+  type RouterDecision,
   type TranscriptEntry,
 } from '@finclaw/agent';
 import type { FinClawLogger } from '@finclaw/infra';
@@ -36,7 +39,6 @@ import type {
 } from '@finclaw/types';
 import { createAgentId } from '@finclaw/types';
 import type { PipelineMsgContext } from './pipeline-context.js';
-import type { RouterHelper } from './router-helper.js';
 import { formatBackgroundSection } from './stages/memory-retrieval.js';
 import { buildDispatcher } from './tool-dispatcher-adapter.js';
 
@@ -179,10 +181,11 @@ export interface RunnerExecutionAdapterDeps {
   /** 건강 기록용 프로필 ID (기본 'default') */
   readonly profileId?: string;
   /**
-   * 모델 라우터 (Phase 24) — 제공 시 execute/executeForTui 가 매 요청마다
-   * 라우터 결정 모델로 fallbackChain/defaultModel 을 대체한다.
+   * Phase 34: LLM 오케스트레이터 라우터 (SDK Haiku 고정). 주입 시 매 요청마다
+   * intent 분류 → {modelTier, allowedToolNames}. 실패 시 inferRole 키워드 폴백 (B-2).
+   * 키워드 RouterHelper(Phase 24) 정상 경로는 폐기 — main.ts 는 routerLlm 만 주입.
    */
-  readonly router?: RouterHelper;
+  readonly routerLlm?: LlmRouter;
 }
 
 /**
@@ -213,11 +216,10 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
     const profileId = this.deps.profileId ?? 'default';
     const startedAt = Date.now();
 
-    // Phase 24: 라우터가 주입되면 매 요청마다 role 추론 + 라우팅 결정.
-    const routed = this.applyRouting({
+    // Phase 34: LLM 라우터 1회 호출 → intent 기반 모델/도구 결정. 실패 시 키워드 폴백.
+    const routed = await this.applyRouting({
       message: ctx.normalizedBody,
       toolDefinitions,
-      automation: false,
     });
 
     // Phase 24 보정: 라우터가 결정한 allowedToolNames 만 LLM 에 노출.
@@ -317,6 +319,31 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
         this.deps.profileHealth?.recordResult(profileId, true);
       }
 
+      // Phase 34 D-0: 라우터 Haiku 토큰을 메인 호출과 분리하여 byModel 집계.
+      // ROUTER_MODEL_ID 의 catalog pricing 으로 비용 환산 → "≤$0.0005" 완료조건 검증 가능.
+      if (
+        routed?.routerUsage &&
+        (routed.routerUsage.inputTokens > 0 || routed.routerUsage.outputTokens > 0)
+      ) {
+        const routerPricing = this.deps.modelCatalog?.getModel(ROUTER_MODEL_ID)?.pricing;
+        this.deps.profileHealth?.recordResult(profileId, {
+          success: true,
+          modelId: ROUTER_MODEL_ID,
+          tokens: {
+            input: routed.routerUsage.inputTokens,
+            output: routed.routerUsage.outputTokens,
+          },
+          costUsd: routerPricing
+            ? calculateEstimatedCost(
+                routed.routerUsage.inputTokens,
+                routed.routerUsage.outputTokens,
+                routerPricing,
+              )
+            : 0,
+          isFallback: false,
+        });
+      }
+
       const content = extractAssistantText(result.messages);
       // Phase 29 B6: 응답 텍스트에서 [mem:xxxxxx] 인용 추출 → retrievalResult 의 snippets 와 prefix 매칭.
       const usedMemoryIds = ctx.retrievalResult?.snippets
@@ -369,9 +396,8 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
     });
     const runner = this.deps.runnerFactory(dispatcher);
 
-    // Phase 24: 라우터 주입 시 chain + floor 로 runWithModelFallback 사용.
-    // 미주입 시 input.model 단일 사용 (기존 동작).
-    const routed = this.applyTuiRouting({ input, toolDefinitions });
+    // Phase 34: TUI 도 LLM 라우터 사용 (B-3). userHint 키워드 승격 폐기.
+    const routed = await this.applyTuiRouting({ input, toolDefinitions });
 
     // Phase 24 보정: 라우터 결정 allowedToolNames 만 LLM 노출.
     const exposedTools = routed
@@ -455,89 +481,135 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
   }
 
   /**
-   * Phase 24: 라우팅 결정 → fallback chain + allowedToolNames 구성. 라우터 미주입 시 undefined.
-   *
-   * - chain: 라우터 결정 모델을 선두로, 나머지 fallbackChain 모델을 뒤에 배치.
-   * - floor: routing 결정의 floor (밀스톤 D, B6).
-   * - allowedToolNames: effectiveTier 보다 minModel 이 높은 도구를 LLM 노출에서 제외 (Phase 24 보정).
+   * Phase 34: LLM 라우터 호출 → chain + floor + allowedToolNames 구성.
+   * - routerLlm 주입: Haiku 라우터 1회 호출. 실패/타임아웃 시 inferRole 키워드 폴백 (B-2).
+   * - routerLlm 미주입: undefined (라우터 비활성, 기존 fallbackChain 동작).
    */
-  private applyRouting(args: {
+  private async applyRouting(args: {
     readonly message: string;
     readonly toolDefinitions: readonly { readonly name: string }[];
-    readonly automation: boolean;
-  }):
+  }): Promise<
     | {
         readonly chain: readonly string[];
         readonly floor: ModelTier;
         readonly allowedToolNames: ReadonlyArray<string>;
+        readonly routerUsage: { readonly inputTokens: number; readonly outputTokens: number };
       }
-    | undefined {
-    const router = this.deps.router;
-    if (!router) {
+    | undefined
+  > {
+    if (!this.deps.routerLlm) {
       return undefined;
     }
-    const role = inferRole(args.message);
     const toolNames = args.toolDefinitions.map((t) => t.name);
-    const { decision, modelId, allowedToolNames } = router({
-      role,
-      toolNames,
-      automation: args.automation,
-    });
+    const decision = await this.routeOrFallback(args.message, toolNames);
     this.deps.logger?.info('pipeline.routed', {
       event: 'pipeline.routed',
-      role,
-      chosenModel: modelId,
-      floor: decision.floor,
+      intent: decision.intent,
+      tier: decision.modelTier,
+      allowedToolNames: decision.allowedToolNames,
       reason: decision.reason,
-      filteredCount: toolNames.length - allowedToolNames.length,
+      fallback: decision.fallback,
+      filteredCount: toolNames.length - decision.allowedToolNames.length,
+      routerInputTokens: decision.routerUsage.inputTokens,
+      routerOutputTokens: decision.routerUsage.outputTokens,
     });
+    const modelId = tierToModelId(decision.modelTier);
     const others = (this.deps.fallbackChain ?? []).filter((m) => m !== modelId);
-    return { chain: [modelId, ...others], floor: decision.floor, allowedToolNames };
+    return {
+      chain: [modelId, ...others],
+      floor: decision.modelTier,
+      allowedToolNames: decision.allowedToolNames,
+      routerUsage: decision.routerUsage,
+    };
   }
 
   /**
-   * Phase 24: TUI/RPC chat.send 전용 라우팅. 메시지로 role 추론 + userHint 적용.
-   * 라우터 미주입 시 undefined — 호출자가 input.model 그대로 사용.
+   * Phase 34 B-2: LLM 라우터 호출, 실패 시 inferRole 키워드 폴백.
+   * 폴백 시 routerUsage=0 (라우터 LLM 미과금), fallback=true 로 로그/비용 구분.
    */
-  private applyTuiRouting(args: {
+  private async routeOrFallback(
+    message: string,
+    availableToolNames: readonly string[],
+  ): Promise<RouterDecision> {
+    const routerLlm = this.deps.routerLlm;
+    if (!routerLlm) {
+      return this.keywordFallbackDecision(message, availableToolNames);
+    }
+    try {
+      return await routerLlm({ message, availableToolNames: [...availableToolNames] });
+    } catch (err) {
+      this.deps.logger?.warn('router.fallback', {
+        event: 'router.fallback',
+        reason: toMessage(err),
+      });
+      return this.keywordFallbackDecision(message, availableToolNames);
+    }
+  }
+
+  /** inferRole 키워드 휴리스틱 → RouterDecision 폴백. analysis=모든 도구, fetch/chat=sonnet 도구. */
+  private keywordFallbackDecision(
+    message: string,
+    availableToolNames: readonly string[],
+  ): RouterDecision {
+    const role = inferRole(message); // 잔존: 폴백 전용 (B-2)
+    const intent = role === 'analysis' ? 'analysis' : role === 'fetch' ? 'fetch' : 'other';
+    const modelTier: ModelTier = role === 'analysis' ? 'sonnet' : 'haiku';
+    // 폴백은 보수적: analysis 면 전체 노출, 그 외는 전체 노출(키워드 시대 동작 보존).
+    return {
+      intent,
+      modelTier,
+      allowedToolNames: [...availableToolNames],
+      reason: `keyword-fallback(role=${role})`,
+      routerUsage: { inputTokens: 0, outputTokens: 0 },
+      fallback: true,
+    };
+  }
+
+  /**
+   * Phase 34 B-3: TUI/RPC chat.send 전용 라우팅. execute() 와 동일 LLM 라우터.
+   * userHint 기반 키워드 tier 승격(Phase 24) 폐기 — 라우터 결정 tier 그대로.
+   * routerLlm 미주입 시 undefined (호출자가 input.model 사용).
+   */
+  private async applyTuiRouting(args: {
     readonly input: {
       readonly model: ModelRef;
       readonly userMessage: string;
       readonly userHint?: ModelTier;
     };
     readonly toolDefinitions: readonly { readonly name: string }[];
-  }):
+  }): Promise<
     | {
         readonly chain: readonly string[];
         readonly floor: ModelTier;
         readonly allowedToolNames: ReadonlyArray<string>;
+        readonly routerUsage: { readonly inputTokens: number; readonly outputTokens: number };
       }
-    | undefined {
-    const router = this.deps.router;
-    if (!router) {
+    | undefined
+  > {
+    if (!this.deps.routerLlm) {
       return undefined;
     }
-    // Phase 24 보정: chat.send 도 메시지 키워드로 role 추론 — "분석해줘" 같은 분석 요청을
-    // chat 세션에서도 처리. role='chat' 강제는 의도 무시 가능성.
-    const role = inferRole(args.input.userMessage);
-    const userHint = args.input.userHint ?? modelIdToTier(args.input.model.model);
     const toolNames = args.toolDefinitions.map((t) => t.name);
-    const { decision, modelId, allowedToolNames } = router({
-      role,
-      toolNames,
-      userHint,
-    });
+    const decision = await this.routeOrFallback(args.input.userMessage, toolNames);
     this.deps.logger?.info('tui.routed', {
       event: 'tui.routed',
-      role,
-      userHint,
-      chosenModel: modelId,
-      floor: decision.floor,
+      intent: decision.intent,
+      tier: decision.modelTier,
+      allowedToolNames: decision.allowedToolNames,
       reason: decision.reason,
-      filteredCount: toolNames.length - allowedToolNames.length,
+      fallback: decision.fallback,
+      filteredCount: toolNames.length - decision.allowedToolNames.length,
+      routerInputTokens: decision.routerUsage.inputTokens,
+      routerOutputTokens: decision.routerUsage.outputTokens,
     });
+    const modelId = tierToModelId(decision.modelTier);
     const others = (this.deps.fallbackChain ?? []).filter((m) => m !== modelId);
-    return { chain: [modelId, ...others], floor: decision.floor, allowedToolNames };
+    return {
+      chain: [modelId, ...others],
+      floor: decision.modelTier,
+      allowedToolNames: decision.allowedToolNames,
+      routerUsage: decision.routerUsage,
+    };
   }
 
   private async loadHistory(sessionKey: SessionKey): Promise<ConversationMessage[]> {
