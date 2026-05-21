@@ -86,9 +86,18 @@ interface IntentPolicy {
 
 const INTENT_POLICY: Record<RouterIntent, IntentPolicy> = {
   greeting: { modelTier: 'haiku', toolPatterns: [] }, // 도구 미전달
-  fetch: { modelTier: 'haiku', toolPatterns: ['get_', 'quote', 'price', 'rate', 'chart'] },
+  // 시세/가격/환율/차트 조회 도구만 (over-call ↓). 'get_' 광역 prefix 는 뉴스/알림/포트폴리오까지
+  // 끌어와 과노출되므로 정확명으로 한정.
+  fetch: {
+    modelTier: 'haiku',
+    toolPatterns: ['get_stock_price', 'get_crypto_price', 'get_forex_rate', 'get_market_chart'],
+  },
   analysis: { modelTier: 'sonnet', toolPatterns: ['*'] }, // 모든 도구 (analyze 포함)
-  portfolio: { modelTier: 'sonnet', toolPatterns: ['get_', 'portfolio', 'holding'] },
+  // 보유 종목·자산 도구만 (KIS 동기화 포함).
+  portfolio: {
+    modelTier: 'sonnet',
+    toolPatterns: ['get_portfolio_summary', 'brokerage_sync_holdings'],
+  },
   memory: { modelTier: 'haiku', toolPatterns: [] }, // 메모리는 RAG 가 system prompt 로 주입
   other: { modelTier: 'haiku', toolPatterns: [] },
 };

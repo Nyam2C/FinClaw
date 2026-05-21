@@ -47,14 +47,15 @@ describe('createLlmRouter', () => {
     expect(d.allowedToolNames).toEqual(['get_stock_price', 'analyze_market', 'search_news']);
   });
 
-  it('환각 도구명은 availableToolNames 교집합으로 제거', async () => {
+  it('fetch 는 정책 도구 ∩ 가용 도구만 노출 (뉴스/알림 과노출 차단)', async () => {
     const { provider } = mockProvider([{ json: { intent: 'fetch', reason: '시세' } }]);
     const router = createLlmRouter(provider);
     const d = await router({
-      message: '환율',
-      availableToolNames: ['get_exchange_rate'], // patterns 매칭됨
+      message: '삼성전자 얼마',
+      // get_stock_price: fetch 정책 ∩ 가용 → 노출. get_financial_news: 가용하나 fetch 정책 밖 → 제외.
+      availableToolNames: ['get_stock_price', 'get_financial_news'],
     });
-    expect(d.allowedToolNames).toEqual(['get_exchange_rate']);
+    expect(d.allowedToolNames).toEqual(['get_stock_price']);
   });
 
   it('JSON 코드펜스/잡텍스트 둘러싸여도 파싱', async () => {

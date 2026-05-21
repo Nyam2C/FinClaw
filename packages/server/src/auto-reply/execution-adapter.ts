@@ -220,7 +220,6 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
     const routed = await this.applyRouting({
       message: ctx.normalizedBody,
       toolDefinitions,
-      automation: false,
     });
 
     // Phase 24 보정: 라우터가 결정한 allowedToolNames 만 LLM 에 노출.
@@ -489,7 +488,6 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
   private async applyRouting(args: {
     readonly message: string;
     readonly toolDefinitions: readonly { readonly name: string }[];
-    readonly automation: boolean;
   }): Promise<
     | {
         readonly chain: readonly string[];
