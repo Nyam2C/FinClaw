@@ -26,6 +26,7 @@ import { handleHttpRequest } from './router.js';
 import { registerAgentRunsMethods } from './rpc/methods/agent-runs.js';
 import { registerAgentMethods, type AgentRpcDeps } from './rpc/methods/agent.js';
 import { registerAuditMethods } from './rpc/methods/audit.js';
+import { registerBrokerageMethods, type BrokerageRpcDeps } from './rpc/methods/brokerage.js';
 import { registerChatMethods } from './rpc/methods/chat.js';
 import { registerConfigMethods } from './rpc/methods/config.js';
 import { registerFinanceMethods, type FinanceRpcDeps } from './rpc/methods/finance.js';
@@ -51,6 +52,8 @@ export interface GatewayServerDeps {
   readonly memoryDeps?: MemoryRpcDeps;
   /** Phase 28: schedule.* RPC 배선용 의존성 (생략 시 schedule.* 메서드는 provider_unavailable) */
   readonly scheduleDeps?: ScheduleRpcDeps;
+  /** Phase 33 D: brokerage.* RPC 배선용 의존성 (syncService 미주입 시 sync.run 은 not_configured) */
+  readonly brokerageDeps?: BrokerageRpcDeps;
   /** Phase 29 E5: /readyz 의 db 컴포넌트 헬스 체커 (생략 시 db 항목 미등록) */
   readonly dbHealthCheck?: () => Promise<void>;
   /** Phase 29 E5: /readyz 의 embedding 컴포넌트 헬스 체커 (생략 시 embedding 항목 미등록) */
@@ -164,6 +167,8 @@ export function createGatewayServer(
   }
   // Phase 28: schedule.* RPC 등록 (db 미주입 시 provider_unavailable, scheduler 미주입 시 runNow 만 provider_unavailable).
   registerScheduleMethods(deps.scheduleDeps ?? {});
+  // Phase 33 D: brokerage.* RPC 등록 (syncService 미주입 시 sync.run 은 not_configured).
+  registerBrokerageMethods(deps.brokerageDeps ?? {});
 
   // HTTP 요청 처리
   httpServer.on('request', (req: IncomingMessage, res: ServerResponse) => {

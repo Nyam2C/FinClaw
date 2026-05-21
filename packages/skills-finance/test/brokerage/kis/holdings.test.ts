@@ -78,4 +78,24 @@ describe('KIS client (mock fetch)', () => {
       recoverable: false,
     });
   });
+
+  it('일시적 500 → 재시도 후 성공 (Phase 33 D2)', async () => {
+    let failed = false;
+    const fetchFn = vi.fn(async (url: string | URL) => {
+      const u = String(url);
+      if (u.endsWith('/oauth2/tokenP')) {
+        return jsonRes({ access_token: 'tok', expires_in: 86400 });
+      }
+      if (u.includes('domestic') && !failed) {
+        failed = true;
+        return jsonRes({ msg: 'server error' }, 500); // recoverable
+      }
+      return jsonRes(u.includes('domestic') ? DOMESTIC_FIXTURE : OVERSEAS_FIXTURE);
+    }) as unknown as typeof fetch;
+    const tokens = new KisTokenManager(CREDS, fetchFn);
+    // sleep 즉시 resolve 주입 → 테스트 빠르게.
+    const client = new KisClient(CREDS, tokens, fetchFn, Date.now, async () => {});
+    const out = await client.fetchBalances();
+    expect(out.domestic).toMatchObject(DOMESTIC_FIXTURE);
+  });
 });

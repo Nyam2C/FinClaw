@@ -197,6 +197,15 @@ export class SettingsView extends LitElement {
   @state() private showScheduleForm = false;
   @state() private toastMessage = '';
 
+  // Phase 33 D: Brokerage (KIS) 연동
+  @state() private brokerageHealth: {
+    configured: boolean;
+    env: 'prod' | 'vts' | null;
+    kisHoldingsCount: number;
+  } | null = null;
+  @state() private brokerageError = '';
+  @state() private brokerageSyncing = false;
+
   private memoryClient: MemoryClient | null = null;
   private agentRunsClient: AgentRunsClient | null = null;
   private scheduleClient: ScheduleClient | null = null;
@@ -243,6 +252,7 @@ export class SettingsView extends LitElement {
       void this.loadMemories();
       void this.loadRuns();
       void this.loadSchedules();
+      void this.loadBrokerageHealth();
     }
   }
 
@@ -328,6 +338,42 @@ export class SettingsView extends LitElement {
       await this.loadSchedules();
     } catch (err) {
       this.schedulesError = (err as Error).message;
+    }
+  }
+
+  private async loadBrokerageHealth(): Promise<void> {
+    if (!this.gateway?.isConnected) {
+      return;
+    }
+    this.brokerageError = '';
+    try {
+      this.brokerageHealth = (await this.gateway.send('brokerage.health.get', {})) as {
+        configured: boolean;
+        env: 'prod' | 'vts' | null;
+        kisHoldingsCount: number;
+      };
+    } catch (err) {
+      this.brokerageError = (err as Error).message;
+    }
+  }
+
+  private async onBrokerageSync(): Promise<void> {
+    if (!this.gateway?.isConnected) {
+      return;
+    }
+    this.brokerageSyncing = true;
+    this.brokerageError = '';
+    try {
+      const r = (await this.gateway.send('brokerage.sync.run', {})) as {
+        holdingsCount: number;
+        marketsScanned: readonly string[];
+      };
+      this.setToast(`잔고 동기화 완료: ${r.holdingsCount}개 종목`);
+      await this.loadBrokerageHealth();
+    } catch (err) {
+      this.brokerageError = (err as Error).message;
+    } finally {
+      this.brokerageSyncing = false;
     }
   }
 
@@ -565,6 +611,50 @@ createdAt: ${new Date(run.createdAt).toLocaleString()}</pre
     `;
   }
 
+  private renderBrokerageSection() {
+    const h = this.brokerageHealth;
+    return html`
+      <section>
+        <div class="section-header">
+          <h3>증권사 연동 (KIS)</h3>
+          <div class="controls">
+            <button class="refresh" @click=${this.loadBrokerageHealth}>새로고침</button>
+            <button
+              class="refresh"
+              @click=${this.onBrokerageSync}
+              ?disabled=${this.brokerageSyncing || !h?.configured}
+            >
+              ${this.brokerageSyncing ? '동기화 중...' : '지금 동기화'}
+            </button>
+          </div>
+        </div>
+        ${this.brokerageError
+          ? html`<div class="error" role="alert">${this.brokerageError}</div>`
+          : ''}
+        ${!h
+          ? html`<div class="placeholder">상태 확인 중...</div>`
+          : !h.configured
+            ? html`<div class="empty">
+                KIS 미설정 — 환경변수(KIS_APP_KEY 등) 설정 후 서버 재시작.
+              </div>`
+            : html`
+                <table>
+                  <tbody>
+                    <tr>
+                      <th>환경</th>
+                      <td>${h.env === 'vts' ? '모의투자 (vts)' : '실전 (prod)'}</td>
+                    </tr>
+                    <tr>
+                      <th>동기화된 보유 종목</th>
+                      <td class="numeric">${h.kisHoldingsCount}개</td>
+                    </tr>
+                  </tbody>
+                </table>
+              `}
+      </section>
+    `;
+  }
+
   private renderRoutingSection() {
     return html`
       <section>
@@ -654,8 +744,9 @@ createdAt: ${new Date(run.createdAt).toLocaleString()}</pre
       ${!this.gateway?.isConnected
         ? html`<div class="empty">게이트웨이 연결 대기 중...</div>`
         : html`
-            ${this.renderMemoriesSection()} ${this.renderAutomationSection()}
-            ${this.renderRunsSection()} ${this.renderRoutingSection()}
+            ${this.renderMemoriesSection()} ${this.renderBrokerageSection()}
+            ${this.renderAutomationSection()} ${this.renderRunsSection()}
+            ${this.renderRoutingSection()}
           `}
       ${this.showScheduleForm
         ? html`<schedule-form

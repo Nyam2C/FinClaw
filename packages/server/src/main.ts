@@ -761,6 +761,8 @@ async function main(): Promise<void> {
     },
     // Phase 28: schedule.* RPC 배선.
     scheduleDeps: { db: storage.db, scheduler },
+    // Phase 33 D: brokerage.* RPC 배선 (수동 sync 버튼용). syncService 미주입 시 sync.run = not_configured.
+    brokerageDeps: { db: storage.db, syncService: brokerageSyncService, env: kisEnv },
     // Phase 29 E6: /readyz 의 db / embedding 컴포넌트 헬스 체커.
     dbHealthCheck: async () => {
       storage.db.prepare('SELECT 1').get();
