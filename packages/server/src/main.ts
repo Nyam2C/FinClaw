@@ -11,6 +11,7 @@ import {
   DEFAULT_FALLBACK_CHAIN,
   InMemoryModelCatalog,
   InMemoryToolRegistry,
+  NEWS_BRIEF_PROMPT,
   NEWS_BRIEF_SCHEDULE_ID,
   ProfileHealthMonitor,
   Runner,
@@ -52,6 +53,7 @@ import {
   createRerankerWithFallback,
   createStorage,
   deleteSchedule,
+  getSchedule,
   listSchedules,
   LocalReranker,
   purgeAccessLog,
@@ -482,6 +484,36 @@ async function main(): Promise<void> {
       },
     });
     logger.info('Brokerage (KIS) tools registered', { env: kisEnv });
+
+    // Phase 33 C: 매일 뉴스 브리프 cron 을 idempotent seed — 고정 id 라 onRunComplete 의
+    // news-memorizer 분기(§B-3 화이트리스트)가 실제로 발동한다. SDK 모드 전용(§B-0): CLI 모드는
+    // tool_use 비활성이라 brokerage_sync_holdings 가 안 돌아 seed 를 skip (조용한 빈 출력 방지).
+    const isCliMode = (finclawConfig.provider ?? 'anthropic-sdk') === 'claude-cli';
+    if (isCliMode) {
+      logger.warn('news_brief.seed_skipped_cli', {
+        event: 'news_brief.seed_skipped_cli',
+        note: 'CLI mode disables tool_use; news-brief cron needs SDK mode. Schedule not seeded.',
+      });
+    } else if (getSchedule(storage.db, NEWS_BRIEF_SCHEDULE_ID) === null) {
+      const briefCron = '0 0 * * *'; // 매일 00:00 UTC = 09:00 KST
+      const briefNext = computeNextRunAt(parseCron(briefCron), Date.now());
+      addSchedule(storage.db, {
+        id: NEWS_BRIEF_SCHEDULE_ID,
+        name: 'Daily holdings news brief',
+        cron: briefCron,
+        agentId: createAgentId('default'),
+        prompt: NEWS_BRIEF_PROMPT,
+        deliveryChannel: 'web',
+        deliveryTarget: 'broadcast',
+        enabled: true,
+        nextRunAt: briefNext === null ? undefined : (briefNext as Timestamp),
+      });
+      logger.info('Seeded news-brief-daily schedule', {
+        event: 'schedule.seeded',
+        id: NEWS_BRIEF_SCHEDULE_ID,
+        cron: briefCron,
+      });
+    }
   } else {
     logger.info('KIS not configured — skipping brokerage tools');
   }

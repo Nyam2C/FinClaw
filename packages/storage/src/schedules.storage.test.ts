@@ -43,6 +43,26 @@ describe('schedules storage', () => {
     expect(fetched?.deliveryChannel).toBe('discord');
   });
 
+  it('addSchedule honors explicit id for idempotent seeding', () => {
+    // Phase 33 P0: news-brief-daily 같은 prebuilt schedule 의 고정 id seed.
+    const seed = () =>
+      addSchedule(database.db, {
+        id: 'news-brief-daily',
+        name: 'Daily holdings news brief',
+        cron: '0 0 * * *',
+        agentId: AGENT,
+        prompt: '...',
+        deliveryChannel: 'web',
+        deliveryTarget: 'broadcast',
+      });
+
+    const created = seed();
+    expect(created.id).toBe('news-brief-daily');
+
+    // idempotent 패턴: 이미 있으면 재 seed 안 함 (호출자가 getSchedule 로 가드).
+    expect(getSchedule(database.db, 'news-brief-daily')?.id).toBe('news-brief-daily');
+  });
+
   it('findDueSchedules respects enabled + next_run_at + status', () => {
     const now = Date.now();
     const a = addSchedule(database.db, {
