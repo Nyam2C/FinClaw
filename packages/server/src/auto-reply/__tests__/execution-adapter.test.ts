@@ -1,4 +1,4 @@
-import type { Runner } from '@finclaw/agent';
+import type { LlmRouter, RouterDecision, Runner } from '@finclaw/agent';
 import {
   createTimestamp,
   createSessionKey,
@@ -490,5 +490,48 @@ describe('sliceHistoryRespectingToolPairs', () => {
     expect(result).toHaveLength(3);
     expect(result[0]?.role).toBe('assistant');
     expect(Array.isArray(result[0]?.content)).toBe(true);
+  });
+});
+
+function mockRouter(decision: Partial<RouterDecision> & { allowedToolNames: string[] }): LlmRouter {
+  return async () => ({
+    intent: 'other',
+    modelTier: 'haiku',
+    reason: 'mock',
+    routerUsage: { inputTokens: 0, outputTokens: 0 },
+    fallback: false,
+    ...decision,
+  });
+}
+
+describe('RunnerExecutionAdapter + LLM 라우터 (Phase 34)', () => {
+  it('allowedToolNames 빈 배열이면 메인 호출에 tools 미전달', async () => {
+    const { runnerFactory, calls } = makeFakeRunnerFactory([{ role: 'assistant', content: 'hi' }]);
+    const adapter = new RunnerExecutionAdapter({
+      runnerFactory,
+      defaultModel: DEFAULT_MODEL,
+      systemPrompt: 'sp',
+      // toolRegistry 미주입 → toolDefinitions=[] 이지만 라우터 경로 자체를 검증.
+      routerLlm: mockRouter({ intent: 'greeting', allowedToolNames: [] }),
+    });
+    await adapter.execute(makePipelineCtx(), AbortSignal.timeout(5000));
+    expect(calls[0]?.tools).toBeUndefined();
+  });
+
+  it('라우터 실패(throw) 시 inferRole 폴백으로 진행 (B-2)', async () => {
+    const { runnerFactory, calls } = makeFakeRunnerFactory([{ role: 'assistant', content: 'ok' }]);
+    const failingRouter: LlmRouter = async () => {
+      throw new Error('router down');
+    };
+    const adapter = new RunnerExecutionAdapter({
+      runnerFactory,
+      defaultModel: DEFAULT_MODEL,
+      systemPrompt: 'sp',
+      routerLlm: failingRouter,
+    });
+    // throw 가 전파되지 않고 폴백으로 정상 응답.
+    const result = await adapter.execute(makePipelineCtx(), AbortSignal.timeout(5000));
+    expect(result.content).toBe('ok');
+    expect(calls).toHaveLength(1);
   });
 });

@@ -6,6 +6,7 @@ import {
   approxTokenCount,
   BUILT_IN_MODELS,
   buildModelAliasIndex,
+  createLlmRouter,
   createProviderAdapter,
   DEFAULT_CLAUDE_BACKEND,
   DEFAULT_FALLBACK_CHAIN,
@@ -273,6 +274,9 @@ async function main(): Promise<void> {
   // 4. Agent 레이어 (툴 레지스트리 + 러너 팩토리)
   // Phase 32 F: dual-path provider — config.provider 로 SDK / claude-cli 전환 (기본 SDK).
   const sdkAdapter = new AnthropicAdapter(anthropicKey);
+  // Phase 34: LLM 오케스트레이터 라우터 — SDK Haiku 고정 (B-0). CLI 모드여도 SDK.
+  // 선례: summarizer 도 항상 sdkAdapter (Phase 32 F).
+  const routerLlm = createLlmRouter(sdkAdapter);
   const providerAdapter = createProviderAdapter({
     kind: finclawConfig.provider ?? 'anthropic-sdk',
     apiKey: anthropicKey,
@@ -582,7 +586,8 @@ async function main(): Promise<void> {
     fallbackChain: DEFAULT_FALLBACK_CHAIN,
     profileHealth,
     profileId: 'default',
-    router: routerHelper,
+    // Phase 34: LLM 라우터 (SDK Haiku). 키워드 routerHelper 정상 경로 폐기 (B-3).
+    routerLlm,
   });
 
   // 5. 파이프라인
