@@ -20,7 +20,7 @@ export interface DatabaseOptions {
 
 // ─── Schema ───
 
-const SCHEMA_VERSION = 11;
+const SCHEMA_VERSION = 12;
 
 const SCHEMA_DDL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -150,6 +150,7 @@ CREATE TABLE IF NOT EXISTS portfolio_holdings (
   symbol       TEXT NOT NULL,
   quantity     REAL NOT NULL,
   average_cost REAL NOT NULL,
+  source       TEXT NOT NULL DEFAULT 'tx' CHECK (source IN ('tx','kis')),
   PRIMARY KEY (portfolio_id, symbol),
   FOREIGN KEY (portfolio_id) REFERENCES portfolios(id) ON DELETE CASCADE
 );
@@ -469,6 +470,19 @@ CREATE TABLE IF NOT EXISTS portfolio_holdings (
     db.exec(
       `CREATE INDEX IF NOT EXISTS idx_agent_runs_cli_session ON agent_runs(cli_session_id) WHERE cli_session_id IS NOT NULL;`,
     );
+  },
+  // Phase 33 B-5: portfolio_holdings.source — 'tx'(거래 파생) | 'kis'(브로커 동기화) 구분.
+  // recomputeHoldings 가 KIS row 를 wipe 하지 않도록 분리.
+  12: (db: DatabaseSync) => {
+    const cols = db.prepare(`PRAGMA table_info('portfolio_holdings')`).all() as Array<{
+      name: string;
+    }>;
+    if (!cols.some((c) => c.name === 'source')) {
+      // 기존 row 는 모두 transactions 파생 → DEFAULT 'tx'.
+      db.exec(
+        `ALTER TABLE portfolio_holdings ADD COLUMN source TEXT NOT NULL DEFAULT 'tx' CHECK (source IN ('tx','kis'));`,
+      );
+    }
   },
 };
 

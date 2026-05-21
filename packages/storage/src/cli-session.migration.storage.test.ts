@@ -19,7 +19,7 @@ describe('migration v10 → v11 (agent_runs.cli_session_id)', () => {
   it('fresh DB has cli_session_id column + index', () => {
     const db = openDatabase({ path: ':memory:' });
     try {
-      expect(db.schemaVersion).toBe(11);
+      expect(db.schemaVersion).toBe(12);
       expect(hasColumn(db.db, 'agent_runs', 'cli_session_id')).toBe(true);
       const indexes = db.db
         .prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='agent_runs'")
@@ -68,19 +68,19 @@ describe('migration v10 → v11 (agent_runs.cli_session_id)', () => {
       // 3) openDatabase → v11 마이그레이션
       const upgraded = openDatabase({ path, enableWAL: false });
       try {
-        expect(upgraded.schemaVersion).toBe(11);
+        expect(upgraded.schemaVersion).toBe(12);
         expect(hasColumn(upgraded.db, 'agent_runs', 'cli_session_id')).toBe(true);
         const ver = upgraded.db
           .prepare(`SELECT value FROM meta WHERE key='schema_version'`)
           .get() as { value: string };
-        expect(ver.value).toBe('11');
+        expect(ver.value).toBe('12');
       } finally {
         upgraded.close();
       }
       // 4) idempotent: 재오픈해도 안전
       const reopened = openDatabase({ path, enableWAL: false });
       try {
-        expect(reopened.schemaVersion).toBe(11);
+        expect(reopened.schemaVersion).toBe(12);
         expect(hasColumn(reopened.db, 'agent_runs', 'cli_session_id')).toBe(true);
       } finally {
         reopened.close();

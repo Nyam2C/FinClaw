@@ -97,8 +97,10 @@ function rowToTransaction(row: TransactionRow): Transaction {
 export function recomputeHoldings(db: DatabaseSync, portfolioId: string): void {
   db.exec('BEGIN IMMEDIATE');
   try {
-    // 1) 현재 holdings 전부 비우기 (이 portfolio 한정)
-    db.prepare('DELETE FROM portfolio_holdings WHERE portfolio_id = ?').run(portfolioId);
+    // 1) 현재 tx-파생 holdings 만 비우기 (KIS row 보존 — Phase 33 B-5)
+    db.prepare(`DELETE FROM portfolio_holdings WHERE portfolio_id = ? AND source = 'tx'`).run(
+      portfolioId,
+    );
 
     // 2) 심볼별 누적값 계산
     const rows = db
@@ -151,8 +153,8 @@ export function recomputeHoldings(db: DatabaseSync, portfolioId: string): void {
 
     // 3) UPSERT
     const insert = db.prepare(
-      `INSERT INTO portfolio_holdings (portfolio_id, symbol, quantity, average_cost)
-       VALUES (?, ?, ?, ?)`,
+      `INSERT INTO portfolio_holdings (portfolio_id, symbol, quantity, average_cost, source)
+       VALUES (?, ?, ?, ?, 'tx')`,
     );
     for (const [symbol, acc] of accBySymbol) {
       if (acc.qty <= 0) {
@@ -335,4 +337,40 @@ export function deleteTransaction(db: DatabaseSync, id: string): boolean {
   db.prepare('DELETE FROM transactions WHERE id = ?').run(id);
   recomputeHoldings(db, existing.portfolioId);
   return true;
+}
+
+/** Phase 33 B-5: KIS 동기화 결과로 source='kis' holdings 를 전면 교체. tx 영역은 무관. */
+export interface KisHoldingInput {
+  symbol: string;
+  quantity: number;
+  averageCost: number;
+}
+
+export function replaceAllHoldings(
+  db: DatabaseSync,
+  portfolioId: string,
+  holdings: readonly KisHoldingInput[],
+): void {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    // KIS 영역만 비우기 → 매도되어 응답에서 빠진 종목 자동 정리. tx 영역 보존.
+    db.prepare(`DELETE FROM portfolio_holdings WHERE portfolio_id = ? AND source = 'kis'`).run(
+      portfolioId,
+    );
+    const insert = db.prepare(
+      `INSERT INTO portfolio_holdings (portfolio_id, symbol, quantity, average_cost, source)
+       VALUES (?, ?, ?, ?, 'kis')
+       ON CONFLICT(portfolio_id, symbol) DO UPDATE SET
+         quantity = excluded.quantity, average_cost = excluded.average_cost, source = 'kis'`,
+    );
+    for (const h of holdings) {
+      if (h.quantity > 0) {
+        insert.run(portfolioId, h.symbol, h.quantity, h.averageCost);
+      }
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
 }
