@@ -13,8 +13,15 @@ import type { MemoryEntry, SessionKey, TickerSymbol } from '@finclaw/types';
 
 // ─── Constants (single source of truth) ───
 
-/** raw 점수 컷오프. 무관 발화에 무관 기억이 끼지 않게 하는 마지노선. */
+/** raw 점수 컷오프. 무관 발화에 무관 기억이 끼지 않게 하는 마지노선. (vector/hybrid 코사인 기준) */
 export const SIMILARITY_THRESHOLD = 0.65;
+
+/**
+ * Phase 37 C: FTS-only fallback 전용 컷오프.
+ * bm25RankToScore = 1/(1+|rank|) 스케일은 코사인과 다름 — 다중어 AND-match 가 0.5~0.6 대.
+ * 0.65 코사인 컷을 그대로 적용하면 2어 이상 질의가 조용히 0건. 0.3 으로 분리해 회상 누락 방지.
+ */
+export const FTS_SIMILARITY_THRESHOLD = 0.3;
 
 /** 신선도 반감기. exp(-daysOld / 90). 3개월 지나면 가중치 ≈ 37%. */
 export const FRESHNESS_HALF_LIFE_DAYS = 90;
@@ -286,9 +293,11 @@ export class DefaultMemoryRetrievalService implements MemoryRetrievalService {
     // 3. memory 메타 로드 + 임계값/신선도 적용
     const now = Date.now();
     const candidates: MemorySnippet[] = [];
+    // Phase 37 C: mode 별 컷오프 — fts-only 는 BM25 스케일이라 코사인 0.65 컷이 과함.
+    const scoreThreshold = mode === 'fts-only' ? FTS_SIMILARITY_THRESHOLD : SIMILARITY_THRESHOLD;
     for (const r of bestByMemory.values()) {
       const rawScore = r.score;
-      if (rawScore < SIMILARITY_THRESHOLD) {
+      if (rawScore < scoreThreshold) {
         continue;
       }
       const entry = getMemory(db, r.memoryId);

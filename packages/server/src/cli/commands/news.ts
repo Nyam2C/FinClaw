@@ -20,7 +20,11 @@ export function register(program: Command, deps: CliDeps): void {
         params['symbols'] = opts.symbols.split(',');
       }
 
-      const result = await deps.callGateway<Record<string, unknown>[]>('finance.news', params);
+      // Phase 37 D(F8): 서버 반환 {articles,total} — bare array 아님.
+      const result = await deps.callGateway<{
+        articles?: Record<string, unknown>[];
+        total?: number;
+      }>('finance.news', params);
 
       if (!result.ok) {
         deps.error(theme.error(`Failed to get news: ${result.error?.message}`));
@@ -28,7 +32,7 @@ export function register(program: Command, deps: CliDeps): void {
         return;
       }
 
-      const rows = result.data ?? [];
+      const rows = result.data?.articles ?? [];
       if (rows.length === 0) {
         deps.output(theme.dim('No news found.'));
         return;

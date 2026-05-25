@@ -15,6 +15,7 @@ import {
   DefaultMemoryRetrievalService,
   extractSymbols,
   formatBackgroundSection,
+  FTS_SIMILARITY_THRESHOLD,
   MAX_INJECTED_MEMORIES,
   SIMILARITY_THRESHOLD,
   type RetrievalResult,
@@ -390,6 +391,10 @@ describe('DefaultMemoryRetrievalService — threshold cut', () => {
   it('SIMILARITY_THRESHOLD constant is 0.65', () => {
     expect(SIMILARITY_THRESHOLD).toBe(0.65);
   });
+
+  it('FTS_SIMILARITY_THRESHOLD constant is 0.3', () => {
+    expect(FTS_SIMILARITY_THRESHOLD).toBe(0.3);
+  });
 });
 
 describe('DefaultMemoryRetrievalService — fts-only mode', () => {
@@ -454,6 +459,60 @@ describe('DefaultMemoryRetrievalService — fts-only mode', () => {
       expect.stringContaining('embedding failed'),
       expect.objectContaining({ event: 'memory.retrieval.embedding_failed' }),
     );
+  });
+
+  it('다중어 FTS-only 질의가 회상 0건이 아니다 (Phase 37 C 회귀)', async () => {
+    // 감사 P1-2 재현: 다중어 AND-match 의 BM25 점수는 코퍼스 rank 상대값.
+    // 단일 문서면 rank 0 → score 1.0 (버그 미재현)이므로 noise 문서 3개를 더해
+    // 타겟 점수를 0.44 대(실측, 0.3<x<0.65)로 떨어뜨려야 0.65 코사인 컷의 회상 누락이 드러난다.
+    await seedMemory(database, undefined, {
+      content: '분기별 리밸런싱 원칙: 목표 비중에서 5%p 벗어나면 조정',
+      type: 'fact',
+      createdAt: Date.now() - 24 * 60 * 60 * 1000,
+    });
+    for (const noise of [
+      '주식 시장 변동성과 위험 관리',
+      '채권 금리 인상 영향 분석',
+      '포트폴리오 분산 투자 전략',
+    ]) {
+      await seedMemory(database, undefined, {
+        content: noise,
+        type: 'fact',
+        createdAt: Date.now() - 24 * 60 * 60 * 1000,
+      });
+    }
+    const service = new DefaultMemoryRetrievalService({
+      db: database.db,
+      logger,
+    });
+    const result = await service.searchRelevant({
+      userQuery: '분기별 리밸런싱',
+      sessionKey,
+    });
+    expect(result.mode).toBe('fts-only');
+    // Phase 37 C 이전: BM25 0.44 < 0.65 → 0건. 분리 후 0.3 컷 통과.
+    expect(result.snippets.length).toBeGreaterThan(0);
+    expect(result.snippets[0]?.content).toContain('리밸런싱');
+  });
+
+  it('무관한 다중어 FTS-only 질의는 여전히 0건 (AND-match)', async () => {
+    // FTS_SIMILARITY_THRESHOLD 하향(0.3)이 무관 발화 노이즈를 들이지 않음을 보장.
+    // buildFtsQuery 의 AND-join 으로 미매칭 term 이 하나라도 있으면 0 hits → 임계 무관.
+    await seedMemory(database, undefined, {
+      content: '분기별 리밸런싱 원칙: 목표 비중에서 5%p 벗어나면 조정',
+      type: 'fact',
+      createdAt: Date.now() - 24 * 60 * 60 * 1000,
+    });
+    const service = new DefaultMemoryRetrievalService({
+      db: database.db,
+      logger,
+    });
+    const result = await service.searchRelevant({
+      userQuery: '아무것도 매칭되지 않을 임의 문구',
+      sessionKey,
+    });
+    expect(result.mode).toBe('fts-only');
+    expect(result.snippets).toHaveLength(0);
   });
 });
 

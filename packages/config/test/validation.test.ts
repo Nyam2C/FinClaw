@@ -49,4 +49,14 @@ describe('validateConfigStrict', () => {
   it('잘못된 설정에 ConfigValidationError를 throw한다', () => {
     expect(() => validateConfigStrict({ unknown_key: true })).toThrow(ConfigValidationError);
   });
+
+  it('rag/accessLog/gateway.auth 포함 config 를 throw 없이 통과 (Phase 37 B 회귀)', () => {
+    expect(() =>
+      validateConfigStrict({
+        rag: { rerank: { enabled: true } },
+        accessLog: { retentionDays: 7 },
+        gateway: { auth: { token: 'x' } },
+      }),
+    ).not.toThrow();
+  });
 });

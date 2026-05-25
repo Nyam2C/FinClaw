@@ -106,4 +106,20 @@ describe('FinClawConfigSchema', () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it('rag / accessLog / gateway.auth 키를 허용한다 (Phase 37 B)', () => {
+    const result = FinClawConfigSchema.safeParse({
+      rag: { rerank: { enabled: true, topKFirst: 10, topKFinal: 3 } },
+      accessLog: { retentionDays: 7 },
+      gateway: { port: 18789, host: 'localhost', auth: { token: 'x' } },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rag.rerank 의 알 수 없는 키를 거부한다 (strictObject 유지)', () => {
+    const result = FinClawConfigSchema.safeParse({
+      rag: { rerank: { foobar: true } },
+    });
+    expect(result.success).toBe(false);
+  });
 });

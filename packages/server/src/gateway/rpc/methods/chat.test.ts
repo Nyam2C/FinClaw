@@ -101,7 +101,7 @@ describe('chat.* RPC methods', () => {
     it('chat.send rejects missing sessionId', async () => {
       const result = await dispatchRpc(
         { jsonrpc: '2.0', id: 1, method: 'chat.send', params: { message: 'hi' } },
-        { auth: { level: 'session', permissions: [] }, remoteAddress: '127.0.0.1' },
+        { auth: { level: 'token', permissions: [] }, remoteAddress: '127.0.0.1' }, // ← 'session' → 'token'
         ctx,
       );
       expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.INVALID_PARAMS);
@@ -110,7 +110,7 @@ describe('chat.* RPC methods', () => {
     it('chat.send rejects missing message', async () => {
       const result = await dispatchRpc(
         { jsonrpc: '2.0', id: 1, method: 'chat.send', params: { sessionId: 's1' } },
-        { auth: { level: 'session', permissions: [] }, remoteAddress: '127.0.0.1' },
+        { auth: { level: 'token', permissions: [] }, remoteAddress: '127.0.0.1' }, // ← 'session' → 'token'
         ctx,
       );
       expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.INVALID_PARAMS);
@@ -141,8 +141,23 @@ describe('chat.* RPC methods', () => {
       expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.UNAUTHORIZED);
     });
 
-    it('chat.send requires session level', async () => {
-      const result = await dispatchRpc(
+    it('chat.send accepts token level (rejects below token)', async () => {
+      // token 미만(api_key)은 거부
+      const denied = await dispatchRpc(
+        {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'chat.send',
+          params: { sessionId: 's1', message: 'hi' },
+        },
+        { auth: { level: 'api_key', permissions: [] }, remoteAddress: '127.0.0.1' },
+        ctx,
+      );
+      expect((denied as { error: { code: number } }).error.code).toBe(RpcErrors.UNAUTHORIZED);
+
+      // token 은 auth 게이트 통과 → UNAUTHORIZED 가 아님.
+      // 세션 미존재로 INTERNAL_ERROR('session not found') 이 나지만, 그건 auth 통과 후의 핸들러 에러.
+      const passed = await dispatchRpc(
         {
           jsonrpc: '2.0',
           id: 1,
@@ -152,7 +167,7 @@ describe('chat.* RPC methods', () => {
         { auth: { level: 'token', permissions: [] }, remoteAddress: '127.0.0.1' },
         ctx,
       );
-      expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.UNAUTHORIZED);
+      expect((passed as { error?: { code: number } }).error?.code).not.toBe(RpcErrors.UNAUTHORIZED);
     });
   });
 });

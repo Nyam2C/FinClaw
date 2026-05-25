@@ -40,13 +40,16 @@ export function register(program: Command, deps: CliDeps): void {
     .command('list')
     .description('list all alerts')
     .action(async () => {
-      const result = await deps.callGateway<Record<string, unknown>[]>('finance.alert.list');
+      // Phase 37 D(F7): 서버 반환 {alerts,total} — bare array 아님.
+      const result = await deps.callGateway<{ alerts?: Record<string, unknown>[]; total?: number }>(
+        'finance.alert.list',
+      );
       if (!result.ok) {
         deps.error(theme.error(`Failed to list alerts: ${result.error?.message}`));
         deps.exit(EXIT.GATEWAY_ERROR);
         return;
       }
-      const rows = result.data ?? [];
+      const rows = result.data?.alerts ?? [];
       deps.output(rows.length > 0 ? formatTable(rows) : theme.dim('No alerts configured.'));
     });
 

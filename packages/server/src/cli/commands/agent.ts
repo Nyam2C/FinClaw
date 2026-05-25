@@ -26,7 +26,10 @@ export function register(program: Command, deps: CliDeps): void {
     .command('status <name>')
     .description('show agent status')
     .action(async (name: string) => {
-      const result = await deps.callGateway<Record<string, unknown>>('agent.status', { name });
+      // Phase 37 D(F6): 서버 schema 는 {agentId} strict — {name} 은 INVALID_PARAMS.
+      const result = await deps.callGateway<Record<string, unknown>>('agent.status', {
+        agentId: name,
+      });
       if (!result.ok) {
         deps.error(theme.error(`Failed to get agent status: ${result.error?.message}`));
         deps.exit(EXIT.GATEWAY_ERROR);

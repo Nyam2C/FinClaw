@@ -154,16 +154,30 @@ export class FinClawApp extends LitElement {
     const token = params.get('token') ?? '';
     const gatewayUrl =
       params.get('gateway') ?? `${window.location.protocol}//${window.location.host}`;
-    const sessionId = params.get('session') ?? crypto.randomUUID();
+    // Phase 37 D(F5): 서버 발급 sessionId 사용. agentId 는 URL 우선, 없으면 'default' (TUI 와 동일).
+    const agentId = params.get('agent') ?? 'default';
+    const fallbackSessionId = params.get('session') ?? crypto.randomUUID();
 
     this.gateway.onConnected(() => {
       this.connected = true;
+      // chat.start → 서버 발급 sessionId 로 교체. 실패해도 채팅 외 탭은 동작.
+      void this.gateway
+        .send('chat.start', { agentId })
+        .then((res) => {
+          const sid = (res as { sessionId?: string } | null)?.sessionId;
+          if (sid) {
+            this.chat?.setSessionId(sid);
+          }
+        })
+        .catch(() => {
+          /* chat.start 실패 시 fallbackSessionId 유지 (채팅은 동작 안 하나 다른 탭 보존) */
+        });
     });
     this.gateway.onDisconnected(() => {
       this.connected = false;
     });
 
-    this.chat = createAppChat(this.gateway, sessionId);
+    this.chat = createAppChat(this.gateway, fallbackSessionId);
     this.chat.onStateChange((s) => {
       this.chatState = s;
     });

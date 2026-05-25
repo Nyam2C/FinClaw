@@ -17,9 +17,10 @@ describe('news command', () => {
   });
 
   it('fetches news with query', async () => {
+    // Phase 37 D(F8): 서버 finance.news 는 {articles,total} 반환 (bare array 아님).
     (deps.callGateway as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
-      data: [{ title: 'AAPL earnings beat', source: 'Reuters' }],
+      data: { articles: [{ title: 'AAPL earnings beat', source: 'Reuters' }], total: 1 },
     });
 
     await program.parseAsync(['news', 'AAPL'], { from: 'user' });
@@ -30,9 +31,10 @@ describe('news command', () => {
   });
 
   it('passes symbols filter', async () => {
+    // Phase 37 D(F8): 서버 finance.news 는 {articles,total} 반환 (bare array 아님).
     (deps.callGateway as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
-      data: [{ title: 'Tech rally', source: 'Bloomberg' }],
+      data: { articles: [{ title: 'Tech rally', source: 'Bloomberg' }], total: 1 },
     });
 
     await program.parseAsync(['news', '-s', 'AAPL,MSFT'], { from: 'user' });
