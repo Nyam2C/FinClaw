@@ -77,7 +77,7 @@ export function createChatMethods(deps: ChatMethodsDeps): readonly RpcMethodHand
   > = {
     method: 'chat.send',
     description: '활성 세션에 메시지를 전송합니다',
-    authLevel: 'session',
+    authLevel: 'token', // ← 'session' 에서 강등 (Phase 37 A: session 레벨은 부여 코드 부재 → 영구 도달 불가)
     schema: z.object({
       sessionId: z.string(),
       message: z.string(),
@@ -134,7 +134,7 @@ export function createChatMethods(deps: ChatMethodsDeps): readonly RpcMethodHand
   const stopHandler: RpcMethodHandler<{ sessionId: string }, { stopped: boolean }> = {
     method: 'chat.stop',
     description: '활성 세션을 중단합니다',
-    authLevel: 'session',
+    authLevel: 'token', // ← 'session' 에서 강등 (Phase 37 A)
     schema: z.object({
       sessionId: z.string(),
     }),
