@@ -14,6 +14,7 @@
     "@finclaw/agent": "workspace:*",
     "@finclaw/channel-discord": "workspace:*",
     "@finclaw/config": "workspace:*",
+    "@finclaw/gateway": "workspace:*",
     "@finclaw/infra": "workspace:*",
     "@finclaw/skills-finance": "workspace:*",
     "@finclaw/skills-general": "workspace:*",

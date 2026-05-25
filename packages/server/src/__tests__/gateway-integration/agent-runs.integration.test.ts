@@ -1,14 +1,19 @@
-// packages/server/src/gateway/rpc/methods/agent-runs.test.ts
+// packages/server/src/__tests__/gateway-integration/agent-runs.integration.test.ts
+import {
+  dispatchRpc,
+  MethodRegistry,
+  registerAgentMethods,
+  registerAgentRunsMethods,
+  resetAgentStats,
+  type AgentRpcDeps,
+  type GatewayServerConfig,
+  type GatewayServerContext,
+} from '@finclaw/gateway';
 import { ConcurrencyLane, resetEventBus } from '@finclaw/infra';
 import { addAgentRun, openDatabase, type Database, type EmbeddingProvider } from '@finclaw/storage';
 import type { AgentId, RpcMethod, Timestamp } from '@finclaw/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DefaultAttachMemoryService } from '../../../auto-reply/agent-memory-hook.js';
-import type { GatewayServerContext } from '../../context.js';
-import { dispatchRpc, MethodRegistry } from '../index.js';
-import type { GatewayServerConfig } from '../types.js';
-import { registerAgentRunsMethods } from './agent-runs.js';
-import { registerAgentMethods, resetAgentStats, type AgentRpcDeps } from './agent.js';
+import { DefaultAttachMemoryService } from '../../auto-reply/agent-memory-hook.js';
 
 let methods: MethodRegistry; // Phase 35: 인스턴스 레지스트리 (테스트 격리)
 

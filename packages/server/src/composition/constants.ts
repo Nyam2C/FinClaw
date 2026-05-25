@@ -1,8 +1,8 @@
 // packages/server/src/composition/constants.ts
 // Phase 36: main.ts 에서 추출한 공유 상수 (순수 이동, 값 불변).
 
+import type { GatewayServerConfig } from '@finclaw/gateway';
 import type { ModelRef } from '@finclaw/types';
-import type { GatewayServerConfig } from '../gateway/rpc/types.js';
 
 /** 기본 게이트웨이 설정 */
 export const defaultConfig: GatewayServerConfig = {

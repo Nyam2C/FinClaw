@@ -1,9 +1,12 @@
+import {
+  createGatewayServer,
+  type GatewayServer,
+  type GatewayServerConfig,
+} from '@finclaw/gateway';
 import { resetEventBus } from '@finclaw/infra';
 import type { ConversationRecord, MemoryEntry, ModelRef, SearchResult } from '@finclaw/types';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { RunnerExecutionAdapter } from './auto-reply/execution-adapter.js';
-import type { GatewayServerConfig } from './gateway/rpc/types.js';
-import { createGatewayServer, type GatewayServer } from './gateway/server.js';
 import { MissingEnvError, requireEnv } from './main.js';
 
 describe('requireEnv', () => {

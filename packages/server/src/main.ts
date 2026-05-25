@@ -10,6 +10,7 @@ import {
 } from '@finclaw/agent';
 import { DiscordAccountSchema, DiscordAdapter } from '@finclaw/channel-discord';
 import { ConfigValidationError, loadConfig, validateConfigStrict } from '@finclaw/config';
+import { createGatewayServer, type GatewayServerConfig } from '@finclaw/gateway';
 import {
   assertPortAvailable,
   ConcurrencyLane,
@@ -42,8 +43,6 @@ import { buildProviders } from './composition/providers.js';
 import { buildAutomation, buildExecution, buildPipeline } from './composition/runtime.js';
 import { buildScheduleRpc } from './composition/schedule-rpc.js';
 import { registerSkills } from './composition/skills.js';
-import type { GatewayServerConfig } from './gateway/rpc/types.js';
-import { createGatewayServer } from './gateway/server.js';
 import { ProcessLifecycle } from './process/lifecycle.js';
 import { MessageRouter } from './process/message-router.js';
 import { loadPrompt, requireFrontmatterKeys } from './prompts/loader.js';
@@ -394,7 +393,7 @@ async function main(): Promise<void> {
 
   // Phase 29 E6: dev 모드에서만 hot reload — prompts 디렉터리 watch.
   if (process.env.NODE_ENV !== 'production') {
-    const { createHotReloader } = await import('./gateway/hot-reload.js');
+    const { createHotReloader } = await import('@finclaw/gateway');
     const promptsPath = join(import.meta.dirname, '..', 'prompts', 'finclaw.system.ko.md');
     const hotReloader = createHotReloader(
       { configPath: promptsPath, debounceMs: 500, validateBeforeApply: false, mode: 'watch' },

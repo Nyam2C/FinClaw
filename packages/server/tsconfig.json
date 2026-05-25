@@ -11,6 +11,7 @@
     { "path": "../channel-discord" },
     { "path": "../skills-finance" },
     { "path": "../skills-general" },
+    { "path": "../gateway" },
     { "path": "../tui" }
   ]
 }

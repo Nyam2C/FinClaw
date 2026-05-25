@@ -1,7 +1,15 @@
-// packages/server/src/gateway/rpc/methods/memory.test.ts
+// packages/server/src/__tests__/gateway-integration/memory.integration.test.ts
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import {
+  dispatchRpc,
+  MethodRegistry,
+  registerMemoryMethods,
+  RpcErrors,
+  type GatewayServerConfig,
+  type GatewayServerContext,
+} from '@finclaw/gateway';
 import { type FinClawLogger, resetEventBus } from '@finclaw/infra';
 import {
   addMemory,
@@ -12,12 +20,7 @@ import {
 } from '@finclaw/storage';
 import type { MemoryEntry, RpcMethod, SessionKey, Timestamp } from '@finclaw/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DefaultMemoryCaptureService } from '../../../auto-reply/stages/memory-capture.js';
-import type { GatewayServerContext } from '../../context.js';
-import { RpcErrors } from '../errors.js';
-import { dispatchRpc, MethodRegistry } from '../index.js';
-import type { GatewayServerConfig } from '../types.js';
-import { registerMemoryMethods } from './memory.js';
+import { DefaultMemoryCaptureService } from '../../auto-reply/stages/memory-capture.js';
 
 let methods: MethodRegistry; // Phase 35: 인스턴스 레지스트리 (테스트 격리)
 

@@ -2,10 +2,9 @@
 // Phase 28 C: schedule 결과 송출 (Discord DM 또는 Web WebSocket).
 // 송출 실패 → warn 로그 + agent_runs 보존 (재시도 X — 단순함).
 
+import type { GatewayBroadcaster, WsConnection } from '@finclaw/gateway';
 import type { FinClawLogger } from '@finclaw/infra';
 import type { Schedule } from '@finclaw/types';
-import type { GatewayBroadcaster } from '../gateway/broadcaster.js';
-import type { WsConnection } from '../gateway/rpc/types.js';
 
 /**
  * Discord client port — 직접 discord.js 의존을 피하기 위해 최소 인터페이스만 노출.
