@@ -2,28 +2,17 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 // packages/server/src/main.ts
 import {
-  AnthropicAdapter,
-  approxTokenCount,
   BUILT_IN_MODELS,
   buildModelAliasIndex,
-  createLlmRouter,
-  createProviderAdapter,
-  DEFAULT_CLAUDE_BACKEND,
   DEFAULT_FALLBACK_CHAIN,
   InMemoryModelCatalog,
-  InMemoryToolRegistry,
-  NEWS_BRIEF_PROMPT,
-  NEWS_BRIEF_SCHEDULE_ID,
   ProfileHealthMonitor,
-  Runner,
-  type RunnerTracerAdapter,
 } from '@finclaw/agent';
 import { DiscordAccountSchema, DiscordAdapter } from '@finclaw/channel-discord';
 import { ConfigValidationError, loadConfig, validateConfigStrict } from '@finclaw/config';
 import {
   assertPortAvailable,
   ConcurrencyLane,
-  ConcurrencyLaneManager,
   createLogger,
   formatPortOccupant,
   getEventBus,
@@ -32,99 +21,32 @@ import {
 } from '@finclaw/infra';
 import {
   ALERT_SKILL_METADATA,
-  KeyRotator,
-  KisClient,
-  KisTokenManager,
   MARKET_SKILL_METADATA,
   NEWS_SKILL_METADATA,
-  readKeyArray,
-  registerAlertTools,
-  registerBrokerageTools,
-  registerMarketTools,
-  registerNewsTools,
-  type AlertSkillHandle,
-  type MarketSkillHandle,
-  type NewsSkillHandle,
 } from '@finclaw/skills-finance';
-import { GENERAL_SKILL_METADATA, registerGeneralTools } from '@finclaw/skills-general';
+import { GENERAL_SKILL_METADATA } from '@finclaw/skills-general';
 import {
-  addSchedule,
   assertEmbeddingDimension,
   createEmbeddingProvider,
-  createRerankerWithFallback,
   createStorage,
-  deleteSchedule,
-  getSchedule,
-  listSchedules,
-  LocalReranker,
   purgeAccessLog,
   type EmbeddingProvider,
 } from '@finclaw/storage';
-import type {
-  ChannelPlugin,
-  ConfigValidationIssue,
-  FinClawConfig,
-  ModelRef,
-  Schedule,
-  ScheduleRpc,
-  Timestamp,
-} from '@finclaw/types';
-import { createAgentId } from '@finclaw/types';
-import { DefaultAttachMemoryService } from './auto-reply/agent-memory-hook.js';
-import { registerBuiltInCommands } from './auto-reply/commands/built-in.js';
-import { InMemoryCommandRegistry } from './auto-reply/commands/registry.js';
-import { RunnerExecutionAdapter, type RunnerFactory } from './auto-reply/execution-adapter.js';
-import { StubFinanceContextProvider } from './auto-reply/pipeline-context.js';
-import { AutoReplyPipeline } from './auto-reply/pipeline.js';
+import type { ChannelPlugin, ConfigValidationIssue, FinClawConfig } from '@finclaw/types';
 import { buildToolMetaIndex, makeRouterHelper } from './auto-reply/router-helper.js';
-import { DefaultMemoryCaptureService } from './auto-reply/stages/memory-capture.js';
-import { DefaultMemoryRetrievalService } from './auto-reply/stages/memory-retrieval.js';
-import { CronParseError, nextRunAt as computeNextRunAt, parseCron } from './automation/cron.js';
 import { deliverScheduleResult } from './automation/delivery.js';
-import { SchedulerService } from './automation/scheduler.js';
 import { initChannels } from './channels/index.js';
+// Phase 36: composition 빌더
+import { DEFAULT_MODEL, defaultConfig } from './composition/constants.js';
+import { buildProviders } from './composition/providers.js';
+import { buildAutomation, buildExecution, buildPipeline } from './composition/runtime.js';
+import { buildScheduleRpc } from './composition/schedule-rpc.js';
+import { registerSkills } from './composition/skills.js';
 import type { GatewayServerConfig } from './gateway/rpc/types.js';
 import { createGatewayServer } from './gateway/server.js';
-import { createTracer } from './observability/tracer.js';
-import { loadPlugins } from './plugins/loader.js';
 import { ProcessLifecycle } from './process/lifecycle.js';
 import { MessageRouter } from './process/message-router.js';
 import { loadPrompt } from './prompts/loader.js';
-import { BrokerageSyncService } from './services/brokerage-sync-service.js';
-import { NewsMemorizer } from './services/news-memorizer.js';
-
-/** 기본 게이트웨이 설정 */
-const defaultConfig: GatewayServerConfig = {
-  host: '0.0.0.0',
-  port: 3000,
-  cors: {
-    origins: ['*'],
-    maxAge: 600,
-  },
-  auth: {
-    apiKeys: [],
-    jwtSecret: process.env.GATEWAY_JWT_SECRET ?? 'dev-secret',
-    sessionTtlMs: 30 * 60_000,
-  },
-  ws: {
-    heartbeatIntervalMs: 30_000,
-    heartbeatTimeoutMs: 10_000,
-    maxPayloadBytes: 1024 * 1024,
-    handshakeTimeoutMs: 10_000,
-    maxConnections: 100,
-  },
-  rpc: {
-    maxBatchSize: 10,
-    timeoutMs: 60_000,
-  },
-};
-
-const DEFAULT_MODEL: ModelRef = {
-  provider: 'anthropic',
-  model: 'claude-sonnet-4-6',
-  contextWindow: 200_000,
-  maxOutputTokens: 8_192,
-};
 
 export class MissingEnvError extends Error {
   constructor(public readonly envName: string) {
@@ -143,34 +65,6 @@ export function requireEnv(name: string, env: NodeJS.ProcessEnv = process.env): 
     throw new MissingEnvError(name);
   }
   return value;
-}
-
-/**
- * Phase 26: capture / retrieval / attach 3 service 를 동일 deps 로 인스턴스화.
- *
- * 3 service 모두 `{db, embeddingProvider?, logger}` shape 를 받으며 같은 embedding
- * 인스턴스를 공유한다 (키 하나로 4 영역 활성). embeddingProvider 미주입 시 각 service
- * 가 자체적으로 FTS-only fallback 으로 동작.
- */
-function wireMemoryServices(
-  deps: ConstructorParameters<typeof DefaultMemoryCaptureService>[0],
-  retrievalExtras?: {
-    reranker?: import('@finclaw/storage').Reranker;
-    rerankTopKFirst?: number;
-  },
-): {
-  memoryCaptureService: DefaultMemoryCaptureService;
-  memoryRetrievalService: DefaultMemoryRetrievalService;
-  attachMemoryService: DefaultAttachMemoryService;
-} {
-  return {
-    memoryCaptureService: new DefaultMemoryCaptureService(deps),
-    memoryRetrievalService: new DefaultMemoryRetrievalService({
-      ...deps,
-      ...retrievalExtras,
-    }),
-    attachMemoryService: new DefaultAttachMemoryService(deps),
-  };
 }
 
 async function main(): Promise<void> {
@@ -272,87 +166,13 @@ async function main(): Promise<void> {
   logger.info('Discord adapter logged in');
 
   // 4. Agent 레이어 (툴 레지스트리 + 러너 팩토리)
-  // Phase 32 F: dual-path provider — config.provider 로 SDK / claude-cli 전환 (기본 SDK).
-  const sdkAdapter = new AnthropicAdapter(anthropicKey);
-  // Phase 34: LLM 오케스트레이터 라우터 — SDK Haiku 고정 (B-0). CLI 모드여도 SDK.
-  // 선례: summarizer 도 항상 sdkAdapter (Phase 32 F).
-  const routerLlm = createLlmRouter(sdkAdapter);
-  const providerAdapter = createProviderAdapter({
-    kind: finclawConfig.provider ?? 'anthropic-sdk',
-    apiKey: anthropicKey,
-    cliBackend: finclawConfig.cliBackend
-      ? {
-          ...DEFAULT_CLAUDE_BACKEND,
-          command: finclawConfig.cliBackend.command ?? 'claude',
-          reliability: finclawConfig.cliBackend.watchdog
-            ? { watchdog: finclawConfig.cliBackend.watchdog }
-            : undefined,
-        }
-      : undefined,
-    defaultTimeoutMs: finclawConfig.cliBackend?.timeoutMs ?? 60_000,
-    sdkFallback: sdkAdapter, // W2: CLI auth 만료 시 SDK 위임 (CLI 모드일 때만 쓰임)
+  const { sdkAdapter, routerLlm, providerAdapter, lanes, toolRegistry } = buildProviders({
+    finclawConfig,
+    anthropicKey,
+    logger,
   });
-  logger.info('provider.initialized', {
-    event: 'provider.initialized',
-    providerKind: finclawConfig.provider ?? 'anthropic-sdk',
-    ...(finclawConfig.provider === 'claude-cli'
-      ? { note: 'CLI mode: streaming/caching/tool_use disabled' }
-      : {}),
-  });
-  const lanes = new ConcurrencyLaneManager();
-  const toolRegistry = new InMemoryToolRegistry();
 
-  // Phase 31 F: agent 가 호출할 ScheduleRpc — gateway schedule.* 핸들러와 동일 로직을 wrap.
-  // 핸들러가 inline RpcMethodHandler 라 export 되지 않으므로 storage + cron 유틸을 직접 호출.
-  // agent 발화는 web/broadcast 채널로 송출 (deliveryTarget 미지정 시 기본값).
-  const scheduleRpc: ScheduleRpc = {
-    async create(req) {
-      const cron = parseCron(req.cron);
-      const next = computeNextRunAt(cron, Date.now());
-      const created = addSchedule(storage.db, {
-        name: req.name,
-        cron: req.cron,
-        agentId: createAgentId('default'),
-        prompt: req.prompt,
-        deliveryChannel: 'web',
-        deliveryTarget: 'broadcast',
-        enabled: req.enabled,
-        nextRunAt: next === null ? undefined : (next as Timestamp),
-      });
-      return { id: created.id, nextRunAt: created.nextRunAt ?? null };
-    },
-    async list(req) {
-      const items = listSchedules(storage.db, { limit: req.limit });
-      return {
-        schedules: items.map((s) => ({
-          id: s.id,
-          name: s.name,
-          cron: s.cron,
-          enabled: s.enabled,
-          status: s.status,
-          consecutiveFailures: s.consecutiveFailures,
-          nextRunAt: s.nextRunAt,
-        })),
-      };
-    },
-    async delete(req) {
-      deleteSchedule(storage.db, req.scheduleId);
-    },
-    async testCron(req) {
-      try {
-        const cron = parseCron(req.cron);
-        const next = computeNextRunAt(cron, Date.now());
-        return { valid: true, nextRunAt: next === null ? undefined : next };
-      } catch (err) {
-        if (err instanceof CronParseError) {
-          return { valid: false, reason: err.message };
-        }
-        throw err;
-      }
-    },
-  };
-
-  registerGeneralTools(toolRegistry, { scheduleRpc });
+  const scheduleRpc = buildScheduleRpc(storage);
 
   // 4a. 모델 카탈로그 + 별칭 인덱스 + 프로필 건강 모니터.
   // (스킬 등록보다 먼저 생성 — Phase 24 E 의 analyze_market 등록 시점에 주입 필요.)
@@ -360,297 +180,55 @@ async function main(): Promise<void> {
   const modelAliasIndex = buildModelAliasIndex(modelCatalog);
   const profileHealth = new ProfileHealthMonitor();
 
-  const finnhubKeys = readKeyArray('FINNHUB_KEY');
-  const twelveDataKeys = readKeyArray('TWELVE_DATA_KEY');
-  const alphaVantageKeys = readKeyArray('ALPHA_VANTAGE_KEY');
-  const coinGeckoKey = process.env.COINGECKO_API_KEY;
-
-  const finnhubRotator = finnhubKeys.length > 0 ? new KeyRotator(finnhubKeys) : undefined;
-  const twelveDataRotator = twelveDataKeys.length > 0 ? new KeyRotator(twelveDataKeys) : undefined;
-  const alphaVantageRotator =
-    alphaVantageKeys.length > 0 ? new KeyRotator(alphaVantageKeys) : undefined;
-
-  let marketHandle: MarketSkillHandle | undefined;
-  let newsHandle: NewsSkillHandle | undefined;
-
-  if (finnhubRotator || twelveDataRotator || alphaVantageRotator || coinGeckoKey) {
-    marketHandle = await registerMarketTools(toolRegistry, {
-      db: storage.db,
-      finnhubRotator,
-      twelveDataRotator,
-      alphaVantageRotator,
-      coinGeckoKey,
-    });
-    logger.info('Market tools registered', {
-      providers: [
-        finnhubRotator && 'finnhub',
-        twelveDataRotator && 'twelve-data',
-        alphaVantageRotator && 'alpha-vantage',
-        coinGeckoKey && 'coingecko',
-      ].filter(Boolean),
-    });
-  } else {
-    logger.info('No market keys set — skipping market tools');
-  }
-
-  const newsdataKeys = readKeyArray('NEWSDATA_API_KEY');
-  const newsdataRotator = newsdataKeys.length > 0 ? new KeyRotator(newsdataKeys) : undefined;
-
-  if (marketHandle && (alphaVantageRotator || newsdataRotator || finnhubRotator)) {
-    newsHandle = await registerNewsTools(toolRegistry, {
-      db: storage.db,
-      alphaVantageKey: alphaVantageKeys[0],
-      newsdataRotator,
-      finnhubRotator, // 시세 KeyRotator 와 동일 인스턴스 공유
-      quoteService: marketHandle.quoteService,
-      anthropicApiKey: anthropicKey,
-      router: routerHelper,
-      defaultModel: DEFAULT_MODEL,
-      // Phase 24 E: 스킬 내부 analyze_market LLM 호출도 status 분포에 포함.
+  // Phase 36: skills/tools/KIS/mcp/plugins 등록 (구 363-559 흡수)
+  const { marketHandle, newsHandle, alertHandle, brokerageSyncService, kisEnv } =
+    await registerSkills({
+      toolRegistry,
+      storage,
+      logger,
+      finclawConfig,
+      anthropicKey,
+      discordAdapter,
+      routerHelper,
       profileHealth,
-      profileId: 'default',
       modelCatalog,
-    });
-    logger.info('News tools registered', {
-      providers: [
-        alphaVantageRotator && 'alpha-vantage',
-        newsdataRotator && 'newsdata',
-        finnhubRotator && 'finnhub-news',
-      ].filter(Boolean),
-    });
-  } else if (marketHandle) {
-    logger.info('No news keys set — skipping news tools');
-  }
-
-  let alertHandle: AlertSkillHandle | undefined;
-  if (marketHandle && newsHandle) {
-    const discordClient = discordAdapter.getClient();
-    alertHandle = await registerAlertTools(toolRegistry, {
-      db: storage.db,
-      cache: marketHandle.cache,
-      registry: marketHandle.providers,
-      newsAggregator: newsHandle.aggregator,
-      logger,
-      discordClient: discordClient ?? undefined,
-    });
-    const handle = alertHandle;
-    lifecycle.register(async () => {
-      handle.monitor.stop();
-    });
-    logger.info('Alert monitor started');
-  } else {
-    logger.info('market/news tools unavailable — skipping alerts');
-  }
-
-  // Phase 33 B-4/B-6: 한국투자증권(KIS) read-only 잔고 동기화 tool.
-  // 키 미설정 시 등록 skip (server 정상 부팅). 자동화는 SDK 모드 전용(§B-0).
-  const kisAppKey = process.env.KIS_APP_KEY;
-  const kisAppSecret = process.env.KIS_APP_SECRET;
-  const kisAccountNo = process.env.KIS_ACCOUNT_NO;
-  const kisAccountProductCode = process.env.KIS_ACCOUNT_PRODUCT_CODE ?? '01';
-  const kisEnv = (process.env.KIS_ENV ?? 'prod') as 'prod' | 'vts';
-
-  /** 1인 사용자 기본 portfolio 보장 — 없으면 'default' 생성. */
-  const resolveDefaultPortfolioId = (): string => {
-    const existing = storage.db
-      .prepare('SELECT id FROM portfolios ORDER BY updated_at ASC LIMIT 1')
-      .get() as { id: string } | undefined;
-    if (existing) {
-      return existing.id;
-    }
-    storage.db
-      .prepare(`INSERT INTO portfolios (id, name, currency, updated_at) VALUES (?, ?, ?, ?)`)
-      .run('default', 'Default', 'USD', Date.now());
-    return 'default';
-  };
-
-  let brokerageSyncService: BrokerageSyncService | undefined;
-  if (kisAppKey && kisAppSecret && kisAccountNo) {
-    const creds = {
-      env: kisEnv,
-      appKey: kisAppKey,
-      appSecret: kisAppSecret,
-      accountNo: kisAccountNo,
-      accountProductCode: kisAccountProductCode,
-    };
-    const kisClient = new KisClient(creds, new KisTokenManager(creds));
-    brokerageSyncService = new BrokerageSyncService({
-      db: storage.db,
-      client: kisClient,
-      logger,
-      resolvePortfolioId: resolveDefaultPortfolioId,
-    });
-    const syncService = brokerageSyncService;
-    registerBrokerageTools(toolRegistry, {
-      syncHoldings: async () => {
-        const r = await syncService.run();
-        return { holdingsCount: r.holdingsCount, marketsScanned: r.marketsScanned };
-      },
-    });
-    logger.info('Brokerage (KIS) tools registered', { env: kisEnv });
-
-    // Phase 33 C: 매일 뉴스 브리프 cron 을 idempotent seed — 고정 id 라 onRunComplete 의
-    // news-memorizer 분기(§B-3 화이트리스트)가 실제로 발동한다. SDK 모드 전용(§B-0): CLI 모드는
-    // tool_use 비활성이라 brokerage_sync_holdings 가 안 돌아 seed 를 skip (조용한 빈 출력 방지).
-    const isCliMode = (finclawConfig.provider ?? 'anthropic-sdk') === 'claude-cli';
-    if (isCliMode) {
-      logger.warn('news_brief.seed_skipped_cli', {
-        event: 'news_brief.seed_skipped_cli',
-        note: 'CLI mode disables tool_use; news-brief cron needs SDK mode. Schedule not seeded.',
-      });
-    } else if (getSchedule(storage.db, NEWS_BRIEF_SCHEDULE_ID) === null) {
-      const briefCron = '0 0 * * *'; // 매일 00:00 UTC = 09:00 KST
-      const briefNext = computeNextRunAt(parseCron(briefCron), Date.now());
-      addSchedule(storage.db, {
-        id: NEWS_BRIEF_SCHEDULE_ID,
-        name: 'Daily holdings news brief',
-        cron: briefCron,
-        agentId: createAgentId('default'),
-        prompt: NEWS_BRIEF_PROMPT,
-        deliveryChannel: 'web',
-        deliveryTarget: 'broadcast',
-        enabled: true,
-        nextRunAt: briefNext === null ? undefined : (briefNext as Timestamp),
-      });
-      logger.info('Seeded news-brief-daily schedule', {
-        event: 'schedule.seeded',
-        id: NEWS_BRIEF_SCHEDULE_ID,
-        cron: briefCron,
-      });
-    }
-  } else {
-    logger.info('KIS not configured — skipping brokerage tools');
-  }
-
-  // Phase 29 D9: MCP 도구 group=mcp 정책 — require-approval (사용자 결정 5).
-  toolRegistry.addPolicyRule({
-    pattern: 'mcp:*',
-    verdict: 'require-approval',
-    reason: 'MCP external tools require explicit approval',
-    priority: 100,
-  });
-
-  // Phase 29 D9: plugin loader 호출. plugins 디렉터리 미존재 시 no-op (loader 가 silently 처리).
-  const pluginsDir = process.env.FINCLAW_PLUGINS_DIR ?? join(homedir(), '.finclaw', 'plugins');
-  const pluginResult = await loadPlugins([pluginsDir], [pluginsDir], toolRegistry);
-  logger.info('Plugins loaded', {
-    event: 'plugins.loaded',
-    loaded: pluginResult.loaded,
-    failed: pluginResult.failed,
-    mcpServers: pluginResult.mcpHandles.length,
-  });
-  lifecycle.register(async () => {
-    for (const h of pluginResult.mcpHandles) {
-      await h.shutdown();
-    }
-  });
-
-  // Phase 32 P1-1: CLI 모드는 tool_use 를 bypass — 등록된 도구가 비활성임을 부팅 시 경고로 가시화.
-  // (CLI adapter 의 streamCompletion 은 text-only 라 skills-finance/general 도구가 호출되지 않음.)
-  if (finclawConfig.provider === 'claude-cli') {
-    const toolCount = toolRegistry.list().length;
-    if (toolCount > 0) {
-      logger.warn('provider.cli_tools_disabled', {
-        event: 'provider.cli_tools_disabled',
-        toolCount,
-        note: 'CLI mode bypasses tool_use; registered tools are inactive. Use provider=anthropic-sdk for live data.',
-      });
-    }
-  }
-
-  // Phase 30 A6: OTel tracer — span 을 SQLite spans 테이블에 SQL exporter 로 기록.
-  // Phase 30 hotfix P0-2: Runner 에 tracer adapter 주입 — turn / provider.stream / tool.execute span 활성화.
-  const tracer = createTracer({ db: storage.db });
-  const tracerAdapter: RunnerTracerAdapter = {
-    withSpan: (name, attrs, fn) => tracer.withSpan(name, attrs, async () => fn()),
-  };
-
-  const runnerFactory: RunnerFactory = (dispatcher) =>
-    new Runner({
-      provider: providerAdapter,
-      toolExecutor: dispatcher,
-      laneManager: lanes,
-      tracer: tracerAdapter,
+      defaultModel: DEFAULT_MODEL,
+      scheduleRpc,
+      lifecycle,
     });
 
-  // 4b. 실행 어댑터 (storage + toolRegistry 주입 — per-request dispatcher를 빌드)
-  const adapter = new RunnerExecutionAdapter({
-    runnerFactory,
-    defaultModel: DEFAULT_MODEL,
-    systemPrompt: DEFAULT_SYSTEM_PROMPT,
+  // Phase 36: 실행 레이어 (tracer + runnerFactory + adapter) — 구 561-591
+  const { tracer, runnerFactory, adapter } = buildExecution({
     storage,
+    providerAdapter,
+    lanes,
     toolRegistry,
-    logger,
     modelCatalog,
     modelAliasIndex,
-    fallbackChain: DEFAULT_FALLBACK_CHAIN,
     profileHealth,
-    profileId: 'default',
-    // Phase 34: LLM 라우터 (SDK Haiku). 키워드 routerHelper 정상 경로 폐기 (B-3).
     routerLlm,
+    logger,
+    defaultModel: DEFAULT_MODEL,
+    systemPrompt: DEFAULT_SYSTEM_PROMPT,
   });
 
-  // 5. 파이프라인
-  const financeCtxProvider = new StubFinanceContextProvider();
-  const commandRegistry = new InMemoryCommandRegistry();
-  registerBuiltInCommands(commandRegistry, {
+  // 5. 파이프라인 — 구 593-653. channelPluginRegistry 는 main 이 소유 (router/discord set).
+  const channelPluginRegistry = new Map<string, ChannelPlugin>();
+  const { pipeline, attachMemoryService } = buildPipeline({
+    adapter,
     toolRegistry,
     storage,
     profileHealth,
-    profileId: 'default',
-    defaultModel: DEFAULT_MODEL,
     marketHandle,
     newsHandle,
+    embeddingProvider,
+    finclawConfig,
+    sdkAdapter,
+    tracer,
+    logger,
+    defaultModel: DEFAULT_MODEL,
+    channelPluginRegistry,
   });
-  const channelPluginRegistry = new Map<string, ChannelPlugin>();
-
-  // Phase 26 B/C/D: capture / retrieval / attach 3 service 를 동일 deps 로 wire-up.
-  // - capture: 정규식 5종 명시적 선언 저장
-  // - retrieval: hybrid (vector+FTS) RAG 주입, embeddingProvider 미주입 시 FTS-only fallback
-  // - attach: agent.run output → memory 훅
-  // Phase 30 D5: RAG re-ranker (config.rag.rerank.enabled 기본 true).
-  // LocalReranker (Xenova ONNX) 가 모델 미존재 시 mock 으로 자동 fallback.
-  const rerankCfg = finclawConfig.rag?.rerank;
-  const rerankEnabled = rerankCfg?.enabled !== false;
-  const reranker = rerankEnabled ? createRerankerWithFallback(new LocalReranker()) : undefined;
-
-  const { memoryCaptureService, memoryRetrievalService, attachMemoryService } = wireMemoryServices(
-    {
-      db: storage.db,
-      embeddingProvider,
-      logger,
-    },
-    {
-      reranker,
-      rerankTopKFirst: rerankCfg?.topKFirst,
-    },
-  );
-
-  // Phase 31 C: 컨텍스트 압축용 토큰 카운터 + 요약기 (Anthropic 1회 호출).
-  // Phase 32 F: 요약기는 항상 SDK adapter 사용 (.summarize 는 AnthropicAdapter 전용 메서드).
-  const summarizer = (text: string) => sdkAdapter.summarize(text, DEFAULT_MODEL.model);
-
-  const pipeline = new AutoReplyPipeline(
-    {
-      enableAck: true,
-      commandPrefix: '!finclaw ',
-      maxResponseLength: 2000,
-      timeoutMs: 60_000,
-      respectMarketHours: false,
-    },
-    {
-      executionAdapter: adapter,
-      financeContextProvider: financeCtxProvider,
-      commandRegistry,
-      logger,
-      getChannel: (id) => channelPluginRegistry.get(id),
-      memoryCaptureService,
-      memoryRetrievalService,
-      tracer,
-      tokenCounter: approxTokenCount,
-      summarizer,
-    },
-  );
 
   // 6. MessageRouter
   const routerConfig: FinClawConfig = {};
@@ -693,68 +271,23 @@ async function main(): Promise<void> {
     waitTimeoutMs: 120_000,
   });
 
-  // Phase 28: schedule 동시 실행 1개로 제한하는 lane.
-  // agent.run 큐잉 lane 과 별개로 schedule 전용 (대기열 5분 보유).
-  const scheduleLane = new ConcurrencyLane({
-    maxConcurrent: 1,
-    maxQueueSize: 50,
-    waitTimeoutMs: 5 * 60_000,
-  });
-
-  // Phase 28: SchedulerService — 매 분 폴러로 schedules 검사 + agent.run 직접 실행.
-  // delivery hook 은 gateway 생성 후 lateinit (broadcaster/connections 가 그때 가용).
-  let deliveryHook:
-    | ((args: {
-        schedule: Schedule;
-        agentRunId: string | null;
-        output: string;
-        error?: string;
-      }) => Promise<void>)
-    | null = null;
-  const maxFailRaw = process.env.AUTOMATION_MAX_CONSECUTIVE_FAILURES;
-  const maxConsecutiveFailures = maxFailRaw ? Number(maxFailRaw) : 3;
-  // Phase 33 C: news-brief schedule 출력을 심볼별 financial memory 로 적재.
-  const newsMemorizer = new NewsMemorizer({
-    db: storage.db,
-    embeddingProvider,
-    logger,
-    sessionKey: 'news-brief',
-  });
-  const scheduler = new SchedulerService({
-    db: storage.db,
+  // Phase 36: scheduler/automation — 구 698-757. scheduleLane 은 빌더 내부 생성 (구 698 위치 보존).
+  // gateway 생성 직전에 호출 → lifecycle ⑤(scheduler.stop) 가 ⑦(gateway.stop) 보다 먼저 등록.
+  const { scheduler, setDeliveryHook } = buildAutomation({
+    storage,
     toolRegistry,
     runnerFactory,
-    lane: scheduleLane,
     defaultModel: DEFAULT_MODEL,
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     logger,
     profileHealth,
-    profileId: 'default',
-    router: routerHelper,
+    routerHelper,
     modelCatalog,
     modelAliasIndex,
-    fallbackChain: DEFAULT_FALLBACK_CHAIN,
-    maxConsecutiveFailures,
-    // Phase 30 hotfix P0-1: schedule 실행을 새 trace 로 감싸 agent_runs.trace_id 부착.
     tracer,
-    onRunComplete: async (args) => {
-      if (deliveryHook) {
-        await deliveryHook(args);
-      }
-      // Phase 33 C: news-brief schedule 출력만 memories 로 적재 (§B-3 id 화이트리스트).
-      if (args.schedule.id === NEWS_BRIEF_SCHEDULE_ID && !args.error) {
-        try {
-          await newsMemorizer.absorb({ agentRunId: args.agentRunId, output: args.output });
-        } catch (memErr) {
-          logger.warn('news_memorizer.failed', {
-            event: 'news_memorizer.failed',
-            error: (memErr as Error).message,
-          });
-        }
-      }
-    },
+    embeddingProvider,
+    lifecycle,
   });
-  lifecycle.register(() => scheduler.stop());
 
   const gateway = createGatewayServer(gatewayConfig, {
     storage,
@@ -861,7 +394,8 @@ async function main(): Promise<void> {
   }
 
   // Phase 28: gateway 생성 후 delivery hook 활성화. broadcaster/connections 는 gateway.ctx 에서 가져온다.
-  deliveryHook = (args) =>
+  // Phase 36: deliveryHook let 은 buildAutomation 내부로 이동 — setter 로 같은 시점(구 864) 대입.
+  setDeliveryHook((args) =>
     deliverScheduleResult(
       {
         discordClient: discordAdapter.getClient() ?? undefined,
@@ -870,7 +404,8 @@ async function main(): Promise<void> {
         logger,
       },
       args,
-    );
+    ),
+  );
 
   lifecycle.init();
   await gateway.start();
