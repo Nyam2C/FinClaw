@@ -7,6 +7,24 @@ const GatewaySchema = z.strictObject({
   host: z.string(),
   tls: z.boolean(),
   corsOrigins: z.array(z.string()),
+  // Phase 37 B: 타입 GatewayConfig.auth?:{token?:string} 미러 (cli/commands/tui.ts:18 소비).
+  auth: z.strictObject({ token: z.string().optional() }).optional(),
+});
+
+/** Phase 37 B: access-log retention 스키마 (types AccessLogConfig 미러). */
+const AccessLogSchema = z.strictObject({
+  retentionDays: z.number().int().optional(),
+});
+
+/** Phase 37 B: RAG re-ranking 토글 스키마 (types RagConfig 미러). */
+const RagSchema = z.strictObject({
+  rerank: z
+    .strictObject({
+      enabled: z.boolean().optional(),
+      topKFirst: z.number().int().optional(),
+      topKFinal: z.number().int().optional(),
+    })
+    .optional(),
 });
 
 /** 에이전트 기본값 스키마 */
@@ -190,6 +208,9 @@ export const FinClawConfigSchema = z.strictObject({
     .optional(),
   finance: FinanceSchema.optional(),
   routing: RoutingConfigSchema.optional(),
+  // Phase 37 B: 타입 FinClawConfig.accessLog?·rag? 미러 (런타임 소비: main.ts:353, runtime.ts:174).
+  accessLog: AccessLogSchema.optional(),
+  rag: RagSchema.optional(),
   meta: z
     .strictObject({
       lastTouchedVersion: z.string().optional(),
