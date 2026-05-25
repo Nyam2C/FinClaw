@@ -5,10 +5,12 @@ import type { AgentId, RpcMethod, Timestamp } from '@finclaw/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DefaultAttachMemoryService } from '../../../auto-reply/agent-memory-hook.js';
 import type { GatewayServerContext } from '../../context.js';
-import { clearMethods, dispatchRpc } from '../index.js';
+import { dispatchRpc, MethodRegistry } from '../index.js';
 import type { GatewayServerConfig } from '../types.js';
 import { registerAgentRunsMethods } from './agent-runs.js';
 import { registerAgentMethods, resetAgentStats, type AgentRpcDeps } from './agent.js';
+
+let methods: MethodRegistry; // Phase 35: 인스턴스 레지스트리 (테스트 격리)
 
 function makeServerCtx(): GatewayServerContext {
   const config: GatewayServerConfig = {
@@ -30,6 +32,7 @@ function makeServerCtx(): GatewayServerContext {
     wss: {} as GatewayServerContext['wss'],
     connections: new Map(),
     registry: { activeCount: () => 0 } as GatewayServerContext['registry'],
+    methods, // Phase 35
     broadcaster: {} as GatewayServerContext['broadcaster'],
     isDraining: false,
   };
@@ -60,7 +63,7 @@ describe('agent.runs.* RPC methods', () => {
   let database: Database;
 
   beforeEach(() => {
-    clearMethods();
+    methods = new MethodRegistry();
     resetEventBus();
     database = openDatabase({ path: ':memory:' });
   });
@@ -71,7 +74,7 @@ describe('agent.runs.* RPC methods', () => {
 
   describe('agent.runs.list', () => {
     it('returns provider_unavailable when db is not injected', async () => {
-      registerAgentRunsMethods({});
+      registerAgentRunsMethods({}, methods);
       const result = await call('agent.runs.list', {});
       expect((result as { error: { message: string } }).error.message).toContain(
         'provider_unavailable',
@@ -88,7 +91,7 @@ describe('agent.runs.* RPC methods', () => {
         )
         .run('manual-2', AGENT_A as string, 'second', 'output 2', t2);
 
-      registerAgentRunsMethods({ db: database.db });
+      registerAgentRunsMethods({ db: database.db }, methods);
       const result = await call('agent.runs.list', {});
       const r = (result as { result: { runs: Array<{ prompt: string }> } }).result;
       expect(r.runs).toHaveLength(2);
@@ -100,7 +103,7 @@ describe('agent.runs.* RPC methods', () => {
       addAgentRun(database.db, { agentId: AGENT_A, prompt: 'a-prompt', output: 'a-output' });
       addAgentRun(database.db, { agentId: AGENT_B, prompt: 'b-prompt', output: 'b-output' });
 
-      registerAgentRunsMethods({ db: database.db });
+      registerAgentRunsMethods({ db: database.db }, methods);
       const result = await call('agent.runs.list', { agentId: AGENT_A });
       const r = (result as { result: { runs: Array<{ agentId: string; prompt: string }> } }).result;
       expect(r.runs).toHaveLength(1);
@@ -126,7 +129,7 @@ describe('agent.runs.* RPC methods', () => {
         )
         .run('r-new', AGENT_A as string, 'new', 'new-out', (t as number) + 1000);
 
-      registerAgentRunsMethods({ db: database.db });
+      registerAgentRunsMethods({ db: database.db }, methods);
       const result = await call('agent.runs.list', {
         from: t,
         to: (t as number) + 500,
@@ -145,7 +148,7 @@ describe('agent.runs.* RPC methods', () => {
         });
       }
 
-      registerAgentRunsMethods({ db: database.db });
+      registerAgentRunsMethods({ db: database.db }, methods);
       const result = await call('agent.runs.list', { limit: 2 });
       const r = (result as { result: { runs: unknown[] } }).result;
       expect(r.runs).toHaveLength(2);
@@ -160,7 +163,7 @@ describe('agent.runs.* RPC methods', () => {
         output: longOutput,
       });
 
-      registerAgentRunsMethods({ db: database.db });
+      registerAgentRunsMethods({ db: database.db }, methods);
       const result = await call('agent.runs.list', {});
       const r = (result as { result: { runs: Array<{ prompt: string; output: string }> } }).result;
       // 200자 / 500자 truncate
@@ -171,7 +174,7 @@ describe('agent.runs.* RPC methods', () => {
 
   describe('agent.runs.get', () => {
     it('returns provider_unavailable when db is not injected', async () => {
-      registerAgentRunsMethods({});
+      registerAgentRunsMethods({}, methods);
       const result = await call('agent.runs.get', { runId: 'whatever' });
       expect((result as { error: { message: string } }).error.message).toContain(
         'provider_unavailable',
@@ -179,7 +182,7 @@ describe('agent.runs.* RPC methods', () => {
     });
 
     it('returns null run for non-existent runId', async () => {
-      registerAgentRunsMethods({ db: database.db });
+      registerAgentRunsMethods({ db: database.db }, methods);
       const result = await call('agent.runs.get', { runId: 'does-not-exist' });
       const r = (result as { result: { run: unknown } }).result;
       expect(r.run).toBeNull();
@@ -202,7 +205,7 @@ describe('agent.runs.* RPC methods', () => {
         role: 'analysis',
       });
 
-      registerAgentRunsMethods({ db: database.db });
+      registerAgentRunsMethods({ db: database.db }, methods);
       const result = await call('agent.runs.get', { runId: stored.id });
       const r = (
         result as {
@@ -239,7 +242,7 @@ describe('agent.runs.* RPC methods', () => {
         )
         .run(id, AGENT_A as string, 'p', 'o', 'not valid json {{', Date.now());
 
-      registerAgentRunsMethods({ db: database.db });
+      registerAgentRunsMethods({ db: database.db }, methods);
       const result = await call('agent.runs.get', { runId: id });
       const r = (result as { result: { run: { toolCalls: unknown[] } } }).result;
       expect(r.run.toolCalls).toEqual([]);
@@ -259,7 +262,7 @@ describe('agent.runs.* RPC methods', () => {
         toolCalls: JSON.stringify(calls),
       });
 
-      registerAgentRunsMethods({ db: database.db });
+      registerAgentRunsMethods({ db: database.db }, methods);
       const result = await call('agent.runs.get', { runId: stored.id });
       const r = (
         result as {
@@ -348,7 +351,7 @@ describe('boundary: agent.run → agent_runs + memories → agent.runs.get (mock
   let database: Database;
 
   beforeEach(() => {
-    clearMethods();
+    methods = new MethodRegistry();
     resetEventBus();
     resetAgentStats();
     database = openDatabase({ path: ':memory:' });
@@ -391,8 +394,9 @@ describe('boundary: agent.run → agent_runs + memories → agent.runs.get (mock
         attachMemoryService: attachService,
         logger,
       }),
+      methods,
     );
-    registerAgentRunsMethods({ db: database.db });
+    registerAgentRunsMethods({ db: database.db }, methods);
 
     // 1) agent.run 호출
     const runResult = await call('agent.run', {

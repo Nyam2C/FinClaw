@@ -2,7 +2,6 @@ import { resetEventBus } from '@finclaw/infra';
 import type { ConversationRecord, MemoryEntry, ModelRef, SearchResult } from '@finclaw/types';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { RunnerExecutionAdapter } from './auto-reply/execution-adapter.js';
-import { clearMethods } from './gateway/rpc/index.js';
 import type { GatewayServerConfig } from './gateway/rpc/types.js';
 import { createGatewayServer, type GatewayServer } from './gateway/server.js';
 import { MissingEnvError, requireEnv } from './main.js';
@@ -70,7 +69,6 @@ describe('main boot wiring (Phase 29 E)', () => {
   let server: GatewayServer | undefined;
 
   beforeEach(() => {
-    clearMethods();
     resetEventBus();
   });
 

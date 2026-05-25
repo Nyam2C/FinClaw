@@ -3,7 +3,6 @@ import type { ConversationRecord, MemoryEntry, ModelRef, SearchResult } from '@f
 // packages/server/src/gateway/server.test.ts
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import type { RunnerExecutionAdapter } from '../auto-reply/execution-adapter.js';
-import { clearMethods } from './rpc/index.js';
 import type { GatewayServerConfig } from './rpc/types.js';
 import { createGatewayServer, type GatewayServer, type GatewayServerDeps } from './server.js';
 
@@ -65,7 +64,6 @@ describe('createGatewayServer', { timeout: 15_000 }, () => {
   let server: GatewayServer | undefined;
 
   beforeEach(() => {
-    clearMethods();
     resetEventBus();
   });
 

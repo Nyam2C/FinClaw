@@ -5,8 +5,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { z } from 'zod/v4';
 import type { GatewayServerContext } from './context.js';
 import { handleHttpRequest } from './router.js';
-import { clearMethods, registerMethod } from './rpc/index.js';
+import { MethodRegistry } from './rpc/index.js';
 import type { GatewayServerConfig } from './rpc/types.js';
+
+let methods: MethodRegistry; // Phase 35: 인스턴스 레지스트리 (테스트 격리)
 
 /** 최소 ctx 팩토리 */
 function makeCtx(overrides?: Partial<GatewayServerConfig>): GatewayServerContext {
@@ -31,6 +33,7 @@ function makeCtx(overrides?: Partial<GatewayServerConfig>): GatewayServerContext
     wss: {} as GatewayServerContext['wss'],
     connections: new Map(),
     registry: { activeCount: () => 0 } as GatewayServerContext['registry'],
+    methods, // Phase 35
     broadcaster: {} as GatewayServerContext['broadcaster'],
     isDraining: false,
   };
@@ -95,7 +98,7 @@ function mockReqRes(method: string, url: string, body?: string, headers?: Record
 
 describe('HTTP Router', () => {
   beforeEach(() => {
-    clearMethods();
+    methods = new MethodRegistry();
     resetEventBus();
   });
 
@@ -125,7 +128,7 @@ describe('HTTP Router', () => {
   });
 
   it('POST /rpc dispatches to RPC handler', async () => {
-    registerMethod({
+    methods.register({
       method: 'test.ping',
       description: 'ping',
       authLevel: 'none',
@@ -157,7 +160,7 @@ describe('HTTP Router', () => {
 
   it('POST /rpc requires auth for token-level methods', async () => {
     // Phase 23 post-ship fix: HTTP /rpc authenticate() 배선 regression 가드
-    registerMethod({
+    methods.register({
       method: 'test.secure',
       description: 'secure',
       authLevel: 'token',
@@ -180,7 +183,7 @@ describe('HTTP Router', () => {
 
   it('POST /rpc accepts valid Bearer JWT', async () => {
     // Phase 23 post-ship fix: HTTP /rpc 가 JWT 를 인식해 token 레벨 메서드 통과
-    registerMethod({
+    methods.register({
       method: 'test.secure',
       description: 'secure',
       authLevel: 'token',

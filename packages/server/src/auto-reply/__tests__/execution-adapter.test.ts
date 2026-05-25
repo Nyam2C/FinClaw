@@ -534,6 +534,31 @@ describe('RunnerExecutionAdapter + LLM 라우터 (Phase 34)', () => {
     expect(result.content).toBe('ok');
     expect(calls).toHaveLength(1);
   });
+
+  it('Phase 35: execute 의 signal 을 라우터로 전달', async () => {
+    const { runnerFactory } = makeFakeRunnerFactory([{ role: 'assistant', content: 'ok' }]);
+    let seenSignal: AbortSignal | undefined;
+    const capturingRouter: LlmRouter = async (input) => {
+      seenSignal = input.abortSignal;
+      return {
+        intent: 'greeting',
+        modelTier: 'haiku',
+        allowedToolNames: [],
+        reason: 'r',
+        routerUsage: { inputTokens: 0, outputTokens: 0 },
+        fallback: false,
+      };
+    };
+    const adapter = new RunnerExecutionAdapter({
+      runnerFactory,
+      defaultModel: DEFAULT_MODEL,
+      systemPrompt: 'sp',
+      routerLlm: capturingRouter,
+    });
+    const controller = new AbortController();
+    await adapter.execute(makePipelineCtx(), controller.signal);
+    expect(seenSignal).toBe(controller.signal);
+  });
 });
 
 describe('Phase 34 라우팅 로깅', () => {

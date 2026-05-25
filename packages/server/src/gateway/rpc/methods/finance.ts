@@ -24,7 +24,7 @@ import {
 // packages/server/src/gateway/rpc/methods/finance.ts
 import { z } from 'zod/v4';
 import type { GatewayBroadcaster } from '../../broadcaster.js';
-import { registerMethod } from '../index.js';
+import type { MethodRegistry } from '../index.js';
 import type { RpcMethodHandler, WsConnection } from '../types.js';
 
 /** finance.* RPC 메서드 의존성 (main.ts 에서 주입) */
@@ -192,7 +192,7 @@ function summarizeCondition(cond: AlertCondition): ConditionSummary {
  * finance.* RPC 메서드 일괄 등록.
  * deps 가 undefined 인 서비스는 해당 메서드 호출 시 에러를 던진다.
  */
-export function registerFinanceMethods(deps: FinanceRpcDeps): void {
+export function registerFinanceMethods(deps: FinanceRpcDeps, registry: MethodRegistry): void {
   // ── finance.quote ──
   const quoteHandler: RpcMethodHandler<{ symbol: string }, unknown> = {
     method: 'finance.quote',
@@ -583,13 +583,13 @@ export function registerFinanceMethods(deps: FinanceRpcDeps): void {
     },
   };
 
-  registerMethod(quoteHandler);
-  registerMethod(newsHandler);
-  registerMethod(alertCreateHandler);
-  registerMethod(alertListHandler);
-  registerMethod(portfolioGetHandler);
-  registerMethod(transactionAddHandler);
-  registerMethod(transactionListHandler);
-  registerMethod(transactionUpdateHandler);
-  registerMethod(transactionDeleteHandler);
+  registry.register(quoteHandler);
+  registry.register(newsHandler);
+  registry.register(alertCreateHandler);
+  registry.register(alertListHandler);
+  registry.register(portfolioGetHandler);
+  registry.register(transactionAddHandler);
+  registry.register(transactionListHandler);
+  registry.register(transactionUpdateHandler);
+  registry.register(transactionDeleteHandler);
 }

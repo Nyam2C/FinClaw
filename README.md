@@ -221,19 +221,19 @@ sequenceDiagram
 
 ## 패키지 구조
 
-| 패키지                     | 역할                                                                                       | workspace 의존                                                                                               |
-| -------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| `@finclaw/types`           | 모든 패키지 공유 contract (브랜드 타입 + enum)                                             | (none)                                                                                                       |
-| `@finclaw/infra`           | logger, eventbus, fetch, ports, ConcurrencyLane, ALS context, SSRF, gateway-lock           | `types`                                                                                                      |
-| `@finclaw/config`          | JSON5 설정 로딩, Zod 스키마, env 치환, strict 검증                                         | `types`, `infra`                                                                                             |
-| `@finclaw/storage`         | SQLite (`node:sqlite`) + sqlite-vec, 스키마 v6, transactions/agent_runs/schedules/memories | `types`                                                                                                      |
-| `@finclaw/agent`           | LLM provider abstraction, model catalog/router, fallback chain, tool registry, runner      | `types`, `infra`                                                                                             |
-| `@finclaw/channel-discord` | Discord 채널 어댑터 (discord.js v14)                                                       | `types`, `infra`                                                                                             |
-| `@finclaw/skills-finance`  | market / news / alerts 3 스킬 도구 + RSS, 시세 캐시                                        | `types`, `infra`, `storage`, `agent`                                                                         |
-| `@finclaw/skills-general`  | datetime / file-read / web-fetch                                                           | `types`, `infra`, `agent`                                                                                    |
-| `@finclaw/server`          | 진입점 + 게이트웨이 (HTTP/JSON-RPC + WebSocket), auto-reply 파이프라인, 자동화, CLI        | `types`, `infra`, `config`, `storage`, `agent`, `channel-discord`, `skills-finance`, `skills-general`, `tui` |
-| `@finclaw/tui`             | Ink + React 기반 터미널 UI (gateway WS 클라이언트)                                         | `types`                                                                                                      |
-| `@finclaw/web`             | Lit + Vite 기반 웹 UI (gateway WS 클라이언트 + 마크다운)                                   | `types`                                                                                                      |
+| 패키지                     | 역할                                                                                        | workspace 의존                                                                                               |
+| -------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `@finclaw/types`           | 모든 패키지 공유 contract (브랜드 타입 + enum)                                              | (none)                                                                                                       |
+| `@finclaw/infra`           | logger, eventbus, fetch, ports, ConcurrencyLane, ALS context, SSRF, gateway-lock            | `types`                                                                                                      |
+| `@finclaw/config`          | JSON5 설정 로딩, Zod 스키마, env 치환, strict 검증                                          | `types`, `infra`                                                                                             |
+| `@finclaw/storage`         | SQLite (`node:sqlite`) + sqlite-vec, 스키마 v12, transactions/agent_runs/schedules/memories | `types`                                                                                                      |
+| `@finclaw/agent`           | LLM provider abstraction, model catalog/router, fallback chain, tool registry, runner       | `types`, `infra`                                                                                             |
+| `@finclaw/channel-discord` | Discord 채널 어댑터 (discord.js v14)                                                        | `types`, `infra`                                                                                             |
+| `@finclaw/skills-finance`  | market / news / alerts 3 스킬 도구 + RSS, 시세 캐시                                         | `types`, `infra`, `storage`, `agent`                                                                         |
+| `@finclaw/skills-general`  | datetime / file-read / web-fetch                                                            | `types`, `infra`, `agent`                                                                                    |
+| `@finclaw/server`          | 진입점 + 게이트웨이 (HTTP/JSON-RPC + WebSocket), auto-reply 파이프라인, 자동화, CLI         | `types`, `infra`, `config`, `storage`, `agent`, `channel-discord`, `skills-finance`, `skills-general`, `tui` |
+| `@finclaw/tui`             | Ink + React 기반 터미널 UI (gateway WS 클라이언트)                                          | `types`                                                                                                      |
+| `@finclaw/web`             | Lit + Vite 기반 웹 UI (gateway WS 클라이언트 + 마크다운)                                    | `types`                                                                                                      |
 
 신규 컨트리뷰터를 위한 코드 읽기 순서:
 
@@ -242,7 +242,7 @@ sequenceDiagram
 3. `packages/server/src/auto-reply/pipeline.ts` — 8 단계 스테이지 호출 + abort/observer.
 4. `packages/server/src/auto-reply/stages/` — 각 스테이지 구현.
 5. `packages/agent/src/execution/runner.ts` — Anthropic stream 처리 + tool_use loop.
-6. `packages/storage/src/database.ts` + `index.ts` — 스키마 (v6) + `createStorage` 팩토리.
+6. `packages/storage/src/database.ts` + `index.ts` — 스키마 (v12) + `createStorage` 팩토리.
 7. `packages/server/src/gateway/server.ts` + `rpc/index.ts` + `rpc/methods/` — JSON-RPC 표면.
 8. `packages/server/src/automation/scheduler.ts` — cron 폴러.
 

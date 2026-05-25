@@ -6,9 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AttachMemoryService } from '../../../auto-reply/agent-memory-hook.js';
 import type { GatewayServerContext } from '../../context.js';
 import { RpcErrors } from '../errors.js';
-import { clearMethods, dispatchRpc } from '../index.js';
+import { dispatchRpc, MethodRegistry } from '../index.js';
 import type { GatewayServerConfig } from '../types.js';
 import { registerAgentMethods, resetAgentStats, type AgentRpcDeps } from './agent.js';
+
+let methods: MethodRegistry; // Phase 35: 인스턴스 레지스트리 (테스트 격리)
 
 function makeServerCtx(): GatewayServerContext {
   const config: GatewayServerConfig = {
@@ -30,6 +32,7 @@ function makeServerCtx(): GatewayServerContext {
     wss: {} as GatewayServerContext['wss'],
     connections: new Map(),
     registry: { activeCount: () => 0 } as GatewayServerContext['registry'],
+    methods, // Phase 35
     broadcaster: {} as GatewayServerContext['broadcaster'],
     isDraining: false,
   };
@@ -109,14 +112,14 @@ function makeDeps(overrides: Partial<AgentRpcDeps> = {}): AgentRpcDeps {
 
 describe('agent.* RPC methods', () => {
   beforeEach(() => {
-    clearMethods();
+    methods = new MethodRegistry();
     resetEventBus();
     resetAgentStats();
   });
 
   describe('registration', () => {
     it('registers 3 methods', async () => {
-      registerAgentMethods(makeDeps());
+      registerAgentMethods(makeDeps(), methods);
       const listResult = await call('agent.list', {});
       expect('result' in listResult).toBe(true);
     });
@@ -127,7 +130,7 @@ describe('agent.* RPC methods', () => {
       const toolRegistry = {
         list: () => [{}, {}, {}],
       } as never;
-      registerAgentMethods(makeDeps({ toolRegistry }));
+      registerAgentMethods(makeDeps({ toolRegistry }), methods);
       const result = await call('agent.list', {});
       const r = (result as { result: { agents: Array<{ id: string; toolCount: number }> } }).result;
       expect(r.agents).toHaveLength(1);
@@ -138,13 +141,13 @@ describe('agent.* RPC methods', () => {
 
   describe('agent.status', () => {
     it('rejects unknown agentId', async () => {
-      registerAgentMethods(makeDeps());
+      registerAgentMethods(makeDeps(), methods);
       const result = await call('agent.status', { agentId: 'nobody' });
       expect((result as { error: { message: string } }).error.message).toContain('unknown_agent');
     });
 
     it('returns idle status for known agent with zero calls', async () => {
-      registerAgentMethods(makeDeps());
+      registerAgentMethods(makeDeps(), methods);
       const result = await call('agent.status', { agentId: 'finclaw-partner' });
       const r = (
         result as {
@@ -160,13 +163,13 @@ describe('agent.* RPC methods', () => {
 
   describe('agent.run', () => {
     it('rejects unknown agentId', async () => {
-      registerAgentMethods(makeDeps());
+      registerAgentMethods(makeDeps(), methods);
       const result = await call('agent.run', { agentId: 'nobody', prompt: 'hi' });
       expect((result as { error: { message: string } }).error.message).toContain('unknown_agent');
     });
 
     it('rejects stream=true', async () => {
-      registerAgentMethods(makeDeps());
+      registerAgentMethods(makeDeps(), methods);
       const result = await call('agent.run', {
         agentId: 'finclaw-partner',
         prompt: 'hi',
@@ -180,7 +183,7 @@ describe('agent.* RPC methods', () => {
     it('executes runner and returns output', async () => {
       const runner = { execute: vi.fn().mockResolvedValue(makeRunnerResult()) };
       const runnerFactory = vi.fn(() => runner as never);
-      registerAgentMethods(makeDeps({ runnerFactory }));
+      registerAgentMethods(makeDeps({ runnerFactory }), methods);
       const result = await call('agent.run', { agentId: 'finclaw-partner', prompt: 'hi' });
       const r = (
         result as {
@@ -202,7 +205,7 @@ describe('agent.* RPC methods', () => {
 
     it('updates stats after successful run', async () => {
       const deps = makeDeps();
-      registerAgentMethods(deps);
+      registerAgentMethods(deps, methods);
       await call('agent.run', { agentId: 'finclaw-partner', prompt: 'hi' });
       const status = await call('agent.status', { agentId: 'finclaw-partner' });
       const r = (
@@ -220,7 +223,7 @@ describe('agent.* RPC methods', () => {
       const runner = { execute: vi.fn().mockRejectedValue(new Error('runner exploded')) };
       const runnerFactory = vi.fn(() => runner as never);
       const deps = makeDeps({ runnerFactory });
-      registerAgentMethods(deps);
+      registerAgentMethods(deps, methods);
       const result = await call('agent.run', { agentId: 'finclaw-partner', prompt: 'hi' });
       expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.INTERNAL_ERROR);
       const status = await call('agent.status', { agentId: 'finclaw-partner' });
@@ -255,7 +258,7 @@ describe('agent.* RPC methods', () => {
         };
         const runnerFactory = vi.fn(() => runner as never);
         const deps = makeDeps({ runnerFactory, db: database.db });
-        registerAgentMethods(deps);
+        registerAgentMethods(deps, methods);
 
         const result = await call('agent.run', {
           agentId: 'finclaw-partner',
@@ -298,7 +301,7 @@ describe('agent.* RPC methods', () => {
           db: database.db,
           attachMemoryService,
         });
-        registerAgentMethods(deps);
+        registerAgentMethods(deps, methods);
 
         const result = await call('agent.run', { agentId: 'finclaw-partner', prompt: 'hi' });
         const r = (result as { result: { runId?: string } }).result;
@@ -331,7 +334,7 @@ describe('agent.* RPC methods', () => {
           db: database.db,
           attachMemoryService,
         });
-        registerAgentMethods(deps);
+        registerAgentMethods(deps, methods);
 
         const result = await call('agent.run', { agentId: 'finclaw-partner', prompt: 'hi' });
         expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.INTERNAL_ERROR);
@@ -368,7 +371,7 @@ describe('agent.* RPC methods', () => {
           db: database.db,
           attachMemoryService,
         });
-        registerAgentMethods(deps);
+        registerAgentMethods(deps, methods);
 
         const result = await call('agent.run', { agentId: 'finclaw-partner', prompt: 'hi' });
         const r = (result as { result: { runId?: string; output: string } }).result;
@@ -405,7 +408,7 @@ describe('agent.* RPC methods', () => {
         const runnerFactory = vi.fn(() => runner as never);
         // db 미주입 — attach 도 호출 안 됨
         const deps = makeDeps({ runnerFactory, attachMemoryService });
-        registerAgentMethods(deps);
+        registerAgentMethods(deps, methods);
 
         const result = await call('agent.run', { agentId: 'finclaw-partner', prompt: 'hi' });
         const r = (result as { result: { runId?: string; output: string } }).result;
@@ -429,7 +432,7 @@ describe('agent.* RPC methods', () => {
       };
       const runnerFactory = vi.fn(() => runner as never);
       const deps = makeDeps({ runnerFactory });
-      registerAgentMethods(deps);
+      registerAgentMethods(deps, methods);
 
       const p1 = call('agent.run', { agentId: 'finclaw-partner', prompt: 'first' });
       const p2 = call('agent.run', { agentId: 'finclaw-partner', prompt: 'second' });

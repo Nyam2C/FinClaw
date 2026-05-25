@@ -4,6 +4,7 @@ import type { WebSocketServer } from 'ws';
 import type { AuthRateLimiter } from './auth/rate-limit.js';
 import type { GatewayBroadcaster } from './broadcaster.js';
 import type { ChatRegistry } from './registry.js';
+import type { MethodRegistry } from './rpc/index.js';
 import type { GatewayServerConfig, WsConnection } from './rpc/types.js';
 
 /**
@@ -16,6 +17,8 @@ export interface GatewayServerContext {
   readonly wss: WebSocketServer;
   readonly connections: Map<string, WsConnection>;
   readonly registry: ChatRegistry;
+  /** Phase 35: RPC 메서드 레지스트리 (모듈 전역 Map 격리). */
+  readonly methods: MethodRegistry;
   readonly broadcaster: GatewayBroadcaster;
   isDraining: boolean;
   /** Phase 29 E1: 요청 수준 IP rate limiter (없으면 비활성화) */

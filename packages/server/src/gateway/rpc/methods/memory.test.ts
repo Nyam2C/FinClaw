@@ -15,9 +15,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DefaultMemoryCaptureService } from '../../../auto-reply/stages/memory-capture.js';
 import type { GatewayServerContext } from '../../context.js';
 import { RpcErrors } from '../errors.js';
-import { clearMethods, dispatchRpc } from '../index.js';
+import { dispatchRpc, MethodRegistry } from '../index.js';
 import type { GatewayServerConfig } from '../types.js';
 import { registerMemoryMethods } from './memory.js';
+
+let methods: MethodRegistry; // Phase 35: 인스턴스 레지스트리 (테스트 격리)
 
 const DIMS = 1024;
 const sessionA = 'session-a' as SessionKey;
@@ -44,6 +46,7 @@ function makeServerCtx(): GatewayServerContext {
     wss: {} as GatewayServerContext['wss'],
     connections: new Map(),
     registry: { activeCount: () => 0 } as GatewayServerContext['registry'],
+    methods, // Phase 35
     broadcaster: {} as GatewayServerContext['broadcaster'],
     isDraining: false,
   };
@@ -107,7 +110,7 @@ describe('memory.* RPC methods', () => {
   let database: Database;
 
   beforeEach(() => {
-    clearMethods();
+    methods = new MethodRegistry();
     resetEventBus();
     tmpDir = mkdtempSync(join(tmpdir(), 'finclaw-rpc-mem-'));
     database = openDatabase({ path: join(tmpDir, 'rpc.db') });
@@ -121,7 +124,7 @@ describe('memory.* RPC methods', () => {
   // ── provider availability ──
   describe('provider availability', () => {
     it('memory.list errors with provider_unavailable when db missing', async () => {
-      registerMemoryMethods({});
+      registerMemoryMethods({}, methods);
       const result = await call('memory.list', {});
       expect((result as { error: { message: string } }).error.message).toContain(
         'provider_unavailable',
@@ -129,7 +132,7 @@ describe('memory.* RPC methods', () => {
     });
 
     it('memory.delete errors with provider_unavailable when db missing', async () => {
-      registerMemoryMethods({});
+      registerMemoryMethods({}, methods);
       const result = await call('memory.delete', { memoryId: 'm1' });
       expect((result as { error: { message: string } }).error.message).toContain(
         'provider_unavailable',
@@ -137,7 +140,7 @@ describe('memory.* RPC methods', () => {
     });
 
     it('memory.search errors with provider_unavailable when db missing', async () => {
-      registerMemoryMethods({});
+      registerMemoryMethods({}, methods);
       const result = await call('memory.search', { query: 'hello' });
       expect((result as { error: { message: string } }).error.message).toContain(
         'provider_unavailable',
@@ -148,25 +151,25 @@ describe('memory.* RPC methods', () => {
   // ── schema validation ──
   describe('schema validation', () => {
     it('memory.list rejects limit > 500', async () => {
-      registerMemoryMethods({ db: database.db });
+      registerMemoryMethods({ db: database.db }, methods);
       const result = await call('memory.list', { limit: 9999 });
       expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.INVALID_PARAMS);
     });
 
     it('memory.delete rejects empty memoryId', async () => {
-      registerMemoryMethods({ db: database.db });
+      registerMemoryMethods({ db: database.db }, methods);
       const result = await call('memory.delete', { memoryId: '' });
       expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.INVALID_PARAMS);
     });
 
     it('memory.search rejects empty query', async () => {
-      registerMemoryMethods({ db: database.db });
+      registerMemoryMethods({ db: database.db }, methods);
       const result = await call('memory.search', { query: '' });
       expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.INVALID_PARAMS);
     });
 
     it('memory.list requires token auth', async () => {
-      registerMemoryMethods({ db: database.db });
+      registerMemoryMethods({ db: database.db }, methods);
       const result = await dispatchRpc(
         { jsonrpc: '2.0', id: 1, method: 'memory.list', params: {} },
         { auth: { level: 'none', permissions: [] }, remoteAddress: '127.0.0.1' },
@@ -179,7 +182,7 @@ describe('memory.* RPC methods', () => {
   // ── memory.list ──
   describe('memory.list', () => {
     it('returns empty array on empty DB', async () => {
-      registerMemoryMethods({ db: database.db });
+      registerMemoryMethods({ db: database.db }, methods);
       const result = await call('memory.list', {});
       const r = (result as { result: { memories: unknown[] } }).result;
       expect(r.memories).toEqual([]);
@@ -201,7 +204,7 @@ describe('memory.* RPC methods', () => {
         }),
       );
 
-      registerMemoryMethods({ db: database.db });
+      registerMemoryMethods({ db: database.db }, methods);
       const result = await call('memory.list', {});
       const r = (
         result as {
@@ -220,7 +223,7 @@ describe('memory.* RPC methods', () => {
       addMemory(database.db, makeEntry('m2', 'pref one', { type: 'preference' }));
       addMemory(database.db, makeEntry('m3', 'fin one', { type: 'financial' }));
 
-      registerMemoryMethods({ db: database.db });
+      registerMemoryMethods({ db: database.db }, methods);
       const result = await call('memory.list', { type: 'preference' });
       const r = (result as { result: { memories: Array<{ id: string; type: string }> } }).result;
 
@@ -233,7 +236,7 @@ describe('memory.* RPC methods', () => {
       addMemory(database.db, makeEntry('m1', 'session a one', { sessionKey: sessionA }));
       addMemory(database.db, makeEntry('m2', 'session b one', { sessionKey: sessionB }));
 
-      registerMemoryMethods({ db: database.db });
+      registerMemoryMethods({ db: database.db }, methods);
       const result = await call('memory.list', { sessionKey: sessionA as string });
       const r = (result as { result: { memories: Array<{ id: string }> } }).result;
 
@@ -248,7 +251,7 @@ describe('memory.* RPC methods', () => {
           makeEntry(`m${i}`, `content ${i} body`, { createdAt: (i * 1_000) as Timestamp }),
         );
       }
-      registerMemoryMethods({ db: database.db });
+      registerMemoryMethods({ db: database.db }, methods);
       const result = await call('memory.list', { limit: 2 });
       const r = (result as { result: { memories: unknown[] } }).result;
       expect(r.memories).toHaveLength(2);
@@ -266,7 +269,7 @@ describe('memory.* RPC methods', () => {
         .get('m1') as unknown as { c: number };
       expect(ftsBefore.c).toBeGreaterThan(0);
 
-      registerMemoryMethods({ db: database.db });
+      registerMemoryMethods({ db: database.db }, methods);
       const result = await call('memory.delete', { memoryId: 'm1' });
       const r = (result as { result: { deleted: boolean } }).result;
 
@@ -292,7 +295,7 @@ describe('memory.* RPC methods', () => {
     });
 
     it('returns deleted: false for unknown memoryId (idempotent — no NOT_FOUND)', async () => {
-      registerMemoryMethods({ db: database.db });
+      registerMemoryMethods({ db: database.db }, methods);
       const result = await call('memory.delete', { memoryId: 'nonexistent-id' });
       // 에러가 아니라 정상 응답으로 deleted: false
       expect('error' in (result as object)).toBe(false);
@@ -309,7 +312,7 @@ describe('memory.* RPC methods', () => {
         .get() as unknown as { c: number };
       expect(vecBefore.c).toBeGreaterThan(0);
 
-      registerMemoryMethods({ db: database.db });
+      registerMemoryMethods({ db: database.db }, methods);
       const result = await call('memory.delete', { memoryId: 'm1' });
       expect((result as { result: { deleted: boolean } }).result.deleted).toBe(true);
 
@@ -326,7 +329,7 @@ describe('memory.* RPC methods', () => {
       addMemory(database.db, makeEntry('m1', 'finance market overview'));
       addMemory(database.db, makeEntry('m2', 'unrelated grocery list'));
 
-      registerMemoryMethods({ db: database.db });
+      registerMemoryMethods({ db: database.db }, methods);
       const result = await call('memory.search', { query: 'finance' });
       const r = (
         result as {
@@ -345,7 +348,7 @@ describe('memory.* RPC methods', () => {
       const provider = mockProvider();
       await addMemoryWithEmbedding(database.db, makeEntry('m1', 'finance'), provider);
 
-      registerMemoryMethods({ db: database.db, embeddingProvider: provider });
+      registerMemoryMethods({ db: database.db, embeddingProvider: provider }, methods);
       const result = await call('memory.search', { query: 'finance' });
 
       // 에러 없이 result 반환되는 것이 핵심 검증. hybrid 가 vector+FTS 둘 다 호출하므로
@@ -363,7 +366,7 @@ describe('memory.* RPC methods', () => {
       addMemory(database.db, makeEntry('m1', 'finance market alpha', { type: 'financial' }));
       addMemory(database.db, makeEntry('m2', 'finance market bravo', { type: 'fact' }));
 
-      registerMemoryMethods({ db: database.db });
+      registerMemoryMethods({ db: database.db }, methods);
       const result = await call('memory.search', { query: 'finance', types: ['financial'] });
       const r = (result as { result: { results: Array<{ id: string; type: string }> } }).result;
 
@@ -377,7 +380,7 @@ describe('memory.* RPC methods', () => {
       for (let i = 0; i < 5; i++) {
         addMemory(database.db, makeEntry(`m${i}`, `finance market item ${i}`));
       }
-      registerMemoryMethods({ db: database.db });
+      registerMemoryMethods({ db: database.db }, methods);
       const result = await call('memory.search', { query: 'finance', limit: 2 });
       const r = (result as { result: { results: unknown[] } }).result;
       expect(r.results.length).toBeLessThanOrEqual(2);
@@ -385,7 +388,7 @@ describe('memory.* RPC methods', () => {
 
     it('returns empty results for query with no matches', async () => {
       addMemory(database.db, makeEntry('m1', 'abcdef body content'));
-      registerMemoryMethods({ db: database.db });
+      registerMemoryMethods({ db: database.db }, methods);
       const result = await call('memory.search', { query: 'zzznevermatch' });
       const r = (result as { result: { results: unknown[] } }).result;
       expect(r.results).toEqual([]);
@@ -397,7 +400,7 @@ describe('memory.* RPC methods', () => {
     it('memory.search returns 0 results after memory.delete (FTS-only)', async () => {
       addMemory(database.db, makeEntry('m1', 'finance market deletable'));
 
-      registerMemoryMethods({ db: database.db });
+      registerMemoryMethods({ db: database.db }, methods);
 
       // 사전: search 가 m1 을 찾음
       const before = await call('memory.search', { query: 'deletable' });
@@ -446,7 +449,7 @@ describe('memory.* RPC methods', () => {
       expect(result.content).toBe('분기 리밸런싱');
 
       // 2) 같은 db 로 memory.list RPC 호출
-      registerMemoryMethods({ db: database.db });
+      registerMemoryMethods({ db: database.db }, methods);
       const listResp = await call('memory.list', { limit: 50 });
       const list = (
         listResp as {

@@ -7,7 +7,7 @@ import { z } from 'zod/v4';
 import type { RunnerExecutionAdapter } from '../../../auto-reply/execution-adapter.js';
 import type { GatewayBroadcaster } from '../../broadcaster.js';
 import type { ChatRegistry } from '../../registry.js';
-import { registerMethod } from '../index.js';
+import type { MethodRegistry } from '../index.js';
 import type { RpcMethodHandler, WsConnection } from '../types.js';
 
 /** chat.send 타임아웃 — 긴 도구 체인에서도 안전하도록 60초. */
@@ -171,8 +171,8 @@ export function createChatMethods(deps: ChatMethodsDeps): readonly RpcMethodHand
 }
 
 /** chat.* 메서드 일괄 등록 */
-export function registerChatMethods(deps: ChatMethodsDeps): void {
+export function registerChatMethods(deps: ChatMethodsDeps, registry: MethodRegistry): void {
   for (const handler of createChatMethods(deps)) {
-    registerMethod(handler);
+    registry.register(handler);
   }
 }

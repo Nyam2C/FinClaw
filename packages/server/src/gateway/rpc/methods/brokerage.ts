@@ -2,7 +2,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod/v4';
 import type { BrokerageSyncService } from '../../../services/brokerage-sync-service.js';
-import { registerMethod } from '../index.js';
+import type { MethodRegistry } from '../index.js';
 import type { RpcMethodHandler } from '../types.js';
 
 /**
@@ -19,7 +19,7 @@ export interface BrokerageRpcDeps {
 }
 
 /** brokerage.* RPC 메서드 일괄 등록 (web settings 의 수동 sync 버튼용, 최소). */
-export function registerBrokerageMethods(deps: BrokerageRpcDeps): void {
+export function registerBrokerageMethods(deps: BrokerageRpcDeps, registry: MethodRegistry): void {
   // ── brokerage.sync.run ──
   const syncRunHandler: RpcMethodHandler<Record<string, never>, unknown> = {
     method: 'brokerage.sync.run',
@@ -63,6 +63,6 @@ export function registerBrokerageMethods(deps: BrokerageRpcDeps): void {
     },
   };
 
-  registerMethod(syncRunHandler);
-  registerMethod(healthGetHandler);
+  registry.register(syncRunHandler);
+  registry.register(healthGetHandler);
 }

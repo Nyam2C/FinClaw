@@ -4,17 +4,14 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { z } from 'zod/v4';
 import type { GatewayServerContext } from '../context.js';
 import { RpcErrors } from './errors.js';
-import {
-  registerMethod,
-  dispatchRpc,
-  clearMethods,
-  hasRequiredAuth,
-  getRegisteredMethods,
-} from './index.js';
+import { MethodRegistry, dispatchRpc, hasRequiredAuth } from './index.js';
 import type { RpcMethodHandler, AuthInfo, GatewayServerConfig, RpcMethod } from './types.js';
 
 /** 테스트용 최소 GatewayServerContext */
-function makeServerCtx(overrides?: Partial<GatewayServerConfig>): GatewayServerContext {
+function makeServerCtx(
+  methods: MethodRegistry,
+  overrides?: Partial<GatewayServerConfig>,
+): GatewayServerContext {
   const config: GatewayServerConfig = {
     host: '0.0.0.0',
     port: 0,
@@ -35,6 +32,7 @@ function makeServerCtx(overrides?: Partial<GatewayServerConfig>): GatewayServerC
     wss: {} as GatewayServerContext['wss'],
     connections: new Map(),
     registry: { activeCount: () => 0 } as GatewayServerContext['registry'],
+    methods, // Phase 35
     broadcaster: {} as GatewayServerContext['broadcaster'],
     isDraining: false,
   };
@@ -45,12 +43,13 @@ function makeAuth(level: AuthInfo['level'] = 'none'): AuthInfo {
 }
 
 describe('RPC Dispatcher', () => {
+  let methods: MethodRegistry;
   beforeEach(() => {
-    clearMethods();
+    methods = new MethodRegistry();
     resetEventBus();
   });
 
-  describe('registerMethod', () => {
+  describe('MethodRegistry.register', () => {
     it('registers a method successfully', () => {
       const handler: RpcMethodHandler = {
         method: 'test.echo',
@@ -61,8 +60,8 @@ describe('RPC Dispatcher', () => {
           return params;
         },
       };
-      registerMethod(handler);
-      expect(getRegisteredMethods()).toContain('test.echo');
+      methods.register(handler);
+      expect(methods.list()).toContain('test.echo');
     });
 
     it('throws on duplicate method registration', () => {
@@ -75,14 +74,14 @@ describe('RPC Dispatcher', () => {
           return {};
         },
       };
-      registerMethod(handler);
-      expect(() => registerMethod(handler)).toThrow('already registered');
+      methods.register(handler);
+      expect(() => methods.register(handler)).toThrow('already registered');
     });
   });
 
   describe('dispatchRpc — single request', () => {
     it('dispatches to registered handler and returns result', async () => {
-      registerMethod({
+      methods.register({
         method: 'test.add',
         description: 'add',
         authLevel: 'none',
@@ -95,7 +94,7 @@ describe('RPC Dispatcher', () => {
       const result = await dispatchRpc(
         { jsonrpc: '2.0', id: 1, method: 'test.add' as RpcMethod, params: { a: 2, b: 3 } },
         { auth: makeAuth(), remoteAddress: '127.0.0.1' },
-        makeServerCtx(),
+        makeServerCtx(methods),
       );
 
       expect(result).toEqual({
@@ -109,7 +108,7 @@ describe('RPC Dispatcher', () => {
       const result = await dispatchRpc(
         { jsonrpc: '1.0' as '2.0', id: 1, method: 'x' as RpcMethod },
         { auth: makeAuth(), remoteAddress: '127.0.0.1' },
-        makeServerCtx(),
+        makeServerCtx(methods),
       );
       expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.INVALID_REQUEST);
     });
@@ -118,13 +117,13 @@ describe('RPC Dispatcher', () => {
       const result = await dispatchRpc(
         { jsonrpc: '2.0', id: 1, method: 'no.such' as RpcMethod },
         { auth: makeAuth(), remoteAddress: '127.0.0.1' },
-        makeServerCtx(),
+        makeServerCtx(methods),
       );
       expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.METHOD_NOT_FOUND);
     });
 
     it('returns UNAUTHORIZED when auth level insufficient', async () => {
-      registerMethod({
+      methods.register({
         method: 'test.secret',
         description: 'secret',
         authLevel: 'token',
@@ -137,13 +136,13 @@ describe('RPC Dispatcher', () => {
       const result = await dispatchRpc(
         { jsonrpc: '2.0', id: 1, method: 'test.secret' as RpcMethod },
         { auth: makeAuth('none'), remoteAddress: '127.0.0.1' },
-        makeServerCtx(),
+        makeServerCtx(methods),
       );
       expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.UNAUTHORIZED);
     });
 
     it('returns INVALID_PARAMS for schema validation failure', async () => {
-      registerMethod({
+      methods.register({
         method: 'test.typed',
         description: 'typed',
         authLevel: 'none',
@@ -156,13 +155,13 @@ describe('RPC Dispatcher', () => {
       const result = await dispatchRpc(
         { jsonrpc: '2.0', id: 1, method: 'test.typed' as RpcMethod, params: { name: 123 } },
         { auth: makeAuth(), remoteAddress: '127.0.0.1' },
-        makeServerCtx(),
+        makeServerCtx(methods),
       );
       expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.INVALID_PARAMS);
     });
 
     it('returns INTERNAL_ERROR when handler throws', async () => {
-      registerMethod({
+      methods.register({
         method: 'test.fail',
         description: 'fail',
         authLevel: 'none',
@@ -175,7 +174,7 @@ describe('RPC Dispatcher', () => {
       const result = await dispatchRpc(
         { jsonrpc: '2.0', id: 1, method: 'test.fail' as RpcMethod },
         { auth: makeAuth(), remoteAddress: '127.0.0.1' },
-        makeServerCtx(),
+        makeServerCtx(methods),
       );
       expect((result as { error: { code: number; message: string } }).error.code).toBe(
         RpcErrors.INTERNAL_ERROR,
@@ -186,7 +185,7 @@ describe('RPC Dispatcher', () => {
 
   describe('dispatchRpc — batch', () => {
     it('processes batch requests in parallel', async () => {
-      registerMethod({
+      methods.register({
         method: 'test.id',
         description: 'identity',
         authLevel: 'none',
@@ -202,7 +201,7 @@ describe('RPC Dispatcher', () => {
           { jsonrpc: '2.0', id: 2, method: 'test.id' as RpcMethod, params: { v: 2 } },
         ],
         { auth: makeAuth(), remoteAddress: '127.0.0.1' },
-        makeServerCtx(),
+        makeServerCtx(methods),
       );
 
       expect(Array.isArray(result)).toBe(true);
@@ -213,13 +212,13 @@ describe('RPC Dispatcher', () => {
       const result = await dispatchRpc(
         [],
         { auth: makeAuth(), remoteAddress: '127.0.0.1' },
-        makeServerCtx(),
+        makeServerCtx(methods),
       );
       expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.INVALID_REQUEST);
     });
 
     it('rejects batch exceeding maxBatchSize', async () => {
-      const ctx = makeServerCtx({ rpc: { maxBatchSize: 2, timeoutMs: 60_000 } });
+      const ctx = makeServerCtx(methods, { rpc: { maxBatchSize: 2, timeoutMs: 60_000 } });
       const batch = Array.from({ length: 3 }, (_, i) => ({
         jsonrpc: '2.0' as const,
         id: i,

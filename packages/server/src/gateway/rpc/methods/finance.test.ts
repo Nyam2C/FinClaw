@@ -10,9 +10,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GatewayBroadcaster } from '../../broadcaster.js';
 import type { GatewayServerContext } from '../../context.js';
 import { RpcErrors } from '../errors.js';
-import { clearMethods, dispatchRpc } from '../index.js';
+import { dispatchRpc, MethodRegistry } from '../index.js';
 import type { GatewayServerConfig, WsConnection } from '../types.js';
 import { registerFinanceMethods, type FinanceRpcDeps } from './finance.js';
+
+let methods: MethodRegistry; // Phase 35: 인스턴스 레지스트리 (테스트 격리)
 
 function makeServerCtx(): GatewayServerContext {
   const config: GatewayServerConfig = {
@@ -34,6 +36,7 @@ function makeServerCtx(): GatewayServerContext {
     wss: {} as GatewayServerContext['wss'],
     connections: new Map(),
     registry: { activeCount: () => 0 } as GatewayServerContext['registry'],
+    methods, // Phase 35
     broadcaster: {} as GatewayServerContext['broadcaster'],
     isDraining: false,
   };
@@ -80,25 +83,25 @@ function makeAlert(overrides: Partial<AlertDefinition> = {}): AlertDefinition {
 
 describe('finance.* RPC methods', () => {
   beforeEach(() => {
-    clearMethods();
+    methods = new MethodRegistry();
     resetEventBus();
   });
 
   describe('schema & auth', () => {
     it('finance.quote rejects missing symbol', async () => {
-      registerFinanceMethods({});
+      registerFinanceMethods({}, methods);
       const result = await call('finance.quote', {});
       expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.INVALID_PARAMS);
     });
 
     it('finance.alert.create rejects missing symbol', async () => {
-      registerFinanceMethods({});
+      registerFinanceMethods({}, methods);
       const result = await call('finance.alert.create', { condition: 'price_above' });
       expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.INVALID_PARAMS);
     });
 
     it('finance.quote requires token auth', async () => {
-      registerFinanceMethods({});
+      registerFinanceMethods({}, methods);
       const result = await dispatchRpc(
         { jsonrpc: '2.0', id: 1, method: 'finance.quote', params: { symbol: 'AAPL' } },
         { auth: { level: 'none', permissions: [] }, remoteAddress: '127.0.0.1' },
@@ -110,14 +113,14 @@ describe('finance.* RPC methods', () => {
 
   describe('provider availability', () => {
     it('finance.quote errors when quoteService missing', async () => {
-      registerFinanceMethods({});
+      registerFinanceMethods({}, methods);
       const result = await call('finance.quote', { symbol: 'AAPL' });
       const msg = (result as { error: { message: string } }).error.message;
       expect(msg).toContain('provider_unavailable');
     });
 
     it('finance.news errors when newsAggregator missing', async () => {
-      registerFinanceMethods({});
+      registerFinanceMethods({}, methods);
       const result = await call('finance.news', {});
       expect((result as { error: { message: string } }).error.message).toContain(
         'provider_unavailable',
@@ -125,7 +128,7 @@ describe('finance.* RPC methods', () => {
     });
 
     it('finance.alert.create errors when alertStore missing', async () => {
-      registerFinanceMethods({});
+      registerFinanceMethods({}, methods);
       const result = await call('finance.alert.create', {
         symbol: 'AAPL',
         condition: 'price_above',
@@ -137,7 +140,7 @@ describe('finance.* RPC methods', () => {
     });
 
     it('finance.portfolio.get returns empty snapshot when portfolioStore missing', async () => {
-      registerFinanceMethods({});
+      registerFinanceMethods({}, methods);
       const result = await call('finance.portfolio.get', {});
       expect((result as { result: { holdings: unknown[] } }).result.holdings).toEqual([]);
     });
@@ -148,7 +151,7 @@ describe('finance.* RPC methods', () => {
       const quoteService = {
         getQuote: vi.fn().mockResolvedValue({ price: 187.23, change: 1.5, changePercent: 0.8 }),
       };
-      registerFinanceMethods({ quoteService });
+      registerFinanceMethods({ quoteService }, methods);
       const result = await call('finance.quote', { symbol: 'aapl' });
       const r = (result as { result: { symbol: string; price: number; changePercent: number } })
         .result;
@@ -162,7 +165,7 @@ describe('finance.* RPC methods', () => {
       const quoteService = {
         getQuote: vi.fn().mockRejectedValue(new Error('network error')),
       };
-      registerFinanceMethods({ quoteService });
+      registerFinanceMethods({ quoteService }, methods);
       const result = await call('finance.quote', { symbol: 'BOGUS' });
       expect((result as { error: { message: string } }).error.message).toContain('invalid_symbol');
     });
@@ -171,7 +174,7 @@ describe('finance.* RPC methods', () => {
   describe('finance.news', () => {
     it('passes query as keywords and clamps limit to 50', async () => {
       const newsAggregator = { fetchNews: vi.fn().mockResolvedValue([]) };
-      registerFinanceMethods({ newsAggregator });
+      registerFinanceMethods({ newsAggregator }, methods);
       await call('finance.news', { query: 'tesla', limit: 999 });
       expect(newsAggregator.fetchNews).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -195,7 +198,7 @@ describe('finance.* RPC methods', () => {
           },
         ]),
       };
-      registerFinanceMethods({ newsAggregator });
+      registerFinanceMethods({ newsAggregator }, methods);
       const result = await call('finance.news', { symbols: ['TSLA'] });
       const r = (result as { result: { articles: Array<{ id: string }>; total: number } }).result;
       expect(r.total).toBe(1);
@@ -220,7 +223,7 @@ describe('finance.* RPC methods', () => {
     }
 
     it('requires threshold for price_above', async () => {
-      registerFinanceMethods({ alertStore: makeStore() });
+      registerFinanceMethods({ alertStore: makeStore() }, methods);
       const result = await call('finance.alert.create', {
         symbol: 'AAPL',
         condition: 'price_above',
@@ -231,7 +234,7 @@ describe('finance.* RPC methods', () => {
     });
 
     it('requires keyword for news_match', async () => {
-      registerFinanceMethods({ alertStore: makeStore() });
+      registerFinanceMethods({ alertStore: makeStore() }, methods);
       const result = await call('finance.alert.create', {
         symbol: 'AAPL',
         condition: 'news_match',
@@ -243,7 +246,7 @@ describe('finance.* RPC methods', () => {
 
     it('creates a price alert and reports immediateTrigger=false when no evaluator hook', async () => {
       const store = makeStore();
-      registerFinanceMethods({ alertStore: store });
+      registerFinanceMethods({ alertStore: store }, methods);
       const result = await call('finance.alert.create', {
         symbol: 'AAPL',
         condition: 'price_above',
@@ -265,7 +268,7 @@ describe('finance.* RPC methods', () => {
       const evaluateAlertOnce: FinanceRpcDeps['evaluateAlertOnce'] = vi
         .fn()
         .mockResolvedValue(true);
-      registerFinanceMethods({ alertStore: store, evaluateAlertOnce });
+      registerFinanceMethods({ alertStore: store, evaluateAlertOnce }, methods);
       const result = await call('finance.alert.create', {
         symbol: 'AAPL',
         condition: 'price_above',
@@ -281,7 +284,7 @@ describe('finance.* RPC methods', () => {
       const evaluateAlertOnce: FinanceRpcDeps['evaluateAlertOnce'] = vi
         .fn()
         .mockRejectedValue(new Error('evaluator down'));
-      registerFinanceMethods({ alertStore: store, evaluateAlertOnce });
+      registerFinanceMethods({ alertStore: store, evaluateAlertOnce }, methods);
       const result = await call('finance.alert.create', {
         symbol: 'AAPL',
         condition: 'price_above',
@@ -309,7 +312,7 @@ describe('finance.* RPC methods', () => {
       const alertStore = {
         listByUser: vi.fn().mockReturnValue(alerts),
       } as unknown as AlertStore;
-      registerFinanceMethods({ alertStore });
+      registerFinanceMethods({ alertStore }, methods);
       const result = await call('finance.alert.list', { symbol: 'TSLA' });
       const r = (
         result as { result: { alerts: Array<{ id: string; symbol: string }>; total: number } }
@@ -336,7 +339,7 @@ describe('finance.* RPC methods', () => {
           },
         ]),
       } as unknown as FinanceRpcDeps['portfolioStore'];
-      registerFinanceMethods({ portfolioStore });
+      registerFinanceMethods({ portfolioStore }, methods);
       const result = await call('finance.portfolio.get', {});
       const r = (
         result as {
@@ -360,7 +363,7 @@ describe('finance.* RPC methods', () => {
       const portfolioStore = {
         listPortfolios: vi.fn().mockReturnValue([]),
       } as unknown as FinanceRpcDeps['portfolioStore'];
-      registerFinanceMethods({ portfolioStore });
+      registerFinanceMethods({ portfolioStore }, methods);
       const result = await call('finance.portfolio.get', {});
       const r = (
         result as {
@@ -430,7 +433,7 @@ describe('finance.* RPC methods', () => {
     it('transaction.add inserts row, recomputes holdings, and broadcasts portfolio.changed', async () => {
       const { spy, broadcaster } = makeBroadcaster();
       const connections = makeConnections();
-      registerFinanceMethods({ db: database.db, broadcaster, connections });
+      registerFinanceMethods({ db: database.db, broadcaster, connections }, methods);
 
       const result = await call('finance.transaction.add', {
         symbol: 'aapl',
@@ -471,7 +474,7 @@ describe('finance.* RPC methods', () => {
     });
 
     it('transaction.add errors with provider_unavailable when db missing', async () => {
-      registerFinanceMethods({});
+      registerFinanceMethods({}, methods);
       const result = await call('finance.transaction.add', {
         symbol: 'AAPL',
         action: 'buy',
@@ -485,7 +488,7 @@ describe('finance.* RPC methods', () => {
     });
 
     it('transaction.add errors with not_found when portfolioId does not exist', async () => {
-      registerFinanceMethods({ db: database.db });
+      registerFinanceMethods({ db: database.db }, methods);
       const result = await call('finance.transaction.add', {
         portfolioId: 'pf-missing',
         symbol: 'AAPL',
@@ -499,7 +502,7 @@ describe('finance.* RPC methods', () => {
     });
 
     it('transaction.list returns rows in executed_at DESC order', async () => {
-      registerFinanceMethods({ db: database.db });
+      registerFinanceMethods({ db: database.db }, methods);
 
       // 시드: 두 건 추가 (executedAt 순서 다르게)
       await call('finance.transaction.add', {
@@ -533,7 +536,7 @@ describe('finance.* RPC methods', () => {
     it('transaction.delete removes row, returns updatedHoldings, and broadcasts', async () => {
       const { spy, broadcaster } = makeBroadcaster();
       const connections = makeConnections();
-      registerFinanceMethods({ db: database.db, broadcaster, connections });
+      registerFinanceMethods({ db: database.db, broadcaster, connections }, methods);
 
       const addResult = await call('finance.transaction.add', {
         symbol: 'AAPL',
@@ -568,7 +571,7 @@ describe('finance.* RPC methods', () => {
     });
 
     it('transaction.delete errors with not_found for unknown id', async () => {
-      registerFinanceMethods({ db: database.db });
+      registerFinanceMethods({ db: database.db }, methods);
       const result = await call('finance.transaction.delete', { transactionId: 'unknown-id' });
       expect((result as { error: { message: string } }).error.message).toContain('not_found');
     });
@@ -576,7 +579,7 @@ describe('finance.* RPC methods', () => {
     it('transaction.update broadcasts and reflects new holdings', async () => {
       const { spy, broadcaster } = makeBroadcaster();
       const connections = makeConnections();
-      registerFinanceMethods({ db: database.db, broadcaster, connections });
+      registerFinanceMethods({ db: database.db, broadcaster, connections }, methods);
 
       const addResult = await call('finance.transaction.add', {
         symbol: 'AAPL',
@@ -611,10 +614,13 @@ describe('finance.* RPC methods', () => {
     });
 
     it('portfolio.get includes recentTransactions when db is provided', async () => {
-      registerFinanceMethods({
-        db: database.db,
-        portfolioStore: makePortfolioStore(),
-      });
+      registerFinanceMethods(
+        {
+          db: database.db,
+          portfolioStore: makePortfolioStore(),
+        },
+        methods,
+      );
 
       // 거래 1건 추가 후 portfolio.get 호출
       await call('finance.transaction.add', {
@@ -640,14 +646,14 @@ describe('finance.* RPC methods', () => {
     });
 
     it('portfolio.get returns empty recentTransactions when db is missing', async () => {
-      registerFinanceMethods({ portfolioStore: makePortfolioStore() });
+      registerFinanceMethods({ portfolioStore: makePortfolioStore() }, methods);
       const result = await call('finance.portfolio.get', {});
       const r = (result as { result: { recentTransactions: unknown[] } }).result;
       expect(r.recentTransactions).toEqual([]);
     });
 
     it('transaction.add succeeds even when broadcaster is missing (best-effort)', async () => {
-      registerFinanceMethods({ db: database.db });
+      registerFinanceMethods({ db: database.db }, methods);
       const result = await call('finance.transaction.add', {
         symbol: 'AAPL',
         action: 'buy',
@@ -689,12 +695,15 @@ describe('finance.* RPC methods', () => {
 
       const { spy, broadcaster } = makeBroadcaster();
       const connections = makeConnections();
-      registerFinanceMethods({
-        db: database.db,
-        portfolioStore: dynamicPortfolioStore,
-        broadcaster,
-        connections,
-      });
+      registerFinanceMethods(
+        {
+          db: database.db,
+          portfolioStore: dynamicPortfolioStore,
+          broadcaster,
+          connections,
+        },
+        methods,
+      );
 
       // 1) transaction.add
       const addResult = await call('finance.transaction.add', {

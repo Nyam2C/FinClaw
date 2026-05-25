@@ -4,7 +4,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { listAccessLog } from '@finclaw/storage';
 import { z } from 'zod/v4';
-import { registerMethod } from '../index.js';
+import type { MethodRegistry } from '../index.js';
 import type { RpcMethodHandler } from '../types.js';
 
 export interface AuditRpcDeps {
@@ -14,7 +14,7 @@ export interface AuditRpcDeps {
 const LIST_LIMIT_DEFAULT = 100;
 const LIST_LIMIT_MAX = 500;
 
-export function registerAuditMethods(deps: AuditRpcDeps): void {
+export function registerAuditMethods(deps: AuditRpcDeps, registry: MethodRegistry): void {
   const listHandler: RpcMethodHandler<
     {
       since?: number;
@@ -50,5 +50,5 @@ export function registerAuditMethods(deps: AuditRpcDeps): void {
     },
   };
 
-  registerMethod(listHandler);
+  registry.register(listHandler);
 }

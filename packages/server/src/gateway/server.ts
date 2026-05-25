@@ -23,6 +23,7 @@ import {
 import { RequestRateLimiter } from './rate-limit.js';
 import { ChatRegistry } from './registry.js';
 import { handleHttpRequest } from './router.js';
+import { MethodRegistry } from './rpc/index.js'; // Phase 35
 import { registerAgentRunsMethods } from './rpc/methods/agent-runs.js';
 import { registerAgentMethods, type AgentRpcDeps } from './rpc/methods/agent.js';
 import { registerAuditMethods } from './rpc/methods/audit.js';
@@ -114,6 +115,7 @@ export function createGatewayServer(
     wss,
     connections: new Map(),
     registry: new ChatRegistry(config.auth.sessionTtlMs),
+    methods: new MethodRegistry(), // Phase 35: 인스턴스별 RPC 메서드 레지스트리
     broadcaster: new GatewayBroadcaster(),
     isDraining: false,
     rateLimiter,
@@ -130,45 +132,54 @@ export function createGatewayServer(
     registerHealthChecker(createProviderHealthChecker('embedding', deps.embeddingHealthCheck));
   }
 
-  // RPC 메서드 등록 (ctx가 생성된 후 deps 주입)
-  registerSystemMethods();
-  registerConfigMethods();
-  registerChatMethods({
-    registry: ctx.registry,
-    connections: ctx.connections,
-    broadcaster: ctx.broadcaster,
-    storage: deps.storage,
-    defaultModel: deps.defaultModel,
-    adapter: deps.adapter,
-    // Phase 24 D: ModelFloorExhaustedError 구조화 로그용 — agent.* 와 logger 공유
-    logger: deps.agentDeps?.logger,
-  });
+  // RPC 메서드 등록 (ctx가 생성된 후 deps + registry 주입)
+  registerSystemMethods(ctx.methods);
+  registerConfigMethods(ctx.methods);
+  registerChatMethods(
+    {
+      registry: ctx.registry,
+      connections: ctx.connections,
+      broadcaster: ctx.broadcaster,
+      storage: deps.storage,
+      defaultModel: deps.defaultModel,
+      adapter: deps.adapter,
+      // Phase 24 D: ModelFloorExhaustedError 구조화 로그용 — agent.* 와 logger 공유
+      logger: deps.agentDeps?.logger,
+    },
+    ctx.methods,
+  );
   // Phase 26 A: transactions RPC 가 필요로 하는 broadcaster/connections 를 ctx 에서 주입.
-  registerFinanceMethods({
-    ...deps.financeDeps,
-    broadcaster: ctx.broadcaster,
-    connections: ctx.connections,
-  });
-  registerSessionMethods({
-    registry: ctx.registry,
-    storage: deps.storage,
-  });
+  registerFinanceMethods(
+    {
+      ...deps.financeDeps,
+      broadcaster: ctx.broadcaster,
+      connections: ctx.connections,
+    },
+    ctx.methods,
+  );
+  registerSessionMethods(
+    {
+      registry: ctx.registry,
+      storage: deps.storage,
+    },
+    ctx.methods,
+  );
   // Phase 26 B: memory.* RPC 등록 (deps 미주입 시 모든 호출이 provider_unavailable).
-  registerMemoryMethods(deps.memoryDeps ?? {});
+  registerMemoryMethods(deps.memoryDeps ?? {}, ctx.methods);
   // Phase 26 D: agent.runs.* RPC 등록. agentDeps 또는 financeDeps 의 db 를 재사용
   // (둘 다 같은 storage.db 인스턴스를 가리키도록 main.ts 가 배선).
-  registerAgentRunsMethods({ db: deps.agentDeps?.db ?? deps.financeDeps?.db });
+  registerAgentRunsMethods({ db: deps.agentDeps?.db ?? deps.financeDeps?.db }, ctx.methods);
   // Phase 30 A9: trace.* RPC 등록 (agentDeps/financeDeps 의 db 재사용).
-  registerTraceMethods({ db: deps.agentDeps?.db ?? deps.financeDeps?.db });
+  registerTraceMethods({ db: deps.agentDeps?.db ?? deps.financeDeps?.db }, ctx.methods);
   // Phase 30 C5: audit.* RPC 등록 (감사 로그 조회).
-  registerAuditMethods({ db: deps.agentDeps?.db ?? deps.financeDeps?.db });
+  registerAuditMethods({ db: deps.agentDeps?.db ?? deps.financeDeps?.db }, ctx.methods);
   if (deps.agentDeps) {
-    registerAgentMethods(deps.agentDeps);
+    registerAgentMethods(deps.agentDeps, ctx.methods);
   }
   // Phase 28: schedule.* RPC 등록 (db 미주입 시 provider_unavailable, scheduler 미주입 시 runNow 만 provider_unavailable).
-  registerScheduleMethods(deps.scheduleDeps ?? {});
+  registerScheduleMethods(deps.scheduleDeps ?? {}, ctx.methods);
   // Phase 33 D: brokerage.* RPC 등록 (syncService 미주입 시 sync.run 은 not_configured).
-  registerBrokerageMethods(deps.brokerageDeps ?? {});
+  registerBrokerageMethods(deps.brokerageDeps ?? {}, ctx.methods);
 
   // HTTP 요청 처리
   httpServer.on('request', (req: IncomingMessage, res: ServerResponse) => {

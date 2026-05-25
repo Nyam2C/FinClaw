@@ -18,7 +18,7 @@ import {
   parseCron,
 } from '../../../automation/cron.js';
 import type { SchedulerService } from '../../../automation/scheduler.js';
-import { registerMethod } from '../index.js';
+import type { MethodRegistry } from '../index.js';
 import type { RpcMethodHandler } from '../types.js';
 
 export interface ScheduleRpcDeps {
@@ -90,7 +90,7 @@ function toResponseSchedule(s: Schedule | null): ScheduleResponse | null {
   };
 }
 
-export function registerScheduleMethods(deps: ScheduleRpcDeps): void {
+export function registerScheduleMethods(deps: ScheduleRpcDeps, registry: MethodRegistry): void {
   // ── schedule.create ──
   const createHandler: RpcMethodHandler<
     {
@@ -383,13 +383,13 @@ export function registerScheduleMethods(deps: ScheduleRpcDeps): void {
     },
   };
 
-  registerMethod(createHandler);
-  registerMethod(listHandler);
-  registerMethod(updateHandler);
-  registerMethod(deleteHandler);
-  registerMethod(runNowHandler);
-  registerMethod(historyHandler);
-  registerMethod(disableHandler);
-  registerMethod(enableHandler);
-  registerMethod(testCronHandler);
+  registry.register(createHandler);
+  registry.register(listHandler);
+  registry.register(updateHandler);
+  registry.register(deleteHandler);
+  registry.register(runNowHandler);
+  registry.register(historyHandler);
+  registry.register(disableHandler);
+  registry.register(enableHandler);
+  registry.register(testCronHandler);
 }
