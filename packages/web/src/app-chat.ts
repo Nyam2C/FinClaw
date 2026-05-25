@@ -37,6 +37,7 @@ export type ChatStateListener = (state: ChatState) => void;
 
 export interface AppChat {
   sendMessage(text: string): Promise<void>;
+  setSessionId(id: string): void; // ← Phase 37 D(F5): chat.start 후 서버 발급 id 주입
   getState(): ChatState;
   onStateChange(listener: ChatStateListener): void;
   offStateChange(listener: ChatStateListener): void;
@@ -45,6 +46,8 @@ export interface AppChat {
 }
 
 export function createAppChat(gateway: AppGateway, sessionId: string): AppChat {
+  // Phase 37 D(F5): chat.start 후 setSessionId 로 교체 가능하도록 let.
+  let currentSessionId = sessionId;
   let state: ChatState = {
     messages: [],
     tools: [],
@@ -66,7 +69,7 @@ export function createAppChat(gateway: AppGateway, sessionId: string): AppChat {
 
   function handleNotification(method: string, params: Record<string, unknown>): void {
     const p = params as Record<string, unknown>;
-    if (p['sessionId'] !== sessionId) {
+    if (p['sessionId'] !== currentSessionId) {
       return;
     }
 
@@ -140,7 +143,7 @@ export function createAppChat(gateway: AppGateway, sessionId: string): AppChat {
 
     try {
       setState({ status: 'streaming', error: null, streamBuffer: '' });
-      await gateway.send('chat.send', { sessionId, message: text });
+      await gateway.send('chat.send', { sessionId: currentSessionId, message: text });
     } catch (err) {
       setState({
         status: 'error',
@@ -162,6 +165,10 @@ export function createAppChat(gateway: AppGateway, sessionId: string): AppChat {
       setState({ messages: [...state.messages, userMsg] });
       queue.push(text);
       await processQueue();
+    },
+
+    setSessionId(id: string): void {
+      currentSessionId = id;
     },
 
     getState(): ChatState {
