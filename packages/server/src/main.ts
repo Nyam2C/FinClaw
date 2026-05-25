@@ -2,15 +2,11 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 // packages/server/src/main.ts
 import {
-  approxTokenCount,
   BUILT_IN_MODELS,
   buildModelAliasIndex,
   DEFAULT_FALLBACK_CHAIN,
   InMemoryModelCatalog,
-  NEWS_BRIEF_SCHEDULE_ID,
   ProfileHealthMonitor,
-  Runner,
-  type RunnerTracerAdapter,
 } from '@finclaw/agent';
 import { DiscordAccountSchema, DiscordAdapter } from '@finclaw/channel-discord';
 import { ConfigValidationError, loadConfig, validateConfigStrict } from '@finclaw/config';
@@ -32,37 +28,25 @@ import { GENERAL_SKILL_METADATA } from '@finclaw/skills-general';
 import {
   assertEmbeddingDimension,
   createEmbeddingProvider,
-  createRerankerWithFallback,
   createStorage,
-  LocalReranker,
   purgeAccessLog,
   type EmbeddingProvider,
 } from '@finclaw/storage';
-import type { ChannelPlugin, ConfigValidationIssue, FinClawConfig, Schedule } from '@finclaw/types';
-import { DefaultAttachMemoryService } from './auto-reply/agent-memory-hook.js';
-import { registerBuiltInCommands } from './auto-reply/commands/built-in.js';
-import { InMemoryCommandRegistry } from './auto-reply/commands/registry.js';
-import { RunnerExecutionAdapter, type RunnerFactory } from './auto-reply/execution-adapter.js';
-import { StubFinanceContextProvider } from './auto-reply/pipeline-context.js';
-import { AutoReplyPipeline } from './auto-reply/pipeline.js';
+import type { ChannelPlugin, ConfigValidationIssue, FinClawConfig } from '@finclaw/types';
 import { buildToolMetaIndex, makeRouterHelper } from './auto-reply/router-helper.js';
-import { DefaultMemoryCaptureService } from './auto-reply/stages/memory-capture.js';
-import { DefaultMemoryRetrievalService } from './auto-reply/stages/memory-retrieval.js';
 import { deliverScheduleResult } from './automation/delivery.js';
-import { SchedulerService } from './automation/scheduler.js';
 import { initChannels } from './channels/index.js';
 // Phase 36: composition 빌더
 import { DEFAULT_MODEL, defaultConfig } from './composition/constants.js';
 import { buildProviders } from './composition/providers.js';
+import { buildAutomation, buildExecution, buildPipeline } from './composition/runtime.js';
 import { buildScheduleRpc } from './composition/schedule-rpc.js';
 import { registerSkills } from './composition/skills.js';
 import type { GatewayServerConfig } from './gateway/rpc/types.js';
 import { createGatewayServer } from './gateway/server.js';
-import { createTracer } from './observability/tracer.js';
 import { ProcessLifecycle } from './process/lifecycle.js';
 import { MessageRouter } from './process/message-router.js';
 import { loadPrompt } from './prompts/loader.js';
-import { NewsMemorizer } from './services/news-memorizer.js';
 
 export class MissingEnvError extends Error {
   constructor(public readonly envName: string) {
@@ -81,34 +65,6 @@ export function requireEnv(name: string, env: NodeJS.ProcessEnv = process.env): 
     throw new MissingEnvError(name);
   }
   return value;
-}
-
-/**
- * Phase 26: capture / retrieval / attach 3 service 를 동일 deps 로 인스턴스화.
- *
- * 3 service 모두 `{db, embeddingProvider?, logger}` shape 를 받으며 같은 embedding
- * 인스턴스를 공유한다 (키 하나로 4 영역 활성). embeddingProvider 미주입 시 각 service
- * 가 자체적으로 FTS-only fallback 으로 동작.
- */
-function wireMemoryServices(
-  deps: ConstructorParameters<typeof DefaultMemoryCaptureService>[0],
-  retrievalExtras?: {
-    reranker?: import('@finclaw/storage').Reranker;
-    rerankTopKFirst?: number;
-  },
-): {
-  memoryCaptureService: DefaultMemoryCaptureService;
-  memoryRetrievalService: DefaultMemoryRetrievalService;
-  attachMemoryService: DefaultAttachMemoryService;
-} {
-  return {
-    memoryCaptureService: new DefaultMemoryCaptureService(deps),
-    memoryRetrievalService: new DefaultMemoryRetrievalService({
-      ...deps,
-      ...retrievalExtras,
-    }),
-    attachMemoryService: new DefaultAttachMemoryService(deps),
-  };
 }
 
 async function main(): Promise<void> {
@@ -241,99 +197,38 @@ async function main(): Promise<void> {
       lifecycle,
     });
 
-  // Phase 30 A6: OTel tracer — span 을 SQLite spans 테이블에 SQL exporter 로 기록.
-  // Phase 30 hotfix P0-2: Runner 에 tracer adapter 주입 — turn / provider.stream / tool.execute span 활성화.
-  const tracer = createTracer({ db: storage.db });
-  const tracerAdapter: RunnerTracerAdapter = {
-    withSpan: (name, attrs, fn) => tracer.withSpan(name, attrs, async () => fn()),
-  };
-
-  const runnerFactory: RunnerFactory = (dispatcher) =>
-    new Runner({
-      provider: providerAdapter,
-      toolExecutor: dispatcher,
-      laneManager: lanes,
-      tracer: tracerAdapter,
-    });
-
-  // 4b. 실행 어댑터 (storage + toolRegistry 주입 — per-request dispatcher를 빌드)
-  const adapter = new RunnerExecutionAdapter({
-    runnerFactory,
-    defaultModel: DEFAULT_MODEL,
-    systemPrompt: DEFAULT_SYSTEM_PROMPT,
+  // Phase 36: 실행 레이어 (tracer + runnerFactory + adapter) — 구 561-591
+  const { tracer, runnerFactory, adapter } = buildExecution({
     storage,
+    providerAdapter,
+    lanes,
     toolRegistry,
-    logger,
     modelCatalog,
     modelAliasIndex,
-    fallbackChain: DEFAULT_FALLBACK_CHAIN,
     profileHealth,
-    profileId: 'default',
-    // Phase 34: LLM 라우터 (SDK Haiku). 키워드 routerHelper 정상 경로 폐기 (B-3).
     routerLlm,
+    logger,
+    defaultModel: DEFAULT_MODEL,
+    systemPrompt: DEFAULT_SYSTEM_PROMPT,
   });
 
-  // 5. 파이프라인
-  const financeCtxProvider = new StubFinanceContextProvider();
-  const commandRegistry = new InMemoryCommandRegistry();
-  registerBuiltInCommands(commandRegistry, {
+  // 5. 파이프라인 — 구 593-653. channelPluginRegistry 는 main 이 소유 (router/discord set).
+  const channelPluginRegistry = new Map<string, ChannelPlugin>();
+  const { pipeline, attachMemoryService } = buildPipeline({
+    adapter,
     toolRegistry,
     storage,
     profileHealth,
-    profileId: 'default',
-    defaultModel: DEFAULT_MODEL,
     marketHandle,
     newsHandle,
+    embeddingProvider,
+    finclawConfig,
+    sdkAdapter,
+    tracer,
+    logger,
+    defaultModel: DEFAULT_MODEL,
+    channelPluginRegistry,
   });
-  const channelPluginRegistry = new Map<string, ChannelPlugin>();
-
-  // Phase 26 B/C/D: capture / retrieval / attach 3 service 를 동일 deps 로 wire-up.
-  // - capture: 정규식 5종 명시적 선언 저장
-  // - retrieval: hybrid (vector+FTS) RAG 주입, embeddingProvider 미주입 시 FTS-only fallback
-  // - attach: agent.run output → memory 훅
-  // Phase 30 D5: RAG re-ranker (config.rag.rerank.enabled 기본 true).
-  // LocalReranker (Xenova ONNX) 가 모델 미존재 시 mock 으로 자동 fallback.
-  const rerankCfg = finclawConfig.rag?.rerank;
-  const rerankEnabled = rerankCfg?.enabled !== false;
-  const reranker = rerankEnabled ? createRerankerWithFallback(new LocalReranker()) : undefined;
-
-  const { memoryCaptureService, memoryRetrievalService, attachMemoryService } = wireMemoryServices(
-    {
-      db: storage.db,
-      embeddingProvider,
-      logger,
-    },
-    {
-      reranker,
-      rerankTopKFirst: rerankCfg?.topKFirst,
-    },
-  );
-
-  // Phase 31 C: 컨텍스트 압축용 토큰 카운터 + 요약기 (Anthropic 1회 호출).
-  // Phase 32 F: 요약기는 항상 SDK adapter 사용 (.summarize 는 AnthropicAdapter 전용 메서드).
-  const summarizer = (text: string) => sdkAdapter.summarize(text, DEFAULT_MODEL.model);
-
-  const pipeline = new AutoReplyPipeline(
-    {
-      enableAck: true,
-      commandPrefix: '!finclaw ',
-      maxResponseLength: 2000,
-      timeoutMs: 60_000,
-      respectMarketHours: false,
-    },
-    {
-      executionAdapter: adapter,
-      financeContextProvider: financeCtxProvider,
-      commandRegistry,
-      logger,
-      getChannel: (id) => channelPluginRegistry.get(id),
-      memoryCaptureService,
-      memoryRetrievalService,
-      tracer,
-      tokenCounter: approxTokenCount,
-      summarizer,
-    },
-  );
 
   // 6. MessageRouter
   const routerConfig: FinClawConfig = {};
@@ -376,68 +271,23 @@ async function main(): Promise<void> {
     waitTimeoutMs: 120_000,
   });
 
-  // Phase 28: schedule 동시 실행 1개로 제한하는 lane.
-  // agent.run 큐잉 lane 과 별개로 schedule 전용 (대기열 5분 보유).
-  const scheduleLane = new ConcurrencyLane({
-    maxConcurrent: 1,
-    maxQueueSize: 50,
-    waitTimeoutMs: 5 * 60_000,
-  });
-
-  // Phase 28: SchedulerService — 매 분 폴러로 schedules 검사 + agent.run 직접 실행.
-  // delivery hook 은 gateway 생성 후 lateinit (broadcaster/connections 가 그때 가용).
-  let deliveryHook:
-    | ((args: {
-        schedule: Schedule;
-        agentRunId: string | null;
-        output: string;
-        error?: string;
-      }) => Promise<void>)
-    | null = null;
-  const maxFailRaw = process.env.AUTOMATION_MAX_CONSECUTIVE_FAILURES;
-  const maxConsecutiveFailures = maxFailRaw ? Number(maxFailRaw) : 3;
-  // Phase 33 C: news-brief schedule 출력을 심볼별 financial memory 로 적재.
-  const newsMemorizer = new NewsMemorizer({
-    db: storage.db,
-    embeddingProvider,
-    logger,
-    sessionKey: 'news-brief',
-  });
-  const scheduler = new SchedulerService({
-    db: storage.db,
+  // Phase 36: scheduler/automation — 구 698-757. scheduleLane 은 빌더 내부 생성 (구 698 위치 보존).
+  // gateway 생성 직전에 호출 → lifecycle ⑤(scheduler.stop) 가 ⑦(gateway.stop) 보다 먼저 등록.
+  const { scheduler, setDeliveryHook } = buildAutomation({
+    storage,
     toolRegistry,
     runnerFactory,
-    lane: scheduleLane,
     defaultModel: DEFAULT_MODEL,
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     logger,
     profileHealth,
-    profileId: 'default',
-    router: routerHelper,
+    routerHelper,
     modelCatalog,
     modelAliasIndex,
-    fallbackChain: DEFAULT_FALLBACK_CHAIN,
-    maxConsecutiveFailures,
-    // Phase 30 hotfix P0-1: schedule 실행을 새 trace 로 감싸 agent_runs.trace_id 부착.
     tracer,
-    onRunComplete: async (args) => {
-      if (deliveryHook) {
-        await deliveryHook(args);
-      }
-      // Phase 33 C: news-brief schedule 출력만 memories 로 적재 (§B-3 id 화이트리스트).
-      if (args.schedule.id === NEWS_BRIEF_SCHEDULE_ID && !args.error) {
-        try {
-          await newsMemorizer.absorb({ agentRunId: args.agentRunId, output: args.output });
-        } catch (memErr) {
-          logger.warn('news_memorizer.failed', {
-            event: 'news_memorizer.failed',
-            error: (memErr as Error).message,
-          });
-        }
-      }
-    },
+    embeddingProvider,
+    lifecycle,
   });
-  lifecycle.register(() => scheduler.stop());
 
   const gateway = createGatewayServer(gatewayConfig, {
     storage,
@@ -544,7 +394,8 @@ async function main(): Promise<void> {
   }
 
   // Phase 28: gateway 생성 후 delivery hook 활성화. broadcaster/connections 는 gateway.ctx 에서 가져온다.
-  deliveryHook = (args) =>
+  // Phase 36: deliveryHook let 은 buildAutomation 내부로 이동 — setter 로 같은 시점(구 864) 대입.
+  setDeliveryHook((args) =>
     deliverScheduleResult(
       {
         discordClient: discordAdapter.getClient() ?? undefined,
@@ -553,7 +404,8 @@ async function main(): Promise<void> {
         logger,
       },
       args,
-    );
+    ),
+  );
 
   lifecycle.init();
   await gateway.start();
