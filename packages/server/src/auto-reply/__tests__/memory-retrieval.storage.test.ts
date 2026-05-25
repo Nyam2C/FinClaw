@@ -15,6 +15,7 @@ import {
   DefaultMemoryRetrievalService,
   extractSymbols,
   formatBackgroundSection,
+  FTS_SIMILARITY_THRESHOLD,
   MAX_INJECTED_MEMORIES,
   SIMILARITY_THRESHOLD,
   type RetrievalResult,
@@ -389,6 +390,10 @@ describe('DefaultMemoryRetrievalService — threshold cut', () => {
 
   it('SIMILARITY_THRESHOLD constant is 0.65', () => {
     expect(SIMILARITY_THRESHOLD).toBe(0.65);
+  });
+
+  it('FTS_SIMILARITY_THRESHOLD constant is 0.3', () => {
+    expect(FTS_SIMILARITY_THRESHOLD).toBe(0.3);
   });
 });
 
