@@ -2,16 +2,11 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 // packages/server/src/main.ts
 import {
-  AnthropicAdapter,
   approxTokenCount,
   BUILT_IN_MODELS,
   buildModelAliasIndex,
-  createLlmRouter,
-  createProviderAdapter,
-  DEFAULT_CLAUDE_BACKEND,
   DEFAULT_FALLBACK_CHAIN,
   InMemoryModelCatalog,
-  InMemoryToolRegistry,
   NEWS_BRIEF_PROMPT,
   NEWS_BRIEF_SCHEDULE_ID,
   ProfileHealthMonitor,
@@ -23,7 +18,6 @@ import { ConfigValidationError, loadConfig, validateConfigStrict } from '@fincla
 import {
   assertPortAvailable,
   ConcurrencyLane,
-  ConcurrencyLaneManager,
   createLogger,
   formatPortOccupant,
   getEventBus,
@@ -53,9 +47,7 @@ import {
   createEmbeddingProvider,
   createRerankerWithFallback,
   createStorage,
-  deleteSchedule,
   getSchedule,
-  listSchedules,
   LocalReranker,
   purgeAccessLog,
   type EmbeddingProvider,
@@ -64,9 +56,7 @@ import type {
   ChannelPlugin,
   ConfigValidationIssue,
   FinClawConfig,
-  ModelRef,
   Schedule,
-  ScheduleRpc,
   Timestamp,
 } from '@finclaw/types';
 import { createAgentId } from '@finclaw/types';
@@ -79,10 +69,14 @@ import { AutoReplyPipeline } from './auto-reply/pipeline.js';
 import { buildToolMetaIndex, makeRouterHelper } from './auto-reply/router-helper.js';
 import { DefaultMemoryCaptureService } from './auto-reply/stages/memory-capture.js';
 import { DefaultMemoryRetrievalService } from './auto-reply/stages/memory-retrieval.js';
-import { CronParseError, nextRunAt as computeNextRunAt, parseCron } from './automation/cron.js';
+import { nextRunAt as computeNextRunAt, parseCron } from './automation/cron.js';
 import { deliverScheduleResult } from './automation/delivery.js';
 import { SchedulerService } from './automation/scheduler.js';
 import { initChannels } from './channels/index.js';
+// Phase 36: composition 빌더
+import { DEFAULT_MODEL, defaultConfig } from './composition/constants.js';
+import { buildProviders } from './composition/providers.js';
+import { buildScheduleRpc } from './composition/schedule-rpc.js';
 import type { GatewayServerConfig } from './gateway/rpc/types.js';
 import { createGatewayServer } from './gateway/server.js';
 import { createTracer } from './observability/tracer.js';
@@ -92,39 +86,6 @@ import { MessageRouter } from './process/message-router.js';
 import { loadPrompt } from './prompts/loader.js';
 import { BrokerageSyncService } from './services/brokerage-sync-service.js';
 import { NewsMemorizer } from './services/news-memorizer.js';
-
-/** 기본 게이트웨이 설정 */
-const defaultConfig: GatewayServerConfig = {
-  host: '0.0.0.0',
-  port: 3000,
-  cors: {
-    origins: ['*'],
-    maxAge: 600,
-  },
-  auth: {
-    apiKeys: [],
-    jwtSecret: process.env.GATEWAY_JWT_SECRET ?? 'dev-secret',
-    sessionTtlMs: 30 * 60_000,
-  },
-  ws: {
-    heartbeatIntervalMs: 30_000,
-    heartbeatTimeoutMs: 10_000,
-    maxPayloadBytes: 1024 * 1024,
-    handshakeTimeoutMs: 10_000,
-    maxConnections: 100,
-  },
-  rpc: {
-    maxBatchSize: 10,
-    timeoutMs: 60_000,
-  },
-};
-
-const DEFAULT_MODEL: ModelRef = {
-  provider: 'anthropic',
-  model: 'claude-sonnet-4-6',
-  contextWindow: 200_000,
-  maxOutputTokens: 8_192,
-};
 
 export class MissingEnvError extends Error {
   constructor(public readonly envName: string) {
@@ -272,85 +233,13 @@ async function main(): Promise<void> {
   logger.info('Discord adapter logged in');
 
   // 4. Agent 레이어 (툴 레지스트리 + 러너 팩토리)
-  // Phase 32 F: dual-path provider — config.provider 로 SDK / claude-cli 전환 (기본 SDK).
-  const sdkAdapter = new AnthropicAdapter(anthropicKey);
-  // Phase 34: LLM 오케스트레이터 라우터 — SDK Haiku 고정 (B-0). CLI 모드여도 SDK.
-  // 선례: summarizer 도 항상 sdkAdapter (Phase 32 F).
-  const routerLlm = createLlmRouter(sdkAdapter);
-  const providerAdapter = createProviderAdapter({
-    kind: finclawConfig.provider ?? 'anthropic-sdk',
-    apiKey: anthropicKey,
-    cliBackend: finclawConfig.cliBackend
-      ? {
-          ...DEFAULT_CLAUDE_BACKEND,
-          command: finclawConfig.cliBackend.command ?? 'claude',
-          reliability: finclawConfig.cliBackend.watchdog
-            ? { watchdog: finclawConfig.cliBackend.watchdog }
-            : undefined,
-        }
-      : undefined,
-    defaultTimeoutMs: finclawConfig.cliBackend?.timeoutMs ?? 60_000,
-    sdkFallback: sdkAdapter, // W2: CLI auth 만료 시 SDK 위임 (CLI 모드일 때만 쓰임)
+  const { sdkAdapter, routerLlm, providerAdapter, lanes, toolRegistry } = buildProviders({
+    finclawConfig,
+    anthropicKey,
+    logger,
   });
-  logger.info('provider.initialized', {
-    event: 'provider.initialized',
-    providerKind: finclawConfig.provider ?? 'anthropic-sdk',
-    ...(finclawConfig.provider === 'claude-cli'
-      ? { note: 'CLI mode: streaming/caching/tool_use disabled' }
-      : {}),
-  });
-  const lanes = new ConcurrencyLaneManager();
-  const toolRegistry = new InMemoryToolRegistry();
 
-  // Phase 31 F: agent 가 호출할 ScheduleRpc — gateway schedule.* 핸들러와 동일 로직을 wrap.
-  // 핸들러가 inline RpcMethodHandler 라 export 되지 않으므로 storage + cron 유틸을 직접 호출.
-  // agent 발화는 web/broadcast 채널로 송출 (deliveryTarget 미지정 시 기본값).
-  const scheduleRpc: ScheduleRpc = {
-    async create(req) {
-      const cron = parseCron(req.cron);
-      const next = computeNextRunAt(cron, Date.now());
-      const created = addSchedule(storage.db, {
-        name: req.name,
-        cron: req.cron,
-        agentId: createAgentId('default'),
-        prompt: req.prompt,
-        deliveryChannel: 'web',
-        deliveryTarget: 'broadcast',
-        enabled: req.enabled,
-        nextRunAt: next === null ? undefined : (next as Timestamp),
-      });
-      return { id: created.id, nextRunAt: created.nextRunAt ?? null };
-    },
-    async list(req) {
-      const items = listSchedules(storage.db, { limit: req.limit });
-      return {
-        schedules: items.map((s) => ({
-          id: s.id,
-          name: s.name,
-          cron: s.cron,
-          enabled: s.enabled,
-          status: s.status,
-          consecutiveFailures: s.consecutiveFailures,
-          nextRunAt: s.nextRunAt,
-        })),
-      };
-    },
-    async delete(req) {
-      deleteSchedule(storage.db, req.scheduleId);
-    },
-    async testCron(req) {
-      try {
-        const cron = parseCron(req.cron);
-        const next = computeNextRunAt(cron, Date.now());
-        return { valid: true, nextRunAt: next === null ? undefined : next };
-      } catch (err) {
-        if (err instanceof CronParseError) {
-          return { valid: false, reason: err.message };
-        }
-        throw err;
-      }
-    },
-  };
+  const scheduleRpc = buildScheduleRpc(storage);
 
   registerGeneralTools(toolRegistry, { scheduleRpc });
 
