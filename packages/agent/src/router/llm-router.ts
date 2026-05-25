@@ -27,6 +27,8 @@ export interface RouterInput {
   readonly message: string;
   /** 현재 세션에서 노출 가능한 전체 도구명 (라우터가 이 중에서 화이트리스트 선택). */
   readonly availableToolNames: ReadonlyArray<string>;
+  /** Phase 35: 파이프라인 abort 시 라우터 in-flight HTTP 즉시 취소. provider 가 fetch 에 전달. */
+  readonly abortSignal?: AbortSignal;
 }
 
 /** Haiku 고정 모델 ID — routing.ts tierToModelId('haiku') 와 동기. */
@@ -139,6 +141,7 @@ export function createLlmRouter(provider: ProviderAdapter): LlmRouter {
         messages: [{ role: 'user', content: input.message }],
         maxTokens: 200,
         temperature: 0,
+        abortSignal: input.abortSignal, // Phase 35: 라우터 호출도 abort 전파
         // tools 미전달 — 도구 사용 안 함 (분류 전용).
       });
       const { text, usage } = extractRouterResponse(raw);

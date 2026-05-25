@@ -216,11 +216,13 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
     const profileId = this.deps.profileId ?? 'default';
     const startedAt = Date.now();
 
-    // Phase 34: LLM 라우터 1회 호출 → intent 기반 모델/도구 결정. 실패 시 키워드 폴백.
-    const routed = await this.applyRouting({
-      message: ctx.normalizedBody,
+    // Phase 34/35: LLM 라우터 1회 호출 → intent 기반 모델/도구. signal 전달로 abort 시 취소.
+    const routed = await this.routeToChain(
+      ctx.normalizedBody,
       toolDefinitions,
-    });
+      'pipeline.routed',
+      signal,
+    );
 
     // Phase 24 보정: 라우터가 결정한 allowedToolNames 만 LLM 에 노출.
     // minModel 미충족 도구는 자동 제외되어 chat → Opus 부작용 방지.
@@ -396,8 +398,13 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
     });
     const runner = this.deps.runnerFactory(dispatcher);
 
-    // Phase 34: TUI 도 LLM 라우터 사용 (B-3). userHint 키워드 승격 폐기.
-    const routed = await this.applyTuiRouting({ input, toolDefinitions });
+    // Phase 34/35: TUI 도 LLM 라우터 사용 (B-3). signal 전달로 abort 시 취소.
+    const routed = await this.routeToChain(
+      input.userMessage,
+      toolDefinitions,
+      'tui.routed',
+      signal,
+    );
 
     // Phase 24 보정: 라우터 결정 allowedToolNames 만 LLM 노출.
     const exposedTools = routed
@@ -481,14 +488,17 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
   }
 
   /**
-   * Phase 34: LLM 라우터 호출 → chain + floor + allowedToolNames 구성.
-   * - routerLlm 주입: Haiku 라우터 1회 호출. 실패/타임아웃 시 inferRole 키워드 폴백 (B-2).
-   * - routerLlm 미주입: undefined (라우터 비활성, 기존 fallbackChain 동작).
+   * Phase 35: applyRouting/applyTuiRouting 의 공통 코어.
+   * 라우터 호출(또는 폴백) → chain + floor + allowedToolNames + routerUsage 구성 + 로깅.
+   * 메시지·로그 이벤트명·signal 만 호출자가 주입 (이전 두 헬퍼의 유일한 차이).
+   * routerLlm 미주입 시 undefined (라우터 비활성, 기존 fallbackChain 동작).
    */
-  private async applyRouting(args: {
-    readonly message: string;
-    readonly toolDefinitions: readonly { readonly name: string }[];
-  }): Promise<
+  private async routeToChain(
+    message: string,
+    toolDefinitions: readonly { readonly name: string }[],
+    logEvent: 'pipeline.routed' | 'tui.routed',
+    signal: AbortSignal,
+  ): Promise<
     | {
         readonly chain: readonly string[];
         readonly floor: ModelTier;
@@ -500,10 +510,10 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
     if (!this.deps.routerLlm) {
       return undefined;
     }
-    const toolNames = args.toolDefinitions.map((t) => t.name);
-    const decision = await this.routeOrFallback(args.message, toolNames);
-    this.deps.logger?.info('pipeline.routed', {
-      event: 'pipeline.routed',
+    const toolNames = toolDefinitions.map((t) => t.name);
+    const decision = await this.routeOrFallback(message, toolNames, signal);
+    this.deps.logger?.info(logEvent, {
+      event: logEvent,
       intent: decision.intent,
       tier: decision.modelTier,
       allowedToolNames: decision.allowedToolNames,
@@ -525,18 +535,23 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
 
   /**
    * Phase 34 B-2: LLM 라우터 호출, 실패 시 inferRole 키워드 폴백.
-   * 폴백 시 routerUsage=0 (라우터 LLM 미과금), fallback=true 로 로그/비용 구분.
+   * Phase 35: signal 을 라우터 호출로 전달 (abort 시 in-flight HTTP 취소).
    */
   private async routeOrFallback(
     message: string,
     availableToolNames: readonly string[],
+    signal: AbortSignal,
   ): Promise<RouterDecision> {
     const routerLlm = this.deps.routerLlm;
     if (!routerLlm) {
       return this.keywordFallbackDecision(message, availableToolNames);
     }
     try {
-      return await routerLlm({ message, availableToolNames: [...availableToolNames] });
+      return await routerLlm({
+        message,
+        availableToolNames: [...availableToolNames],
+        abortSignal: signal,
+      });
     } catch (err) {
       this.deps.logger?.warn('router.fallback', {
         event: 'router.fallback',
@@ -562,53 +577,6 @@ export class RunnerExecutionAdapter implements ExecutionAdapter {
       reason: `keyword-fallback(role=${role})`,
       routerUsage: { inputTokens: 0, outputTokens: 0 },
       fallback: true,
-    };
-  }
-
-  /**
-   * Phase 34 B-3: TUI/RPC chat.send 전용 라우팅. execute() 와 동일 LLM 라우터.
-   * userHint 기반 키워드 tier 승격(Phase 24) 폐기 — 라우터 결정 tier 그대로.
-   * routerLlm 미주입 시 undefined (호출자가 input.model 사용).
-   */
-  private async applyTuiRouting(args: {
-    readonly input: {
-      readonly model: ModelRef;
-      readonly userMessage: string;
-      readonly userHint?: ModelTier;
-    };
-    readonly toolDefinitions: readonly { readonly name: string }[];
-  }): Promise<
-    | {
-        readonly chain: readonly string[];
-        readonly floor: ModelTier;
-        readonly allowedToolNames: ReadonlyArray<string>;
-        readonly routerUsage: { readonly inputTokens: number; readonly outputTokens: number };
-      }
-    | undefined
-  > {
-    if (!this.deps.routerLlm) {
-      return undefined;
-    }
-    const toolNames = args.toolDefinitions.map((t) => t.name);
-    const decision = await this.routeOrFallback(args.input.userMessage, toolNames);
-    this.deps.logger?.info('tui.routed', {
-      event: 'tui.routed',
-      intent: decision.intent,
-      tier: decision.modelTier,
-      allowedToolNames: decision.allowedToolNames,
-      reason: decision.reason,
-      fallback: decision.fallback,
-      filteredCount: toolNames.length - decision.allowedToolNames.length,
-      routerInputTokens: decision.routerUsage.inputTokens,
-      routerOutputTokens: decision.routerUsage.outputTokens,
-    });
-    const modelId = tierToModelId(decision.modelTier);
-    const others = (this.deps.fallbackChain ?? []).filter((m) => m !== modelId);
-    return {
-      chain: [modelId, ...others],
-      floor: decision.modelTier,
-      allowedToolNames: decision.allowedToolNames,
-      routerUsage: decision.routerUsage,
     };
   }
 

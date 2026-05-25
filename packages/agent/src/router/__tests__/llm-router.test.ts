@@ -92,4 +92,19 @@ describe('createLlmRouter', () => {
     const d = await router({ message: '안녕', availableToolNames: [] });
     expect(d.routerUsage).toEqual({ inputTokens: 120, outputTokens: 8 });
   });
+
+  it('Phase 35: input.abortSignal 을 chatCompletion 으로 전달', async () => {
+    const { provider, calls } = mockProvider([{ json: { intent: 'greeting', reason: '인사' } }]);
+    const router = createLlmRouter(provider);
+    const controller = new AbortController();
+    await router({ message: '안녕', availableToolNames: [], abortSignal: controller.signal });
+    expect(calls[0]?.abortSignal).toBe(controller.signal);
+  });
+
+  it('Phase 35: abortSignal 미전달 시 chatCompletion.abortSignal 도 undefined', async () => {
+    const { provider, calls } = mockProvider([{ json: { intent: 'greeting', reason: '인사' } }]);
+    const router = createLlmRouter(provider);
+    await router({ message: '안녕', availableToolNames: [] });
+    expect(calls[0]?.abortSignal).toBeUndefined();
+  });
 });
