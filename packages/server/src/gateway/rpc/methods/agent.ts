@@ -24,7 +24,7 @@ import type { RouterHelper } from '../../../auto-reply/router-helper.js';
 import { buildDispatcher } from '../../../auto-reply/tool-dispatcher-adapter.js';
 import type { FinclawTracer } from '../../../observability/tracer.js';
 import { loadPrompt, requireFrontmatterKeys } from '../../../prompts/loader.js';
-import { registerMethod } from '../index.js';
+import type { MethodRegistry } from '../index.js';
 import type { RpcMethodHandler } from '../types.js';
 
 /** agent.* RPC 메서드 의존성 (main.ts 에서 주입) */
@@ -160,7 +160,7 @@ export function resetAgentStats(): void {
 /**
  * agent.* RPC 메서드 일괄 등록.
  */
-export function registerAgentMethods(deps: AgentRpcDeps): void {
+export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistry): void {
   const profileId = deps.profileId ?? 'default';
 
   // ── agent.list ──
@@ -475,7 +475,7 @@ export function registerAgentMethods(deps: AgentRpcDeps): void {
     },
   };
 
-  registerMethod(listHandler);
-  registerMethod(statusHandler);
-  registerMethod(runHandler);
+  registry.register(listHandler);
+  registry.register(statusHandler);
+  registry.register(runHandler);
 }

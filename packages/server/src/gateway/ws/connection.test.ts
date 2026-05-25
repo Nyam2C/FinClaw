@@ -5,9 +5,11 @@ import { resetEventBus } from '@finclaw/infra';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { z } from 'zod/v4';
 import type { GatewayServerContext } from '../context.js';
-import { clearMethods, registerMethod } from '../rpc/index.js';
+import { MethodRegistry } from '../rpc/index.js';
 import type { GatewayServerConfig, WsConnection } from '../rpc/types.js';
 import { handleWsConnection, sendNotification } from './connection.js';
+
+let methods: MethodRegistry; // Phase 35: 인스턴스 레지스트리 (테스트 격리)
 
 /** Mock WebSocket */
 function createMockWs() {
@@ -79,6 +81,7 @@ function makeCtx(overrides?: Partial<GatewayServerConfig>): GatewayServerContext
     wss: {} as GatewayServerContext['wss'],
     connections: new Map(),
     registry: { activeCount: () => 0 } as GatewayServerContext['registry'],
+    methods, // Phase 35
     broadcaster: {} as GatewayServerContext['broadcaster'],
     isDraining: false,
   };
@@ -86,7 +89,7 @@ function makeCtx(overrides?: Partial<GatewayServerConfig>): GatewayServerContext
 
 describe('WebSocket Connection', () => {
   beforeEach(() => {
-    clearMethods();
+    methods = new MethodRegistry();
     resetEventBus();
   });
 
@@ -142,7 +145,7 @@ describe('WebSocket Connection', () => {
   });
 
   it('dispatches RPC on message and sends response', async () => {
-    registerMethod({
+    methods.register({
       method: 'test.echo',
       description: 'echo',
       authLevel: 'none',

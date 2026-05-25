@@ -3,7 +3,7 @@ import type { StorageAdapter } from '@finclaw/types';
 import { z } from 'zod/v4';
 import type { ChatRegistry } from '../../registry.js';
 import { RpcErrors } from '../errors.js';
-import { registerMethod } from '../index.js';
+import type { MethodRegistry } from '../index.js';
 import type { RpcMethodHandler } from '../types.js';
 
 export interface SessionMethodsDeps {
@@ -87,8 +87,8 @@ export function createSessionMethods(deps: SessionMethodsDeps): readonly RpcMeth
 }
 
 /** session.* 메서드 일괄 등록 */
-export function registerSessionMethods(deps: SessionMethodsDeps): void {
+export function registerSessionMethods(deps: SessionMethodsDeps, registry: MethodRegistry): void {
   for (const handler of createSessionMethods(deps)) {
-    registerMethod(handler);
+    registry.register(handler);
   }
 }

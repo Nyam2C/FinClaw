@@ -2,11 +2,11 @@ import { resetEventBus } from '@finclaw/infra';
 // packages/server/src/gateway/rpc/methods/system.test.ts
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { GatewayServerContext } from '../../context.js';
-import { dispatchRpc, clearMethods } from '../index.js';
+import { dispatchRpc, MethodRegistry } from '../index.js';
 import type { GatewayServerConfig } from '../types.js';
 import { registerSystemMethods } from './system.js';
 
-function makeServerCtx(): GatewayServerContext {
+function makeServerCtx(methods: MethodRegistry): GatewayServerContext {
   const config: GatewayServerConfig = {
     host: '0.0.0.0',
     port: 0,
@@ -26,6 +26,7 @@ function makeServerCtx(): GatewayServerContext {
     wss: {} as GatewayServerContext['wss'],
     connections: new Map(),
     registry: { activeCount: () => 0 } as GatewayServerContext['registry'],
+    methods, // Phase 35
     broadcaster: {} as GatewayServerContext['broadcaster'],
     isDraining: false,
   };
@@ -37,10 +38,11 @@ const baseCtx = {
 };
 
 describe('system.* RPC methods', () => {
+  let methods: MethodRegistry;
   beforeEach(() => {
-    clearMethods();
+    methods = new MethodRegistry();
     resetEventBus();
-    registerSystemMethods();
+    registerSystemMethods(methods);
   });
 
   describe('system.health', () => {
@@ -48,7 +50,7 @@ describe('system.* RPC methods', () => {
       const result = await dispatchRpc(
         { jsonrpc: '2.0', id: 1, method: 'system.health', params: {} },
         baseCtx,
-        makeServerCtx(),
+        makeServerCtx(methods),
       );
       const r = result as { result: { status: string; uptime: number; memoryMB: number } };
       expect(r.result.status).toBe('ok');
@@ -62,7 +64,7 @@ describe('system.* RPC methods', () => {
       const result = await dispatchRpc(
         { jsonrpc: '2.0', id: 2, method: 'system.info', params: {} },
         baseCtx,
-        makeServerCtx(),
+        makeServerCtx(methods),
       );
       const r = result as { result: { name: string; methods: string[]; capabilities: string[] } };
       expect(r.result.name).toBe('finclaw-gateway');
@@ -79,7 +81,7 @@ describe('system.* RPC methods', () => {
       const result = await dispatchRpc(
         { jsonrpc: '2.0', id: 3, method: 'system.ping', params: {} },
         baseCtx,
-        makeServerCtx(),
+        makeServerCtx(methods),
       );
       const after = Date.now();
       const r = result as { result: { pong: boolean; timestamp: number } };

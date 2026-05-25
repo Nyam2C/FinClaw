@@ -1,6 +1,6 @@
 // packages/server/src/gateway/rpc/methods/config.ts
 import { z } from 'zod/v4';
-import { registerMethod } from '../index.js';
+import type { MethodRegistry } from '../index.js';
 import type { RpcMethodHandler } from '../types.js';
 
 // -- config.get --
@@ -49,8 +49,8 @@ const reloadHandler: RpcMethodHandler<Record<string, never>, { reloaded: boolean
 };
 
 /** config.* 메서드 일괄 등록 */
-export function registerConfigMethods(): void {
-  registerMethod(getHandler);
-  registerMethod(setHandler);
-  registerMethod(reloadHandler);
+export function registerConfigMethods(registry: MethodRegistry): void {
+  registry.register(getHandler);
+  registry.register(setHandler);
+  registry.register(reloadHandler);
 }

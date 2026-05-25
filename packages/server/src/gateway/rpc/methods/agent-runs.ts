@@ -3,7 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { getAgentRun, listAgentRuns } from '@finclaw/storage';
 import type { AgentId } from '@finclaw/types';
 import { z } from 'zod/v4';
-import { registerMethod } from '../index.js';
+import type { MethodRegistry } from '../index.js';
 import type { RpcMethodHandler } from '../types.js';
 
 /**
@@ -30,7 +30,7 @@ const OUTPUT_TRUNCATE = 500;
  * agent.runs.* RPC 메서드 일괄 등록.
  * deps.db 미주입 시 모든 호출이 provider_unavailable.
  */
-export function registerAgentRunsMethods(deps: AgentRunsRpcDeps): void {
+export function registerAgentRunsMethods(deps: AgentRunsRpcDeps, registry: MethodRegistry): void {
   // ── agent.runs.list ──
   // 목록은 본문 truncate. 전체 조회는 agent.runs.get.
   const listHandler: RpcMethodHandler<
@@ -132,6 +132,6 @@ export function registerAgentRunsMethods(deps: AgentRunsRpcDeps): void {
     },
   };
 
-  registerMethod(listHandler);
-  registerMethod(getHandler);
+  registry.register(listHandler);
+  registry.register(getHandler);
 }

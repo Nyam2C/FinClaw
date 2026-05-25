@@ -35,7 +35,7 @@ export { authenticate } from './auth/index.js';
 export { AuthRateLimiter } from './auth/rate-limit.js';
 
 // RPC 디스패처
-export { dispatchRpc, registerMethod, hasRequiredAuth } from './rpc/index.js';
+export { dispatchRpc, hasRequiredAuth, MethodRegistry } from './rpc/index.js';
 
 // Phase 11: 고급 기능
 export { RequestRateLimiter } from './rate-limit.js';

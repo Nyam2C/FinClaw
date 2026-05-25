@@ -11,64 +11,67 @@ import type {
   AuthLevel,
 } from './types.js';
 
-// TODO(review-3): 모듈 레벨 Map → GatewayServerContext 소속으로 이동하여 서버 인스턴스별 격리 권장
-const methods = new Map<string, RpcMethodHandler>();
+/**
+ * Phase 35: RPC 메서드 레지스트리. 모듈 전역 Map 을 대체하여 서버 인스턴스별 격리.
+ * GatewayServerContext.methods 가 소유. 테스트는 인스턴스를 새로 만들어 격리(전역 reset 우회 불요).
+ */
+export class MethodRegistry {
+  private readonly methods = new Map<string, RpcMethodHandler>();
 
-/** 메서드 등록 */
-export function registerMethod(handler: RpcMethodHandler): void {
-  if (methods.has(handler.method)) {
-    throw new Error(`RPC method already registered: ${handler.method}`);
+  register(handler: RpcMethodHandler): void {
+    if (this.methods.has(handler.method)) {
+      throw new Error(`RPC method already registered: ${handler.method}`);
+    }
+    this.methods.set(handler.method, handler);
   }
-  methods.set(handler.method, handler);
-}
 
-/** 등록된 메서드 목록 (system.info 용) */
-export function getRegisteredMethods(): string[] {
-  return [...methods.keys()];
-}
+  get(method: string): RpcMethodHandler | undefined {
+    return this.methods.get(method);
+  }
 
-/** 테스트용: 모든 메서드 등록 해제 */
-export function clearMethods(): void {
-  methods.clear();
+  /** 등록된 메서드 목록 (system.info 용) */
+  list(): string[] {
+    return [...this.methods.keys()];
+  }
 }
 
 /** RPC 요청 디스패치 (단일 또는 배치) */
 export async function dispatchRpc(
   request: RpcRequest | JsonRpcBatchRequest,
   ctx: Omit<RpcContext, 'requestId'>,
-  _serverCtx: GatewayServerContext,
+  serverCtx: GatewayServerContext,
 ): Promise<RpcResponse | RpcResponse[]> {
   // 배치 요청
   if (Array.isArray(request)) {
     if (request.length === 0) {
       return createError(null, RpcErrors.INVALID_REQUEST, 'Empty batch');
     }
-    if (request.length > _serverCtx.config.rpc.maxBatchSize) {
+    if (request.length > serverCtx.config.rpc.maxBatchSize) {
       return createError(
         null,
         RpcErrors.INVALID_REQUEST,
-        `Batch size ${request.length} exceeds limit ${_serverCtx.config.rpc.maxBatchSize}`,
+        `Batch size ${request.length} exceeds limit ${serverCtx.config.rpc.maxBatchSize}`,
       );
     }
-    return Promise.all(request.map((req) => handleSingleRequest(req, ctx, _serverCtx)));
+    return Promise.all(request.map((req) => handleSingleRequest(req, ctx, serverCtx)));
   }
 
-  return handleSingleRequest(request as RpcRequest, ctx, _serverCtx);
+  return handleSingleRequest(request as RpcRequest, ctx, serverCtx);
 }
 
 /** 단일 RPC 요청 처리 */
 async function handleSingleRequest(
   request: RpcRequest,
   ctx: Omit<RpcContext, 'requestId'>,
-  _serverCtx: GatewayServerContext,
+  serverCtx: GatewayServerContext,
 ): Promise<RpcResponse> {
   // 1. jsonrpc 버전 검증
   if (request.jsonrpc !== '2.0') {
     return createError(request.id, RpcErrors.INVALID_REQUEST, 'Invalid JSON-RPC version');
   }
 
-  // 2. 메서드 조회
-  const handler = methods.get(request.method);
+  // 2. 메서드 조회 (Phase 35: 인스턴스 레지스트리)
+  const handler = serverCtx.methods.get(request.method);
   if (!handler) {
     return createError(request.id, RpcErrors.METHOD_NOT_FOUND, `Unknown method: ${request.method}`);
   }
@@ -95,7 +98,6 @@ async function handleSingleRequest(
 
   // 6. 핸들러 실행
   try {
-    // TODO(review-3): serverCtx를 rpcCtx에 포함시켜 핸들러가 registry/broadcaster에 접근 가능하도록
     const rpcCtx: RpcContext = { ...ctx, requestId: request.id };
     const result = await handler.execute(parseResult.data, rpcCtx);
     return { jsonrpc: '2.0', id: request.id, result };

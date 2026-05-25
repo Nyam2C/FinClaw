@@ -10,7 +10,7 @@ import {
 } from '@finclaw/storage';
 import type { MemoryEntry, SessionKey, Timestamp } from '@finclaw/types';
 import { z } from 'zod/v4';
-import { registerMethod } from '../index.js';
+import type { MethodRegistry } from '../index.js';
 import type { RpcMethodHandler } from '../types.js';
 
 /**
@@ -103,7 +103,7 @@ function listMemoriesAcrossSessions(
  * memory.* RPC 메서드 일괄 등록.
  * deps.db 미주입 시 모든 메서드 호출이 provider_unavailable.
  */
-export function registerMemoryMethods(deps: MemoryRpcDeps): void {
+export function registerMemoryMethods(deps: MemoryRpcDeps, registry: MethodRegistry): void {
   // ── memory.list ──
   const memoryListHandler: RpcMethodHandler<
     {
@@ -242,8 +242,8 @@ export function registerMemoryMethods(deps: MemoryRpcDeps): void {
     },
   };
 
-  registerMethod(memoryListHandler);
-  registerMethod(memoryDeleteHandler);
-  registerMethod(memorySearchHandler);
-  registerMethod(memoryGetByIdHandler);
+  registry.register(memoryListHandler);
+  registry.register(memoryDeleteHandler);
+  registry.register(memorySearchHandler);
+  registry.register(memoryGetByIdHandler);
 }

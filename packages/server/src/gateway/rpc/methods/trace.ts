@@ -2,7 +2,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { getSpanTree, listSpansByTrace } from '@finclaw/storage';
 import { z } from 'zod/v4';
-import { registerMethod } from '../index.js';
+import type { MethodRegistry } from '../index.js';
 import type { RpcMethodHandler } from '../types.js';
 
 /**
@@ -23,7 +23,7 @@ interface TraceSummaryRow {
   root_name: string;
 }
 
-export function registerTraceMethods(deps: TraceRpcDeps): void {
+export function registerTraceMethods(deps: TraceRpcDeps, registry: MethodRegistry): void {
   // ── trace.get ──
   // traceId 로 묶인 모든 span + tree + agent_runs 동반 반환.
   const getHandler: RpcMethodHandler<{ traceId: string }, unknown> = {
@@ -80,6 +80,6 @@ export function registerTraceMethods(deps: TraceRpcDeps): void {
     },
   };
 
-  registerMethod(getHandler);
-  registerMethod(listHandler);
+  registry.register(getHandler);
+  registry.register(listHandler);
 }

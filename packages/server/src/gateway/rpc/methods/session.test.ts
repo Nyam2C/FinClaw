@@ -6,7 +6,7 @@ import { GatewayBroadcaster } from '../../broadcaster.js';
 import type { GatewayServerContext } from '../../context.js';
 import { ChatRegistry } from '../../registry.js';
 import { RpcErrors } from '../errors.js';
-import { dispatchRpc, clearMethods } from '../index.js';
+import { dispatchRpc, MethodRegistry } from '../index.js';
 import type { GatewayServerConfig } from '../types.js';
 import { registerSessionMethods } from './session.js';
 
@@ -44,6 +44,7 @@ function makeServerCtx(): GatewayServerContext {
     wss: {} as GatewayServerContext['wss'],
     connections: new Map(),
     registry: new ChatRegistry(60_000),
+    methods: new MethodRegistry(), // Phase 35
     broadcaster: new GatewayBroadcaster(),
     isDraining: false,
   };
@@ -58,13 +59,15 @@ describe('session.* RPC methods', () => {
   let ctx: GatewayServerContext;
 
   beforeEach(() => {
-    clearMethods();
     resetEventBus();
     ctx = makeServerCtx();
-    registerSessionMethods({
-      registry: ctx.registry,
-      storage: makeStorage(),
-    });
+    registerSessionMethods(
+      {
+        registry: ctx.registry,
+        storage: makeStorage(),
+      },
+      ctx.methods,
+    );
   });
 
   describe('schema validation', () => {
