@@ -7,7 +7,6 @@ import {
   buildModelAliasIndex,
   DEFAULT_FALLBACK_CHAIN,
   InMemoryModelCatalog,
-  NEWS_BRIEF_PROMPT,
   NEWS_BRIEF_SCHEDULE_ID,
   ProfileHealthMonitor,
   Runner,
@@ -26,40 +25,20 @@ import {
 } from '@finclaw/infra';
 import {
   ALERT_SKILL_METADATA,
-  KeyRotator,
-  KisClient,
-  KisTokenManager,
   MARKET_SKILL_METADATA,
   NEWS_SKILL_METADATA,
-  readKeyArray,
-  registerAlertTools,
-  registerBrokerageTools,
-  registerMarketTools,
-  registerNewsTools,
-  type AlertSkillHandle,
-  type MarketSkillHandle,
-  type NewsSkillHandle,
 } from '@finclaw/skills-finance';
-import { GENERAL_SKILL_METADATA, registerGeneralTools } from '@finclaw/skills-general';
+import { GENERAL_SKILL_METADATA } from '@finclaw/skills-general';
 import {
-  addSchedule,
   assertEmbeddingDimension,
   createEmbeddingProvider,
   createRerankerWithFallback,
   createStorage,
-  getSchedule,
   LocalReranker,
   purgeAccessLog,
   type EmbeddingProvider,
 } from '@finclaw/storage';
-import type {
-  ChannelPlugin,
-  ConfigValidationIssue,
-  FinClawConfig,
-  Schedule,
-  Timestamp,
-} from '@finclaw/types';
-import { createAgentId } from '@finclaw/types';
+import type { ChannelPlugin, ConfigValidationIssue, FinClawConfig, Schedule } from '@finclaw/types';
 import { DefaultAttachMemoryService } from './auto-reply/agent-memory-hook.js';
 import { registerBuiltInCommands } from './auto-reply/commands/built-in.js';
 import { InMemoryCommandRegistry } from './auto-reply/commands/registry.js';
@@ -69,7 +48,6 @@ import { AutoReplyPipeline } from './auto-reply/pipeline.js';
 import { buildToolMetaIndex, makeRouterHelper } from './auto-reply/router-helper.js';
 import { DefaultMemoryCaptureService } from './auto-reply/stages/memory-capture.js';
 import { DefaultMemoryRetrievalService } from './auto-reply/stages/memory-retrieval.js';
-import { nextRunAt as computeNextRunAt, parseCron } from './automation/cron.js';
 import { deliverScheduleResult } from './automation/delivery.js';
 import { SchedulerService } from './automation/scheduler.js';
 import { initChannels } from './channels/index.js';
@@ -77,14 +55,13 @@ import { initChannels } from './channels/index.js';
 import { DEFAULT_MODEL, defaultConfig } from './composition/constants.js';
 import { buildProviders } from './composition/providers.js';
 import { buildScheduleRpc } from './composition/schedule-rpc.js';
+import { registerSkills } from './composition/skills.js';
 import type { GatewayServerConfig } from './gateway/rpc/types.js';
 import { createGatewayServer } from './gateway/server.js';
 import { createTracer } from './observability/tracer.js';
-import { loadPlugins } from './plugins/loader.js';
 import { ProcessLifecycle } from './process/lifecycle.js';
 import { MessageRouter } from './process/message-router.js';
 import { loadPrompt } from './prompts/loader.js';
-import { BrokerageSyncService } from './services/brokerage-sync-service.js';
 import { NewsMemorizer } from './services/news-memorizer.js';
 
 export class MissingEnvError extends Error {
@@ -241,211 +218,28 @@ async function main(): Promise<void> {
 
   const scheduleRpc = buildScheduleRpc(storage);
 
-  registerGeneralTools(toolRegistry, { scheduleRpc });
-
   // 4a. 모델 카탈로그 + 별칭 인덱스 + 프로필 건강 모니터.
   // (스킬 등록보다 먼저 생성 — Phase 24 E 의 analyze_market 등록 시점에 주입 필요.)
   const modelCatalog = new InMemoryModelCatalog(BUILT_IN_MODELS);
   const modelAliasIndex = buildModelAliasIndex(modelCatalog);
   const profileHealth = new ProfileHealthMonitor();
 
-  const finnhubKeys = readKeyArray('FINNHUB_KEY');
-  const twelveDataKeys = readKeyArray('TWELVE_DATA_KEY');
-  const alphaVantageKeys = readKeyArray('ALPHA_VANTAGE_KEY');
-  const coinGeckoKey = process.env.COINGECKO_API_KEY;
-
-  const finnhubRotator = finnhubKeys.length > 0 ? new KeyRotator(finnhubKeys) : undefined;
-  const twelveDataRotator = twelveDataKeys.length > 0 ? new KeyRotator(twelveDataKeys) : undefined;
-  const alphaVantageRotator =
-    alphaVantageKeys.length > 0 ? new KeyRotator(alphaVantageKeys) : undefined;
-
-  let marketHandle: MarketSkillHandle | undefined;
-  let newsHandle: NewsSkillHandle | undefined;
-
-  if (finnhubRotator || twelveDataRotator || alphaVantageRotator || coinGeckoKey) {
-    marketHandle = await registerMarketTools(toolRegistry, {
-      db: storage.db,
-      finnhubRotator,
-      twelveDataRotator,
-      alphaVantageRotator,
-      coinGeckoKey,
-    });
-    logger.info('Market tools registered', {
-      providers: [
-        finnhubRotator && 'finnhub',
-        twelveDataRotator && 'twelve-data',
-        alphaVantageRotator && 'alpha-vantage',
-        coinGeckoKey && 'coingecko',
-      ].filter(Boolean),
-    });
-  } else {
-    logger.info('No market keys set — skipping market tools');
-  }
-
-  const newsdataKeys = readKeyArray('NEWSDATA_API_KEY');
-  const newsdataRotator = newsdataKeys.length > 0 ? new KeyRotator(newsdataKeys) : undefined;
-
-  if (marketHandle && (alphaVantageRotator || newsdataRotator || finnhubRotator)) {
-    newsHandle = await registerNewsTools(toolRegistry, {
-      db: storage.db,
-      alphaVantageKey: alphaVantageKeys[0],
-      newsdataRotator,
-      finnhubRotator, // 시세 KeyRotator 와 동일 인스턴스 공유
-      quoteService: marketHandle.quoteService,
-      anthropicApiKey: anthropicKey,
-      router: routerHelper,
-      defaultModel: DEFAULT_MODEL,
-      // Phase 24 E: 스킬 내부 analyze_market LLM 호출도 status 분포에 포함.
+  // Phase 36: skills/tools/KIS/mcp/plugins 등록 (구 363-559 흡수)
+  const { marketHandle, newsHandle, alertHandle, brokerageSyncService, kisEnv } =
+    await registerSkills({
+      toolRegistry,
+      storage,
+      logger,
+      finclawConfig,
+      anthropicKey,
+      discordAdapter,
+      routerHelper,
       profileHealth,
-      profileId: 'default',
       modelCatalog,
+      defaultModel: DEFAULT_MODEL,
+      scheduleRpc,
+      lifecycle,
     });
-    logger.info('News tools registered', {
-      providers: [
-        alphaVantageRotator && 'alpha-vantage',
-        newsdataRotator && 'newsdata',
-        finnhubRotator && 'finnhub-news',
-      ].filter(Boolean),
-    });
-  } else if (marketHandle) {
-    logger.info('No news keys set — skipping news tools');
-  }
-
-  let alertHandle: AlertSkillHandle | undefined;
-  if (marketHandle && newsHandle) {
-    const discordClient = discordAdapter.getClient();
-    alertHandle = await registerAlertTools(toolRegistry, {
-      db: storage.db,
-      cache: marketHandle.cache,
-      registry: marketHandle.providers,
-      newsAggregator: newsHandle.aggregator,
-      logger,
-      discordClient: discordClient ?? undefined,
-    });
-    const handle = alertHandle;
-    lifecycle.register(async () => {
-      handle.monitor.stop();
-    });
-    logger.info('Alert monitor started');
-  } else {
-    logger.info('market/news tools unavailable — skipping alerts');
-  }
-
-  // Phase 33 B-4/B-6: 한국투자증권(KIS) read-only 잔고 동기화 tool.
-  // 키 미설정 시 등록 skip (server 정상 부팅). 자동화는 SDK 모드 전용(§B-0).
-  const kisAppKey = process.env.KIS_APP_KEY;
-  const kisAppSecret = process.env.KIS_APP_SECRET;
-  const kisAccountNo = process.env.KIS_ACCOUNT_NO;
-  const kisAccountProductCode = process.env.KIS_ACCOUNT_PRODUCT_CODE ?? '01';
-  const kisEnv = (process.env.KIS_ENV ?? 'prod') as 'prod' | 'vts';
-
-  /** 1인 사용자 기본 portfolio 보장 — 없으면 'default' 생성. */
-  const resolveDefaultPortfolioId = (): string => {
-    const existing = storage.db
-      .prepare('SELECT id FROM portfolios ORDER BY updated_at ASC LIMIT 1')
-      .get() as { id: string } | undefined;
-    if (existing) {
-      return existing.id;
-    }
-    storage.db
-      .prepare(`INSERT INTO portfolios (id, name, currency, updated_at) VALUES (?, ?, ?, ?)`)
-      .run('default', 'Default', 'USD', Date.now());
-    return 'default';
-  };
-
-  let brokerageSyncService: BrokerageSyncService | undefined;
-  if (kisAppKey && kisAppSecret && kisAccountNo) {
-    const creds = {
-      env: kisEnv,
-      appKey: kisAppKey,
-      appSecret: kisAppSecret,
-      accountNo: kisAccountNo,
-      accountProductCode: kisAccountProductCode,
-    };
-    const kisClient = new KisClient(creds, new KisTokenManager(creds));
-    brokerageSyncService = new BrokerageSyncService({
-      db: storage.db,
-      client: kisClient,
-      logger,
-      resolvePortfolioId: resolveDefaultPortfolioId,
-    });
-    const syncService = brokerageSyncService;
-    registerBrokerageTools(toolRegistry, {
-      syncHoldings: async () => {
-        const r = await syncService.run();
-        return { holdingsCount: r.holdingsCount, marketsScanned: r.marketsScanned };
-      },
-    });
-    logger.info('Brokerage (KIS) tools registered', { env: kisEnv });
-
-    // Phase 33 C: 매일 뉴스 브리프 cron 을 idempotent seed — 고정 id 라 onRunComplete 의
-    // news-memorizer 분기(§B-3 화이트리스트)가 실제로 발동한다. SDK 모드 전용(§B-0): CLI 모드는
-    // tool_use 비활성이라 brokerage_sync_holdings 가 안 돌아 seed 를 skip (조용한 빈 출력 방지).
-    const isCliMode = (finclawConfig.provider ?? 'anthropic-sdk') === 'claude-cli';
-    if (isCliMode) {
-      logger.warn('news_brief.seed_skipped_cli', {
-        event: 'news_brief.seed_skipped_cli',
-        note: 'CLI mode disables tool_use; news-brief cron needs SDK mode. Schedule not seeded.',
-      });
-    } else if (getSchedule(storage.db, NEWS_BRIEF_SCHEDULE_ID) === null) {
-      const briefCron = '0 0 * * *'; // 매일 00:00 UTC = 09:00 KST
-      const briefNext = computeNextRunAt(parseCron(briefCron), Date.now());
-      addSchedule(storage.db, {
-        id: NEWS_BRIEF_SCHEDULE_ID,
-        name: 'Daily holdings news brief',
-        cron: briefCron,
-        agentId: createAgentId('default'),
-        prompt: NEWS_BRIEF_PROMPT,
-        deliveryChannel: 'web',
-        deliveryTarget: 'broadcast',
-        enabled: true,
-        nextRunAt: briefNext === null ? undefined : (briefNext as Timestamp),
-      });
-      logger.info('Seeded news-brief-daily schedule', {
-        event: 'schedule.seeded',
-        id: NEWS_BRIEF_SCHEDULE_ID,
-        cron: briefCron,
-      });
-    }
-  } else {
-    logger.info('KIS not configured — skipping brokerage tools');
-  }
-
-  // Phase 29 D9: MCP 도구 group=mcp 정책 — require-approval (사용자 결정 5).
-  toolRegistry.addPolicyRule({
-    pattern: 'mcp:*',
-    verdict: 'require-approval',
-    reason: 'MCP external tools require explicit approval',
-    priority: 100,
-  });
-
-  // Phase 29 D9: plugin loader 호출. plugins 디렉터리 미존재 시 no-op (loader 가 silently 처리).
-  const pluginsDir = process.env.FINCLAW_PLUGINS_DIR ?? join(homedir(), '.finclaw', 'plugins');
-  const pluginResult = await loadPlugins([pluginsDir], [pluginsDir], toolRegistry);
-  logger.info('Plugins loaded', {
-    event: 'plugins.loaded',
-    loaded: pluginResult.loaded,
-    failed: pluginResult.failed,
-    mcpServers: pluginResult.mcpHandles.length,
-  });
-  lifecycle.register(async () => {
-    for (const h of pluginResult.mcpHandles) {
-      await h.shutdown();
-    }
-  });
-
-  // Phase 32 P1-1: CLI 모드는 tool_use 를 bypass — 등록된 도구가 비활성임을 부팅 시 경고로 가시화.
-  // (CLI adapter 의 streamCompletion 은 text-only 라 skills-finance/general 도구가 호출되지 않음.)
-  if (finclawConfig.provider === 'claude-cli') {
-    const toolCount = toolRegistry.list().length;
-    if (toolCount > 0) {
-      logger.warn('provider.cli_tools_disabled', {
-        event: 'provider.cli_tools_disabled',
-        toolCount,
-        note: 'CLI mode bypasses tool_use; registered tools are inactive. Use provider=anthropic-sdk for live data.',
-      });
-    }
-  }
 
   // Phase 30 A6: OTel tracer — span 을 SQLite spans 테이블에 SQL exporter 로 기록.
   // Phase 30 hotfix P0-2: Runner 에 tracer adapter 주입 — turn / provider.stream / tool.execute span 활성화.
