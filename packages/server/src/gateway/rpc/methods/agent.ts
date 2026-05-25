@@ -3,8 +3,11 @@ import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import type { AliasIndex, ModelCatalog, ProfileHealthMonitor, ToolRegistry } from '@finclaw/agent';
 import {
+  buildDispatcher,
   calculateEstimatedCost,
+  collectToolCalls,
   DEFAULT_FALLBACK_TRIGGERS,
+  extractAssistantText,
   ModelFloorExhaustedError,
   resolveModel,
   runWithModelFallback,
@@ -15,13 +18,8 @@ import type { AgentRunParams, ConversationMessage, ModelRef, SessionKey } from '
 import { createAgentId, createSessionKey } from '@finclaw/types';
 import { z } from 'zod/v4';
 import type { AttachMemoryService } from '../../../auto-reply/agent-memory-hook.js';
-import {
-  collectToolCalls,
-  extractAssistantText,
-  type RunnerFactory,
-} from '../../../auto-reply/execution-adapter.js';
+import { type RunnerFactory } from '../../../auto-reply/execution-adapter.js';
 import type { RouterHelper } from '../../../auto-reply/router-helper.js';
-import { buildDispatcher } from '../../../auto-reply/tool-dispatcher-adapter.js';
 import type { FinclawTracer } from '../../../observability/tracer.js';
 import { loadPrompt, requireFrontmatterKeys } from '../../../prompts/loader.js';
 import type { MethodRegistry } from '../index.js';

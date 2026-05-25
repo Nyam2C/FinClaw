@@ -24,6 +24,8 @@ export {
 // 유틸
 export { formatDuration } from './format-duration.js';
 export { warnOnce, resetWarnings } from './warnings.js';
+// cron (Phase 39: server/automation/cron 에서 이동 — 순수 파서)
+export { parseCron, matches, nextRunAt, CronParseError, type CronExpression } from './cron.js';
 
 // 컨텍스트
 export { runWithContext, getContext, getRequestId, type RequestContext } from './context.js';

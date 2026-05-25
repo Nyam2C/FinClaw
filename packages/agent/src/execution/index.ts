@@ -18,3 +18,9 @@ export { TokenCounter } from './tokens.js';
 
 export { Runner } from './runner.js';
 export type { RunnerOptions, RunnerTracerAdapter } from './runner.js';
+
+export { buildDispatcher } from './tool-dispatcher.js';
+export type { BuiltDispatcher, DispatcherContextBase } from './tool-dispatcher.js';
+
+export { collectToolCalls, extractAssistantText } from './message-utils.js';
+export type { ToolCallRecord } from './message-utils.js';

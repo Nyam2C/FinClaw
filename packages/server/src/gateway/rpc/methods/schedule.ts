@@ -2,6 +2,7 @@
 // Phase 28 C: schedule.* RPC.
 
 import type { DatabaseSync } from 'node:sqlite';
+import { CronParseError, nextRunAt as computeNextRunAt, parseCron } from '@finclaw/infra';
 import {
   addSchedule,
   deleteSchedule,
@@ -12,11 +13,6 @@ import {
 import type { AgentId, Schedule, Timestamp } from '@finclaw/types';
 import { createAgentId } from '@finclaw/types';
 import { z } from 'zod/v4';
-import {
-  CronParseError,
-  nextRunAt as computeNextRunAt,
-  parseCron,
-} from '../../../automation/cron.js';
 import type { SchedulerService } from '../../../automation/scheduler.js';
 import type { MethodRegistry } from '../index.js';
 import type { RpcMethodHandler } from '../types.js';
