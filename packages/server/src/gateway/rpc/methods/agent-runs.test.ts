@@ -315,6 +315,13 @@ function makeAgentRunResult(output: string) {
 function makeAgentDeps(overrides: Partial<AgentRpcDeps>): AgentRpcDeps {
   return {
     toolRegistry: { list: () => [] } as never,
+    agents: [
+      {
+        id: 'finclaw-partner',
+        name: 'FinClaw Personal Finance Partner',
+        description: '개인 금융 파트너. 시세 조회·뉴스·포트폴리오·알림 관리.',
+      },
+    ],
     runnerFactory: vi.fn(),
     agentRunLane: new ConcurrencyLane({
       maxConcurrent: 1,

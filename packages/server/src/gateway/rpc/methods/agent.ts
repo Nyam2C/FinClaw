@@ -21,13 +21,14 @@ import type { AttachMemoryService } from '../../../auto-reply/agent-memory-hook.
 import { type RunnerFactory } from '../../../auto-reply/execution-adapter.js';
 import type { RouterHelper } from '../../../auto-reply/router-helper.js';
 import type { FinclawTracer } from '../../../observability/tracer.js';
-import { loadPrompt, requireFrontmatterKeys } from '../../../prompts/loader.js';
 import type { MethodRegistry } from '../index.js';
 import type { RpcMethodHandler } from '../types.js';
 
 /** agent.* RPC 메서드 의존성 (main.ts 에서 주입) */
 export interface AgentRpcDeps {
   readonly toolRegistry: ToolRegistry;
+  /** Phase 39: main.ts 가 finclaw.identity.md frontmatter 로부터 로드해 주입 (이전 loadAgents() 대체). */
+  readonly agents: readonly AgentInfo[];
   readonly runnerFactory: RunnerFactory;
   /** agent.run 전용 큐잉 lane (main.ts 에서 maxConcurrent:1 로 주입) */
   readonly agentRunLane: ConcurrencyLane;
@@ -62,38 +63,10 @@ export interface AgentRpcDeps {
   readonly tracer?: FinclawTracer;
 }
 
-interface AgentInfo {
+export interface AgentInfo {
   readonly id: string;
   readonly name: string;
   readonly description: string;
-}
-
-let cachedAgents: readonly AgentInfo[] | null = null;
-
-async function loadAgents(): Promise<readonly AgentInfo[]> {
-  if (cachedAgents) {
-    return cachedAgents;
-  }
-  const doc = await loadPrompt('finclaw.identity.md', 'agent.ts:loadAgents');
-  requireFrontmatterKeys(
-    doc,
-    'finclaw.identity.md',
-    ['id', 'name', 'description'],
-    'agent.ts:loadAgents',
-  );
-  cachedAgents = [
-    {
-      id: doc.frontmatter.id,
-      name: doc.frontmatter.name,
-      description: doc.frontmatter.description,
-    },
-  ];
-  return cachedAgents;
-}
-
-/** 테스트용: AGENTS 캐시 초기화 */
-export function resetAgentsCache(): void {
-  cachedAgents = null;
 }
 
 /**
@@ -169,9 +142,8 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
     schema: z.object({}),
     async execute() {
       const toolCount = deps.toolRegistry.list().length;
-      const agents = await loadAgents();
       return {
-        agents: agents.map((a) => ({
+        agents: deps.agents.map((a) => ({
           id: a.id,
           name: a.name,
           description: a.description,
@@ -188,8 +160,7 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
     authLevel: 'token',
     schema: z.object({ agentId: z.string() }),
     async execute(params) {
-      const agents = await loadAgents();
-      const info = agents.find((a) => a.id === params.agentId);
+      const info = deps.agents.find((a) => a.id === params.agentId);
       if (!info) {
         throw new Error(`unknown_agent: ${params.agentId}`);
       }
@@ -230,8 +201,7 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
       role: z.enum(['fetch', 'chat', 'analysis', 'summarize']).default('analysis'),
     }),
     async execute(params) {
-      const agents = await loadAgents();
-      if (!agents.find((a) => a.id === params.agentId)) {
+      if (!deps.agents.find((a) => a.id === params.agentId)) {
         throw new Error(`unknown_agent: ${params.agentId}`);
       }
       if (params.stream) {
