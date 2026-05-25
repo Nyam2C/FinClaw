@@ -29,8 +29,7 @@ describe('FinClawConfigSchema', () => {
       },
       plugins: { enabled: ['finance'] },
       finance: {
-        dataProviders: [{ name: 'yahoo' }],
-        alertDefaults: { cooldownMs: 300000, maxActiveAlerts: 100 },
+        portfolios: { main: { name: 'Main', holdings: [{ symbol: 'AAPL', quantity: 10 }] } },
       },
       meta: { lastTouchedVersion: '0.1.0' },
     };
@@ -55,24 +54,6 @@ describe('FinClawConfigSchema', () => {
       session: { resetPolicy: 'weekly' },
     });
     expect(result.success).toBe(false);
-  });
-
-  it('잘못된 URL을 거부한다', () => {
-    const result = FinClawConfigSchema.safeParse({
-      finance: {
-        dataProviders: [{ name: 'test', baseUrl: 'not-a-url' }],
-      },
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('유효한 URL을 허용한다', () => {
-    const result = FinClawConfigSchema.safeParse({
-      finance: {
-        dataProviders: [{ name: 'yahoo', baseUrl: 'https://api.yahoo.com' }],
-      },
-    });
-    expect(result.success).toBe(true);
   });
 
   it('routing 섹션을 허용한다', () => {

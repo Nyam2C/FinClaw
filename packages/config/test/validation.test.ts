@@ -32,7 +32,7 @@ describe('validateConfig', () => {
 
   it('배열 내부 에러를 수집한다', () => {
     const result = validateConfig({
-      finance: { dataProviders: [{ name: 123 }] },
+      finance: { portfolios: { main: { name: 'M', holdings: [{ symbol: 123 }] } } },
     });
     expect(result.valid).toBe(false);
     const arrayIssue = result.issues.find((i) => i.path.includes('[0]'));

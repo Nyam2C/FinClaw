@@ -46,11 +46,11 @@ describe('applyDefaults', () => {
   it('기본값에 없는 섹션은 그대로 통과한다', () => {
     const user: FinClawConfig = {
       finance: {
-        dataProviders: [{ name: 'test', apiKey: 'key' }],
+        portfolios: { main: { name: 'Main', holdings: [] } },
       },
     };
     const result = applyDefaults(user);
-    expect(result.finance?.dataProviders).toHaveLength(1);
+    expect(result.finance?.portfolios?.main).toBeDefined();
   });
 
   it('routing 기본값을 채운다', () => {

@@ -187,8 +187,8 @@ export class Runner {
                 HARD_MAX_TOOL_RESULT_CHARS,
               );
             }
-            // 고정 400K (단일 모델 Claude 200K 가정 — 윈도우의 ~50%). multi-provider 도입 시
-            // OpenClaw calculateMaxToolResultChars 처럼 model.contextWindow 기반 동적 산정 필요.
+            // 고정 400K (Claude 200K 컨텍스트의 ~50%). FinClaw 는 Claude 전용(anthropic-sdk / claude-cli)이라
+            // 단일 모델 가정으로 충분 — 모델별 동적 산정 불요.
             return truncateToolResult(block, HARD_MAX_TOOL_RESULT_CHARS);
           });
           messages.push({ role: 'tool', content: guardedBlocks });
