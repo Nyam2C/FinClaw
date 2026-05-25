@@ -160,28 +160,7 @@ export interface PluginsConfig {
 }
 
 export interface FinanceConfig {
-  dataProviders?: DataProviderConfig[];
-  newsFeeds?: NewsFeedConfig[];
-  alertDefaults?: AlertDefaultsConfig;
   portfolios?: Record<string, PortfolioConfig>;
-}
-
-export interface DataProviderConfig {
-  name: string;
-  apiKey?: string;
-  baseUrl?: string;
-  rateLimit?: number;
-}
-
-export interface NewsFeedConfig {
-  name: string;
-  url: string;
-  refreshIntervalMs?: number;
-}
-
-export interface AlertDefaultsConfig {
-  cooldownMs?: number;
-  maxActiveAlerts?: number;
 }
 
 export interface PortfolioConfig {

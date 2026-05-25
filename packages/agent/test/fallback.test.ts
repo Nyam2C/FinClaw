@@ -279,9 +279,10 @@ describe('runWithModelFallback — cross-provider gate (Phase 29 A)', () => {
     resetBreakers();
   });
 
-  // anthropic 1개 + openai 1개 + anthropic 1개 chain.
+  // anthropic 1개 + claude-cli 1개 + anthropic 1개 chain. (Phase 38: ProviderId 가 Claude 전용
+  // 'anthropic' | 'claude-cli' 로 좁혀졌으므로 cross-provider 게이트를 anthropic vs claude-cli 로 검증 — 둘 다 유효 ProviderId.)
   const mixedResolve = (ref: { raw: string }): ResolvedModel => {
-    const provider = ref.raw.startsWith('gpt') ? 'openai' : 'anthropic';
+    const provider = ref.raw.startsWith('cli') ? 'claude-cli' : 'anthropic';
     return {
       entry: { id: ref.raw, provider } as unknown as ResolvedModel['entry'],
       provider,
@@ -303,7 +304,7 @@ describe('runWithModelFallback — cross-provider gate (Phase 29 A)', () => {
         {
           models: [
             { raw: 'claude-sonnet-4-6' },
-            { raw: 'gpt-4o' },
+            { raw: 'cli-opus-4-7' },
             { raw: 'claude-haiku-4-5-20251001' },
           ],
           maxRetriesPerModel: 0,
@@ -314,7 +315,7 @@ describe('runWithModelFallback — cross-provider gate (Phase 29 A)', () => {
         mixedResolve,
       ),
     ).rejects.toThrow();
-    expect(called).not.toContain('gpt-4o');
+    expect(called).not.toContain('cli-opus-4-7');
     expect(called).toContain('claude-sonnet-4-6');
     expect(called).toContain('claude-haiku-4-5-20251001');
   });
@@ -330,7 +331,7 @@ describe('runWithModelFallback — cross-provider gate (Phase 29 A)', () => {
     await expect(
       runWithModelFallback(
         {
-          models: [{ raw: 'claude-sonnet-4-6' }, { raw: 'gpt-4o' }],
+          models: [{ raw: 'claude-sonnet-4-6' }, { raw: 'cli-opus-4-7' }],
           maxRetriesPerModel: 0,
           retryBaseDelayMs: 1,
           fallbackOn: ['rate-limit'],
@@ -340,6 +341,6 @@ describe('runWithModelFallback — cross-provider gate (Phase 29 A)', () => {
         mixedResolve,
       ),
     ).rejects.toThrow();
-    expect(called).toContain('gpt-4o');
+    expect(called).toContain('cli-opus-4-7');
   });
 });

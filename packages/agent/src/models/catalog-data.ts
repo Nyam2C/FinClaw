@@ -2,7 +2,7 @@
 import type { ModelEntry } from './catalog.js';
 
 /**
- * 내장 모델 카탈로그 데이터 (6종)
+ * 내장 모델 카탈로그 데이터 (3종 — Claude 전용, Phase 38)
  *
  * TODO(M6): config.models.definitions에서 읽어 registerModel()로 등록하는 초기화 로직 추가.
  * 이 하드코딩 데이터는 폴백 기본값으로만 유지할 것.
@@ -64,45 +64,6 @@ export const BUILT_IN_MODELS: readonly ModelEntry[] = [
     aliases: ['haiku', 'haiku-4.5', 'claude-haiku'],
     deprecated: false,
     releaseDate: '2025-10-01',
-  },
-  // Phase 29 A: OpenAI 모델 (gpt-4o + gpt-4o-mini). cacheReadPerMillion 미설정 (보수적).
-  {
-    id: 'gpt-4o',
-    provider: 'openai',
-    displayName: 'GPT-4o',
-    contextWindow: 128_000,
-    maxOutputTokens: 16_384,
-    capabilities: {
-      vision: true,
-      functionCalling: true,
-      streaming: true,
-      jsonMode: true,
-      extendedThinking: false,
-      numericalReasoningTier: 'high',
-    },
-    pricing: { inputPerMillion: 2.5, outputPerMillion: 10 },
-    aliases: ['gpt-4o', 'openai-4o'],
-    deprecated: false,
-    releaseDate: '2024-05-13',
-  },
-  {
-    id: 'gpt-4o-mini',
-    provider: 'openai',
-    displayName: 'GPT-4o mini',
-    contextWindow: 128_000,
-    maxOutputTokens: 16_384,
-    capabilities: {
-      vision: true,
-      functionCalling: true,
-      streaming: true,
-      jsonMode: true,
-      extendedThinking: false,
-      numericalReasoningTier: 'medium',
-    },
-    pricing: { inputPerMillion: 0.15, outputPerMillion: 0.6 },
-    aliases: ['gpt-4o-mini', 'openai-4o-mini'],
-    deprecated: false,
-    releaseDate: '2024-07-18',
   },
 ];
 

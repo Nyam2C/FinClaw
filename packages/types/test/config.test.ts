@@ -17,7 +17,7 @@ describe('FinClawConfig', () => {
     const config: FinClawConfig = {
       gateway: { port: 18789, host: 'localhost' },
       logging: { level: 'info' },
-      finance: { dataProviders: [] },
+      finance: { portfolios: {} },
     };
     expectTypeOf(config).toMatchTypeOf<FinClawConfig>();
   });

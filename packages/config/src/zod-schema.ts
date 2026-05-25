@@ -83,20 +83,6 @@ const DiscordChannelSchema = z.strictObject({
   approvalTimeoutMs: z.number().int().min(10_000).optional(),
 });
 
-/** 데이터 프로바이더 스키마 */
-const DataProviderSchema = z.strictObject({
-  name: z.string(),
-  apiKey: z.string().optional(),
-  baseUrl: z.url().optional(),
-  rateLimit: z.number().int().optional(),
-});
-
-/** 알림 기본값 스키마 */
-const AlertDefaultsSchema = z.strictObject({
-  cooldownMs: z.number().int(),
-  maxActiveAlerts: z.number().int(),
-});
-
 /** 보유 종목 스키마 */
 const HoldingSchema = z.strictObject({
   symbol: z.string(),
@@ -148,17 +134,6 @@ const RoutingConfigSchema = z.strictObject({
 
 /** 금융 설정 스키마 */
 const FinanceSchema = z.strictObject({
-  dataProviders: z.array(DataProviderSchema).optional(),
-  newsFeeds: z
-    .array(
-      z.strictObject({
-        name: z.string(),
-        url: z.url(),
-        refreshIntervalMs: z.number().int().optional(),
-      }),
-    )
-    .optional(),
-  alertDefaults: AlertDefaultsSchema.optional(),
   portfolios: z.record(z.string(), PortfolioSchema).optional(),
 });
 
