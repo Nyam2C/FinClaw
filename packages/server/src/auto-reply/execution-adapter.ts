@@ -2,11 +2,12 @@ import { randomUUID } from 'node:crypto';
 // packages/server/src/auto-reply/execution-adapter.ts
 import type {
   AliasIndex,
+  ChatExecutionPort,
   ExecutionToolDispatcher,
   ModelCatalog,
   ModelPricing,
   ProfileHealthMonitor,
-  Runner,
+  RunnerFactory,
   StreamEventListener,
   ToolRegistry,
 } from '@finclaw/agent';
@@ -147,13 +148,8 @@ export class MockExecutionAdapter implements ExecutionAdapter {
   }
 }
 
-/**
- * Runner 생성 팩토리 — per-request dispatcher를 받아 Runner를 반환.
- *
- * Runner는 생성 시점에 `toolExecutor`를 고정하므로 요청마다 새 Runner가 필요하다.
- * provider와 laneManager는 공유 자원이므로 팩토리 클로저에서 재사용한다.
- */
-export type RunnerFactory = (dispatcher: ExecutionToolDispatcher) => Runner;
+// Phase 39: RunnerFactory 는 @finclaw/agent 로 이동 (agent-native). 기존 server 소비자 호환 re-export.
+export type { RunnerFactory } from '@finclaw/agent';
 
 export interface RunnerExecutionAdapterDeps {
   readonly runnerFactory: RunnerFactory;
@@ -189,7 +185,7 @@ export interface RunnerExecutionAdapterDeps {
  * - Milestone A: storage/toolRegistry 없이 단발 호출
  * - Milestone B: storage로 대화 이력 load/save + toolRegistry로 per-request dispatcher 구성
  */
-export class RunnerExecutionAdapter implements ExecutionAdapter {
+export class RunnerExecutionAdapter implements ExecutionAdapter, ChatExecutionPort {
   private readonly defaultAgentId: AgentId;
   private readonly historyLimit: number;
 

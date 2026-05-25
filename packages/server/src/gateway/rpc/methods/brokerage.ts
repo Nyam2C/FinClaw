@@ -1,7 +1,7 @@
 // packages/server/src/gateway/rpc/methods/brokerage.ts
 import type { DatabaseSync } from 'node:sqlite';
+import type { BrokerageSyncPort } from '@finclaw/types';
 import { z } from 'zod/v4';
-import type { BrokerageSyncService } from '../../../services/brokerage-sync-service.js';
 import type { MethodRegistry } from '../index.js';
 import type { RpcMethodHandler } from '../types.js';
 
@@ -13,7 +13,7 @@ import type { RpcMethodHandler } from '../types.js';
  */
 export interface BrokerageRpcDeps {
   readonly db?: DatabaseSync;
-  readonly syncService?: BrokerageSyncService;
+  readonly syncService?: BrokerageSyncPort;
   /** health 표시용 KIS 환경(prod/vts). */
   readonly env?: 'prod' | 'vts';
 }

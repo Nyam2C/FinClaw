@@ -1,8 +1,8 @@
+import type { ChatExecutionPort } from '@finclaw/agent';
 import { resetEventBus } from '@finclaw/infra';
 import type { ConversationRecord, MemoryEntry, ModelRef, SearchResult } from '@finclaw/types';
 // packages/server/src/gateway/rpc/methods/chat.test.ts
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { RunnerExecutionAdapter } from '../../../auto-reply/execution-adapter.js';
 import { GatewayBroadcaster } from '../../broadcaster.js';
 import type { GatewayServerContext } from '../../context.js';
 import { ChatRegistry } from '../../registry.js';
@@ -32,7 +32,7 @@ function makeStorage() {
   };
 }
 
-function makeStubAdapter(): RunnerExecutionAdapter {
+function makeStubAdapter(): ChatExecutionPort {
   return {
     execute: async () => ({ content: '', usage: { inputTokens: 0, outputTokens: 0 } }),
     executeForTui: async () => ({
@@ -40,7 +40,7 @@ function makeStubAdapter(): RunnerExecutionAdapter {
       content: '',
       usage: { inputTokens: 0, outputTokens: 0 },
     }),
-  } as unknown as RunnerExecutionAdapter;
+  } as unknown as ChatExecutionPort;
 }
 
 function makeServerCtx(): GatewayServerContext {

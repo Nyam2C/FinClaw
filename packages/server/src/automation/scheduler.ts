@@ -22,7 +22,13 @@ import {
   markScheduleRun,
   updateSchedule,
 } from '@finclaw/storage';
-import type { AgentRunParams, ConversationMessage, ModelRef, Schedule } from '@finclaw/types';
+import type {
+  AgentRunParams,
+  ConversationMessage,
+  ModelRef,
+  Schedule,
+  SchedulerPort,
+} from '@finclaw/types';
 import { createAgentId, createSessionKey } from '@finclaw/types';
 import type { RunnerFactory } from '../auto-reply/execution-adapter.js';
 import type { FinclawTracer } from '../observability/tracer.js';
@@ -87,7 +93,7 @@ export function errorBackoffMs(consecutiveErrors: number): number {
   return ERROR_BACKOFF_SCHEDULE_MS[Math.max(0, idx)];
 }
 
-export class SchedulerService {
+export class SchedulerService implements SchedulerPort {
   private timer: ReturnType<typeof setInterval> | null = null;
   private firstTickTimer: ReturnType<typeof setTimeout> | null = null;
   private active = new Set<string>();

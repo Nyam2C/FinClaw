@@ -1,9 +1,8 @@
 // packages/server/src/gateway/rpc/methods/agent.test.ts
 import { ConcurrencyLane, resetEventBus } from '@finclaw/infra';
 import { getAgentRun, openDatabase, type Database } from '@finclaw/storage';
-import type { RpcMethod } from '@finclaw/types';
+import type { AttachMemoryPort, RpcMethod } from '@finclaw/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AttachMemoryService } from '../../../auto-reply/agent-memory-hook.js';
 import type { GatewayServerContext } from '../../context.js';
 import { RpcErrors } from '../errors.js';
 import { dispatchRpc, MethodRegistry } from '../index.js';
@@ -301,7 +300,7 @@ describe('agent.* RPC methods', () => {
           ),
         };
         const attach = vi.fn().mockResolvedValue({ memoryId: 'mem-123' });
-        const attachMemoryService: AttachMemoryService = { attach };
+        const attachMemoryService: AttachMemoryPort = { attach };
         const runnerFactory = vi.fn(() => runner as never);
         const deps = makeDeps({
           runnerFactory,
@@ -334,7 +333,7 @@ describe('agent.* RPC methods', () => {
       it('persists agent_runs row with error on runner failure (no attach call)', async () => {
         const runner = { execute: vi.fn().mockRejectedValue(new Error('boom')) };
         const attach = vi.fn().mockResolvedValue({ memoryId: 'mem-x' });
-        const attachMemoryService: AttachMemoryService = { attach };
+        const attachMemoryService: AttachMemoryPort = { attach };
         const runnerFactory = vi.fn(() => runner as never);
         const deps = makeDeps({
           runnerFactory,
@@ -371,7 +370,7 @@ describe('agent.* RPC methods', () => {
           ),
         };
         const attach = vi.fn().mockRejectedValue(new Error('attach exploded'));
-        const attachMemoryService: AttachMemoryService = { attach };
+        const attachMemoryService: AttachMemoryPort = { attach };
         const runnerFactory = vi.fn(() => runner as never);
         const deps = makeDeps({
           runnerFactory,
@@ -411,7 +410,7 @@ describe('agent.* RPC methods', () => {
           ),
         };
         const attach = vi.fn();
-        const attachMemoryService: AttachMemoryService = { attach };
+        const attachMemoryService: AttachMemoryPort = { attach };
         const runnerFactory = vi.fn(() => runner as never);
         // db 미주입 — attach 도 호출 안 됨
         const deps = makeDeps({ runnerFactory, attachMemoryService });

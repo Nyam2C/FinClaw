@@ -1,10 +1,10 @@
 // packages/server/src/gateway/rpc/methods/chat.ts
 import { ModelFloorExhaustedError } from '@finclaw/agent';
+import type { ChatExecutionPort } from '@finclaw/agent';
 import type { FinClawLogger } from '@finclaw/infra';
 import type { AgentId, ModelRef, ModelTier, SessionKey, StorageAdapter } from '@finclaw/types';
 import { createAgentId, createSessionKey } from '@finclaw/types';
 import { z } from 'zod/v4';
-import type { RunnerExecutionAdapter } from '../../../auto-reply/execution-adapter.js';
 import type { GatewayBroadcaster } from '../../broadcaster.js';
 import type { ChatRegistry } from '../../registry.js';
 import type { MethodRegistry } from '../index.js';
@@ -22,7 +22,7 @@ export interface ChatMethodsDeps {
   readonly broadcaster: GatewayBroadcaster;
   readonly storage: StorageAdapter;
   readonly defaultModel: ModelRef;
-  readonly adapter: RunnerExecutionAdapter;
+  readonly adapter: ChatExecutionPort;
   /** Phase 24 D: ModelFloorExhaustedError 캐치 시 구조화 로그용 (선택). */
   readonly logger?: FinClawLogger;
 }

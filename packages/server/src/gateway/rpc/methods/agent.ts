@@ -1,7 +1,14 @@
 // packages/server/src/gateway/rpc/methods/agent.ts
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
-import type { AliasIndex, ModelCatalog, ProfileHealthMonitor, ToolRegistry } from '@finclaw/agent';
+import type {
+  AliasIndex,
+  ModelCatalog,
+  ProfileHealthMonitor,
+  RouterHelper,
+  RunnerFactory,
+  ToolRegistry,
+} from '@finclaw/agent';
 import {
   buildDispatcher,
   calculateEstimatedCost,
@@ -14,13 +21,16 @@ import {
 } from '@finclaw/agent';
 import type { ConcurrencyLane, FinClawLogger } from '@finclaw/infra';
 import { addAgentRun, type AddAgentRunInput } from '@finclaw/storage';
-import type { AgentRunParams, ConversationMessage, ModelRef, SessionKey } from '@finclaw/types';
+import type {
+  AgentRunParams,
+  AttachMemoryPort,
+  ConversationMessage,
+  ModelRef,
+  SessionKey,
+  TracerPort,
+} from '@finclaw/types';
 import { createAgentId, createSessionKey } from '@finclaw/types';
 import { z } from 'zod/v4';
-import type { AttachMemoryService } from '../../../auto-reply/agent-memory-hook.js';
-import { type RunnerFactory } from '../../../auto-reply/execution-adapter.js';
-import type { RouterHelper } from '../../../auto-reply/router-helper.js';
-import type { FinclawTracer } from '../../../observability/tracer.js';
 import type { MethodRegistry } from '../index.js';
 import type { RpcMethodHandler } from '../types.js';
 
@@ -50,7 +60,7 @@ export interface AgentRpcDeps {
    * Phase 26 D: agent.run 종료 후 output 을 memory 로 저장하는 훅.
    * 미주입 시 저장 단계 자체 생략. 호출 위치는 rpc-engineer 가 결정.
    */
-  readonly attachMemoryService?: AttachMemoryService;
+  readonly attachMemoryService?: AttachMemoryPort;
   /**
    * Phase 26 D: agent_runs 영속화용 sqlite 핸들.
    * 미주입 시 agent_runs 저장 + attachMemoryService 호출 모두 skip (best-effort).
@@ -60,7 +70,7 @@ export interface AgentRpcDeps {
    * Phase 30 hotfix P0-1: agent.run RPC 진입을 span 으로 감싸 active trace context
    * 를 강제. 미주입 시 traceId 부착 skip (기존 동작).
    */
-  readonly tracer?: FinclawTracer;
+  readonly tracer?: TracerPort;
 }
 
 export interface AgentInfo {

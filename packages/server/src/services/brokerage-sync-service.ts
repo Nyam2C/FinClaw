@@ -3,6 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { FinClawLogger } from '@finclaw/infra';
 import { type KisClient, fetchNormalizedHoldings } from '@finclaw/skills-finance';
 import { replaceAllHoldings } from '@finclaw/storage';
+import type { BrokerageSyncPort } from '@finclaw/types';
 
 export interface BrokerageSyncResult {
   readonly syncedAt: number;
@@ -19,7 +20,7 @@ export interface BrokerageSyncDeps {
   readonly resolvePortfolioId: () => string;
 }
 
-export class BrokerageSyncService {
+export class BrokerageSyncService implements BrokerageSyncPort {
   constructor(private readonly deps: BrokerageSyncDeps) {}
 
   /** read-only KIS 호출 + holdings(source='kis') 전면 교체. */

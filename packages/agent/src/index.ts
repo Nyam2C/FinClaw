@@ -198,9 +198,12 @@ export type {
   ExecutionToolResult,
   RunnerOptions,
   RunnerTracerAdapter,
+  RunnerFactory,
   BuiltDispatcher,
   DispatcherContextBase,
   ToolCallRecord,
+  ChatExecutionPort,
+  TuiExecutionResultLike,
 } from './execution/index.js';
 
 // ── Phase 33: News brief cron prompt ──

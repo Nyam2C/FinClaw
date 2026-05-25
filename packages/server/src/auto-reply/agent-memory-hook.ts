@@ -4,7 +4,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { FinClawLogger } from '@finclaw/infra';
 import type { EmbeddingProvider } from '@finclaw/storage';
 import { addMemory, addMemoryWithEmbedding, linkMemoryToAgentRun } from '@finclaw/storage';
-import type { MemoryEntry, SessionKey, Timestamp } from '@finclaw/types';
+import type { AttachMemoryInput, AttachMemoryPort, MemoryEntry, Timestamp } from '@finclaw/types';
 import { createTimestamp } from '@finclaw/types';
 
 /**
@@ -16,16 +16,8 @@ export const MIN_MEMORY_OUTPUT_LENGTH = 100;
 /** prompt 일부를 metadata 에 보존할 때 잘라낼 문자수. */
 const PROMPT_SNIPPET_MAX = 200;
 
-/** agent.run 종료 후 hook 으로 넘어오는 입력. */
-export interface AgentRunMemoryInput {
-  readonly agentRunId: string;
-  readonly agentId: string;
-  readonly prompt: string;
-  readonly output: string;
-  readonly error?: string;
-  readonly sessionKey: SessionKey;
-  readonly createdAt: number;
-}
+/** agent.run 종료 후 hook 으로 넘어오는 입력. Phase 39: @finclaw/types AttachMemoryInput 로 통일. */
+export type AgentRunMemoryInput = AttachMemoryInput;
 
 /** skip 사유. */
 export type AttachMemorySkipReason = 'too-short' | 'has-error' | 'embedding-failed';
@@ -56,7 +48,7 @@ export interface AttachMemoryServiceDeps {
  *
  * raw output 그대로 memory.content 에 저장 (요약·압축 없음, 단순함 우선).
  */
-export class DefaultAttachMemoryService implements AttachMemoryService {
+export class DefaultAttachMemoryService implements AttachMemoryService, AttachMemoryPort {
   constructor(private readonly deps: AttachMemoryServiceDeps) {}
 
   async attach(input: AgentRunMemoryInput): Promise<AttachMemoryResult> {
