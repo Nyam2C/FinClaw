@@ -94,7 +94,7 @@ describe('Health Check', () => {
     it('TTL 경과 후 재확인', async () => {
       vi.useFakeTimers();
       const checkFn = vi.fn().mockResolvedValue(undefined);
-      const checker = createProviderHealthChecker('openai', checkFn);
+      const checker = createProviderHealthChecker('anthropic', checkFn);
 
       await checker();
       vi.advanceTimersByTime(60_001);

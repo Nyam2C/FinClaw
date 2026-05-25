@@ -1,7 +1,7 @@
 // packages/agent/src/models/catalog.ts
 
 /** 모델 제공자 식별자 */
-export type ProviderId = 'anthropic' | 'openai' | 'claude-cli';
+export type ProviderId = 'anthropic' | 'claude-cli';
 
 /** 모델이 지원하는 기능 */
 export interface ModelCapabilities {
