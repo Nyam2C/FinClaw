@@ -30,10 +30,32 @@ describe('CliProviderAdapter', () => {
       { type: 'text_delta', text: '응답' },
       {
         type: 'usage',
-        usage: { inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        usage: {
+          inputTokens: 10,
+          outputTokens: 5,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          estimatedCostUsd: 0,
+        },
       },
       { type: 'done' },
     ]);
+  });
+
+  it('surfaces CLI total_cost_usd as estimatedCostUsd in the usage chunk', async () => {
+    vi.spyOn(runnerMod, 'runCliAgent').mockResolvedValue({
+      text: 'x',
+      usage: { input: 4, output: 270, costUsd: 0.0789 },
+      durationMs: 1,
+    });
+    const a = new CliProviderAdapter();
+    let cost: number | undefined;
+    for await (const c of a.streamCompletion(params())) {
+      if (c.type === 'usage') {
+        cost = c.usage.estimatedCostUsd;
+      }
+    }
+    expect(cost).toBe(0.0789);
   });
 
   it('serializes messages into prompt + passes model', async () => {

@@ -19,6 +19,17 @@ describe('parseCliJson (claude format)', () => {
     expect(r?.usage?.cacheRead).toBe(100);
   });
 
+  it('captures total_cost_usd (top-level) as usage.costUsd', () => {
+    const stdout = JSON.stringify({
+      type: 'result',
+      result: 'ok',
+      total_cost_usd: 0.0789,
+      usage: { input_tokens: 4, output_tokens: 270 },
+    });
+    const r = parseCliJson(stdout, DEFAULT_CLAUDE_BACKEND);
+    expect(r?.usage?.costUsd).toBe(0.0789);
+  });
+
   it('returns undefined for empty stdout', () => {
     expect(parseCliJson('', DEFAULT_CLAUDE_BACKEND)).toBeUndefined();
   });
