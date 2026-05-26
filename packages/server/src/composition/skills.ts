@@ -23,6 +23,7 @@ import {
   registerMarketTools,
   registerNewsTools,
   type AlertSkillHandle,
+  type BrokerageProvider,
   type MarketSkillHandle,
   type NewsSkillHandle,
 } from '@finclaw/skills-finance';
@@ -158,13 +159,8 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
     logger.info('market/news tools unavailable — skipping alerts');
   }
 
-  // Phase 33 B-4/B-6: 한국투자증권(KIS) read-only 잔고 동기화 tool.
-  // 키 미설정 시 등록 skip (server 정상 부팅). 자동화는 SDK 모드 전용(§B-0).
-  const kisAppKey = process.env.KIS_APP_KEY;
-  const kisAppSecret = process.env.KIS_APP_SECRET;
-  const kisAccountNo = process.env.KIS_ACCOUNT_NO;
-  const kisAccountProductCode = process.env.KIS_ACCOUNT_PRODUCT_CODE ?? '01';
-  const kisEnv = (process.env.KIS_ENV ?? 'prod') as 'prod' | 'vts';
+  // Phase 33 B-4/B-6 / Phase 41: 브로커리지 read-only 잔고 동기화. BROKERAGE_PROVIDER (기본 kis) 분기.
+  const brokerageProvider = (process.env.BROKERAGE_PROVIDER ?? 'kis') as BrokerageProvider;
 
   /** 1인 사용자 기본 portfolio 보장 — 없으면 'default' 생성. */
   const resolveDefaultPortfolioId = (): string => {
@@ -181,62 +177,77 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
   };
 
   let brokerageSyncService: BrokerageSyncService | undefined;
-  if (kisAppKey && kisAppSecret && kisAccountNo) {
-    const creds = {
-      env: kisEnv,
-      appKey: kisAppKey,
-      appSecret: kisAppSecret,
-      accountNo: kisAccountNo,
-      accountProductCode: kisAccountProductCode,
-    };
-    const kisClient = new KisClient(creds, new KisTokenManager(creds));
-    brokerageSyncService = new BrokerageSyncService({
-      db: storage.db,
-      client: kisClient,
-      logger,
-      resolvePortfolioId: resolveDefaultPortfolioId,
-    });
-    const syncService = brokerageSyncService;
-    registerBrokerageTools(toolRegistry, {
-      syncHoldings: async () => {
-        const r = await syncService.run();
-        return { holdingsCount: r.holdingsCount, marketsScanned: r.marketsScanned };
-      },
-    });
-    logger.info('Brokerage (KIS) tools registered', { env: kisEnv });
+  let kisEnv: 'prod' | 'vts' = 'prod';
 
-    // Phase 33 C: 매일 뉴스 브리프 cron 을 idempotent seed — 고정 id 라 onRunComplete 의
-    // news-memorizer 분기(§B-3 화이트리스트)가 발동한다. 단 brief 는 brokerage_sync_holdings 로
-    // 홀딩스를 갱신해야 의미가 있는데, Phase 40 read-only CLI 모드에선 그 도구가 MCP deny(사람만)라
-    // 자동 실행 불가 → CLI 모드는 seed skip. SDK 모드(키 보유)에선 ReAct 루프가 sync 를 돌려 seed.
-    const isCliMode = (finclawConfig.provider ?? 'claude-cli') === 'claude-cli';
-    if (isCliMode) {
-      logger.warn('news_brief.seed_skipped_cli', {
-        event: 'news_brief.seed_skipped_cli',
-        note: 'read-only CLI mode denies brokerage_sync_holdings (humans-only); the holdings brief needs it. Seed skipped — use SDK mode for the scheduled brief.',
-      });
-    } else if (getSchedule(storage.db, NEWS_BRIEF_SCHEDULE_ID) === null) {
-      const briefCron = '0 0 * * *'; // 매일 00:00 UTC = 09:00 KST
-      const briefNext = computeNextRunAt(parseCron(briefCron), Date.now());
-      addSchedule(storage.db, {
-        id: NEWS_BRIEF_SCHEDULE_ID,
-        name: 'Daily holdings news brief',
-        cron: briefCron,
-        agentId: createAgentId('default'),
-        prompt: NEWS_BRIEF_PROMPT,
-        deliveryChannel: 'web',
-        deliveryTarget: 'broadcast',
-        enabled: true,
-        nextRunAt: briefNext === null ? undefined : (briefNext as Timestamp),
-      });
-      logger.info('Seeded news-brief-daily schedule', {
-        event: 'schedule.seeded',
-        id: NEWS_BRIEF_SCHEDULE_ID,
-        cron: briefCron,
-      });
-    }
+  if (brokerageProvider === 'toss') {
+    // Phase 41: Toss Open API 미발급/스펙 미공개 — 인터페이스 경계만. 실 구현은 별 phase.
+    logger.warn('brokerage.provider_unimplemented', {
+      event: 'brokerage.provider_unimplemented',
+      provider: 'toss',
+      note: 'Toss brokerage client not implemented (awaiting Open API). Skipping brokerage tools.',
+    });
   } else {
-    logger.info('KIS not configured — skipping brokerage tools');
+    // provider === 'kis' (기본)
+    const kisAppKey = process.env.KIS_APP_KEY;
+    const kisAppSecret = process.env.KIS_APP_SECRET;
+    const kisAccountNo = process.env.KIS_ACCOUNT_NO;
+    const kisAccountProductCode = process.env.KIS_ACCOUNT_PRODUCT_CODE ?? '01';
+    kisEnv = (process.env.KIS_ENV ?? 'prod') as 'prod' | 'vts';
+
+    if (kisAppKey && kisAppSecret && kisAccountNo) {
+      const creds = {
+        env: kisEnv,
+        appKey: kisAppKey,
+        appSecret: kisAppSecret,
+        accountNo: kisAccountNo,
+        accountProductCode: kisAccountProductCode,
+      };
+      const kisClient = new KisClient(creds, new KisTokenManager(creds));
+      brokerageSyncService = new BrokerageSyncService({
+        db: storage.db,
+        client: kisClient,
+        logger,
+        resolvePortfolioId: resolveDefaultPortfolioId,
+      });
+      const syncService = brokerageSyncService;
+      registerBrokerageTools(toolRegistry, {
+        syncHoldings: async () => {
+          const r = await syncService.run();
+          return { holdingsCount: r.holdingsCount, marketsScanned: r.marketsScanned };
+        },
+      });
+      logger.info('Brokerage (KIS) tools registered', { env: kisEnv });
+
+      // Phase 33 C / Phase 40: news-brief seed — CLI 모드는 seed skip (brokerage_sync_holdings MCP deny).
+      const isCliMode = (finclawConfig.provider ?? 'claude-cli') === 'claude-cli';
+      if (isCliMode) {
+        logger.warn('news_brief.seed_skipped_cli', {
+          event: 'news_brief.seed_skipped_cli',
+          note: 'read-only CLI mode denies brokerage_sync_holdings (humans-only); the holdings brief needs it. Seed skipped — use SDK mode for the scheduled brief.',
+        });
+      } else if (getSchedule(storage.db, NEWS_BRIEF_SCHEDULE_ID) === null) {
+        const briefCron = '0 0 * * *';
+        const briefNext = computeNextRunAt(parseCron(briefCron), Date.now());
+        addSchedule(storage.db, {
+          id: NEWS_BRIEF_SCHEDULE_ID,
+          name: 'Daily holdings news brief',
+          cron: briefCron,
+          agentId: createAgentId('default'),
+          prompt: NEWS_BRIEF_PROMPT,
+          deliveryChannel: 'web',
+          deliveryTarget: 'broadcast',
+          enabled: true,
+          nextRunAt: briefNext === null ? undefined : (briefNext as Timestamp),
+        });
+        logger.info('Seeded news-brief-daily schedule', {
+          event: 'schedule.seeded',
+          id: NEWS_BRIEF_SCHEDULE_ID,
+          cron: briefCron,
+        });
+      }
+    } else {
+      logger.info('KIS not configured — skipping brokerage tools');
+    }
   }
 
   // Phase 29 D9: MCP 도구 group=mcp 정책 — require-approval (사용자 결정 5).
