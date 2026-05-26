@@ -43,6 +43,10 @@ export { GatewayBroadcaster } from './broadcaster.js';
 // 인증
 export { authenticate } from './auth/index.js';
 export { AuthRateLimiter } from './auth/rate-limit.js';
+export { signToken, type SignTokenClaims } from './auth/sign.js';
+
+// Phase 40: in-process HTTP MCP 호스트
+export { DEFAULT_MCP_TOOL_DENY, type McpBridgeConfig } from './mcp/bridge.js';
 
 // RPC 디스패처
 export { dispatchRpc, hasRequiredAuth, MethodRegistry } from './rpc/index.js';

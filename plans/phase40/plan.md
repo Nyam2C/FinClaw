@@ -20,7 +20,7 @@ claude CLI 가 FinClaw 가 **자기 프로세스 안에서 호스팅하는** HTT
 
 ```
 FinClaw server (always-on, node v22)
- ├─ gateway HTTP/WS 서버  ── + NEW /mcp 라우트 (StreamableHTTP, stateless) ──┐
+ ├─ gateway HTTP/WS 서버  ── + NEW /mcp 라우트 (StreamableHTTP, stateful: mcp-session-id) ──┐
  ├─ ToolRegistry  ◄──────────────────────────────────────────────────────────┘
  │    (Zod 검증 · 9-stage policy · loop-detect · result-guard · audit events)   direct in-proc call
  └─ claude-cli adapter 가 spawn:
@@ -51,7 +51,7 @@ FinClaw server (always-on, node v22)
 
 **C 의 코어("HTTP 가 살아있는 ToolRegistry 를 정책 통과시켜 Bearer 인증 하에 in-process execute")는 OpenClaw `src/gateway/tools-invoke-http.ts`(`POST /tools/invoke`)에 검증된 1:1 레퍼런스가 있다.** OpenClaw 패턴: `POST` only → Bearer 인증 → `createOpenClawTools()` 라이브 빌드 → `applyToolPolicyPipeline()` 전체 통과 → **gateway-HTTP 강제 deny**(`DEFAULT_GATEWAY_HTTP_TOOL_DENY`, allowlist 와 무관하게 모든 HTTP 호출자에 적용) → `tool.execute("http-${Date.now()}", args)` **stateless** → 에러 분류 상태코드. → FinClaw `/mcp` 핸들러 실행부는 이 코어를 1:1 참고, **MCP 는 그 위에 transport 만 얹는다.**
 
-**C 의 나머지(그 엔드포인트를 spawn 한 claude CLI 에 `--mcp-config` 로 MCP 프로토콜 연결)는 OpenClaw 레퍼런스 없음 = FinClaw 원본 설계.** OpenClaw 는 MCP 미사용(`@modelcontextprotocol/sdk` import 0건), 외부 도구 노출은 ACP-over-stdio(IDE 용)로 풀고, claude CLI 엔 도구를 안 줌. claude 와 붙으려면 claude 가 이해하는 MCP 가 필요하므로 **MCP 선택 자체는 정당.** stateless/전역세션 결정도 OpenClaw 에 답 없음 → 1인 사용자 스코프엔 stateless 가 단순·정당(OpenClaw `/tools/invoke` 도 stateless).
+**C 의 나머지(그 엔드포인트를 spawn 한 claude CLI 에 `--mcp-config` 로 MCP 프로토콜 연결)는 OpenClaw 레퍼런스 없음 = FinClaw 원본 설계.** OpenClaw 는 MCP 미사용(`@modelcontextprotocol/sdk` import 0건), 외부 도구 노출은 ACP-over-stdio(IDE 용)로 풀고, claude CLI 엔 도구를 안 줌. claude 와 붙으려면 claude 가 이해하는 MCP 가 필요하므로 **MCP 선택 자체는 정당.** **※ 세션 모델 보정 (Milestone A 실증):** MCP-over-HTTP 는 **stateful** 프로토콜 — initialize→tools/list→tools/call 가 별도 HTTP 요청이라 mcp-session-id 로 transport/server 를 재사용해야 함(요청마다 새 서버 = stateless 패턴은 tools/list 에서 -32601). OpenClaw `/tools/invoke` 가 stateless 였던 건 그게 MCP 프로토콜이 아니라 커스텀 단발 엔드포인트라서. → FinClaw `/mcp` 는 세션맵(`createMcpHost` 캡슐화)으로 stateful 구현.
 
 ## 2. kickoff "plan 이 반드시 결정할 것" 5개 — 해소
 
@@ -67,8 +67,8 @@ FinClaw server (always-on, node v22)
 
 ### A. MCP 호스트 스파이크 + 격리 실증 (go/no-go 게이트)
 
-- gateway 에 `/mcp` 라우트 추가 (StreamableHTTP stateless). **실 도구 1개**(예: `get_quote`)를 `toolRegistry.execute` 경유로 노출.
-- 수동 검증: `claude -p --mcp-config '{...http...}' --tools "" --strict-mcp-config --allowedTools mcp__finclaw__get_quote` 로 spawn → (1) **http+headers JSON 수용 여부 [go/no-go]**, (2) 격리(Bash/Edit 차단·ToolSearch 미사용), (3) tool_use → toolRegistry → 실데이터 복귀 확인.
+- gateway 에 `/mcp` 라우트 추가 (StreamableHTTP stateful: mcp-session-id). **실 도구 1개**(`get_stock_price`)를 `toolRegistry.execute` 경유로 노출.
+- 수동 검증: `claude -p --mcp-config '{...http...}' --tools "" --strict-mcp-config --allowedTools mcp__finclaw__get_stock_price` 로 spawn → (1) **http+headers JSON 수용 여부 [go/no-go]**, (2) 격리(Bash/Edit 차단·ToolSearch 미사용), (3) tool_use → toolRegistry → 실데이터 복귀 확인. **✅ 2026-05-26 GO 확정.**
 - **게이트:** http 수용 실패 시 (a) stdio phone-home 으로 즉시 pivot, plan §1 갱신.
 - 자동 테스트: `/mcp` 핸들러 + 단일 도구 브리지를 **mock toolRegistry** 로 (실 CLI/네트워크 금지). 라이브 CLI 검증은 수동 분리.
 - **검증:** mock 단위 테스트 green + 수동 spawn 1회 성공 로그.

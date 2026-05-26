@@ -124,8 +124,11 @@ export function createGatewayServer(
     rateLimiter,
     accessLogger,
     authRateLimiter,
-    // Phase 40 A: toolRegistry 주입 시에만 /mcp 호스트 활성 (세션 맵 캡슐화).
-    mcpHost: deps.toolRegistry ? createMcpHost(deps.toolRegistry) : undefined,
+    // Phase 40: toolRegistry 주입 + mcp.enabled !== false 일 때 /mcp 호스트 활성 (세션 맵 캡슐화).
+    mcpHost:
+      deps.toolRegistry && config.mcp?.enabled !== false
+        ? createMcpHost(deps.toolRegistry, config)
+        : undefined,
   };
 
   // Phase 29 E5: deep health checker 등록. db ping 은 storage.db.exec('SELECT 1'),
