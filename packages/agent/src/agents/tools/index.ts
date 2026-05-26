@@ -16,7 +16,7 @@ export type {
   AfterToolExecutePayload,
   ToolRegistryHooks,
 } from './registry.js';
-export { toApiToolDefinition, InMemoryToolRegistry } from './registry.js';
+export { toApiToolDefinition, InMemoryToolRegistry, jsonSchemaToZod } from './registry.js';
 
 // ── policy ──
 export type {

@@ -1,7 +1,7 @@
 // packages/gateway/src/mcp/bridge.ts
-import type { ToolGroupId, ToolRegistry } from '@finclaw/agent';
+import { jsonSchemaToZod, type ToolGroupId, type ToolRegistry } from '@finclaw/agent';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod/v4';
+import type { z } from 'zod/v4';
 
 /**
  * Phase 40 B: read-only 우선 강제 deny (매수/변경 권한은 사람만 — 사용자 결정 2026-05-26).
@@ -82,7 +82,7 @@ export function registerBridgedTools(
 
 /**
  * RegisteredToolDefinition.inputSchema (JSON Schema 서브셋) → Zod raw shape.
- * registry 의 private jsonSchemaToZod 미러 (registry.ts:143).
+ * per-property 변환은 registry 의 jsonSchemaToZod (단일 소스) 를 직접 사용 — 사본 금지(drift 방지).
  */
 export function jsonSchemaToZodShape(inputSchema: unknown): Record<string, z.ZodType> {
   const schema = inputSchema as {
@@ -95,27 +95,8 @@ export function jsonSchemaToZodShape(inputSchema: unknown): Record<string, z.Zod
   const required = new Set(schema.required ?? []);
   return Object.fromEntries(
     Object.entries(schema.properties).map(([k, v]) => {
-      const base = jsonSchemaToZodType(v);
+      const base = jsonSchemaToZod(v);
       return [k, required.has(k) ? base : base.optional()];
     }),
   );
-}
-
-function jsonSchemaToZodType(prop: Record<string, unknown>): z.ZodType {
-  switch (prop.type) {
-    case 'string':
-      return prop.enum ? z.enum(prop.enum as [string, ...string[]]) : z.string();
-    case 'number':
-      return z.number();
-    case 'boolean':
-      return z.boolean();
-    case 'array':
-      return z.array(
-        prop.items ? jsonSchemaToZodType(prop.items as Record<string, unknown>) : z.unknown(),
-      );
-    case 'object':
-      return z.record(z.string(), z.unknown());
-    default:
-      return z.unknown();
-  }
 }

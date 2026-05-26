@@ -140,7 +140,12 @@ export interface ToolRegistryHooks {
 
 // ── Zod 변환 헬퍼 ──
 
-function jsonSchemaToZod(prop: Record<string, unknown>): z.ZodType {
+/**
+ * JSON Schema 서브셋의 단일 property → Zod 타입. ToolDefinition.inputSchema 검증의 단일 소스.
+ * Phase 40 follow-up: MCP 브리지(gateway)가 이 함수를 직접 import 해 도구 입력 schema 를
+ * 동일하게 변환한다 — 사본을 두면 drift 시 MCP 입력검증이 조용히 어긋나므로 단일 소스 강제.
+ */
+export function jsonSchemaToZod(prop: Record<string, unknown>): z.ZodType {
   switch (prop.type) {
     case 'string':
       return prop.enum ? z.enum(prop.enum as [string, ...string[]]) : z.string();
