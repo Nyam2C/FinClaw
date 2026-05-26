@@ -50,7 +50,8 @@ export interface BuildExecutionDeps {
   readonly modelCatalog: InMemoryModelCatalog;
   readonly modelAliasIndex: ReturnType<typeof buildModelAliasIndex>;
   readonly profileHealth: ProfileHealthMonitor;
-  readonly routerLlm: ReturnType<typeof createLlmRouter>;
+  // Phase 40 D: 키 없는 CLI 부팅 시 undefined — RunnerExecutionAdapter 가 fallbackChain 으로 degrade.
+  readonly routerLlm: ReturnType<typeof createLlmRouter> | undefined;
   readonly logger: FinClawLogger;
   readonly defaultModel: ModelRef;
   readonly systemPrompt: string;
@@ -123,7 +124,8 @@ export interface BuildPipelineDeps {
   readonly newsHandle: NewsSkillHandle | undefined;
   readonly embeddingProvider: EmbeddingProvider | undefined;
   readonly finclawConfig: import('@finclaw/types').FinClawConfig;
-  readonly sdkAdapter: AnthropicAdapter;
+  // Phase 40 D: 키 없는 CLI 부팅 시 undefined → summarizer 미생성 (compaction 비활성 degrade).
+  readonly sdkAdapter: AnthropicAdapter | undefined;
   readonly tracer: Tracer;
   readonly logger: FinClawLogger;
   readonly defaultModel: ModelRef;
@@ -188,8 +190,10 @@ export function buildPipeline(deps: BuildPipelineDeps): PipelineBundle {
   );
 
   // Phase 31 C: 컨텍스트 압축용 토큰 카운터 + 요약기 (Anthropic 1회 호출).
-  // Phase 32 F: 요약기는 항상 SDK adapter 사용 (.summarize 는 AnthropicAdapter 전용 메서드).
-  const summarizer = (text: string) => sdkAdapter.summarize(text, defaultModel.model);
+  // Phase 40 D: sdkAdapter 있을 때만 요약기 생성 — 키 없으면 undefined (pipeline 이 compaction skip).
+  const summarizer = sdkAdapter
+    ? (text: string) => sdkAdapter.summarize(text, defaultModel.model)
+    : undefined;
 
   const pipeline = new AutoReplyPipeline(
     {
