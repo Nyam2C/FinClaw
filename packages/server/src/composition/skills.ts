@@ -43,8 +43,6 @@ export interface RegisterSkillsDeps {
   readonly storage: Storage;
   readonly logger: FinClawLogger;
   readonly finclawConfig: FinClawConfig;
-  /** Phase 40 D: optional — 키 없으면 news 분석(analyze_market) LLM 만 degrade, news 조회는 유지. */
-  readonly anthropicKey: string | undefined;
   readonly discordAdapter: DiscordAdapter;
   readonly routerHelper: RouterHelper;
   readonly profileHealth: ProfileHealthMonitor;

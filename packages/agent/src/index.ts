@@ -67,7 +67,6 @@ export type {
 // ─── providers ───
 export { getBreakerForProvider, resetBreakers } from './providers/adapter.js';
 export type { ProviderAdapter, ProviderRequestParams } from './providers/adapter.js';
-export { AnthropicAdapter } from './providers/anthropic.js';
 
 // ─── providers (Phase 32 Backend-as-CLI) ───
 export { createProviderAdapter } from './providers/factory.js';
@@ -176,7 +175,6 @@ export type {
 } from './agents/context/index.js';
 export { evaluateContextWindow, compactContext } from './agents/context/index.js';
 // Phase 31 C — compaction wiring 어댑터.
-export { summarizeText } from './providers/anthropic.js';
 export { approxTokenCount } from './execution/token-fn.js';
 
 // ── Phase 9: Execution ──

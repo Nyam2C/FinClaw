@@ -71,15 +71,7 @@ describe('CliProviderAdapter', () => {
 });
 
 describe('createProviderAdapter factory', () => {
-  it('creates anthropic-sdk adapter (providerId anthropic)', () => {
-    expect(createProviderAdapter({ kind: 'anthropic-sdk', apiKey: 'sk-test' }).providerId).toBe(
-      'anthropic',
-    );
-  });
   it('creates claude-cli adapter', () => {
     expect(createProviderAdapter({ kind: 'claude-cli' }).providerId).toBe('claude-cli');
-  });
-  it('throws for anthropic-sdk without apiKey', () => {
-    expect(() => createProviderAdapter({ kind: 'anthropic-sdk' })).toThrow(/API_KEY/);
   });
 });

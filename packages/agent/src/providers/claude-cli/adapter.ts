@@ -3,15 +3,12 @@ import type { ConversationMessage } from '@finclaw/types';
 import type { ProviderId } from '../../models/catalog.js';
 import type { StreamChunk } from '../../models/provider-normalize.js';
 import type { ProviderAdapter, ProviderRequestParams } from '../adapter.js';
-import { CliFailoverError } from './errors.js';
 import { runCliAgent, type RunCliAgentResponse } from './runner.js';
 import type { CliBackendConfig } from './types.js';
 
 export interface CliProviderAdapterOptions {
   backend?: CliBackendConfig;
   defaultTimeoutMs?: number;
-  /** W2: auth 만료 시 위임할 SDK adapter (옵션). */
-  sdkFallback?: ProviderAdapter;
 }
 
 export class CliProviderAdapter implements ProviderAdapter {
@@ -30,18 +27,8 @@ export class CliProviderAdapter implements ProviderAdapter {
 
   // ★ async generator: text_delta → usage → done
   async *streamCompletion(params: ProviderRequestParams): AsyncIterable<StreamChunk> {
-    let result: RunCliAgentResponse;
-    try {
-      result = await this.#run(params);
-    } catch (err) {
-      // W2: CLI auth 만료 → SDK 위임 (adapter 내부 완결, Runner 무관)
-      if (err instanceof CliFailoverError && err.reason === 'auth' && this.opts.sdkFallback) {
-        yield* this.opts.sdkFallback.streamCompletion(params);
-        return;
-      }
-      // W3: 그 외 CLI 에러는 그대로 전파 (상위 retry/fallback 루프 미진입)
-      throw err;
-    }
+    // Phase 41: W2 sdkFallback 제거 — CLI 단일 경로. 에러는 상위로 그대로 전파.
+    const result: RunCliAgentResponse = await this.#run(params);
     if (result.text) {
       yield { type: 'text_delta', text: result.text };
     }

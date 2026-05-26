@@ -17,7 +17,7 @@ export interface FinClawConfig {
   /** Phase 30 D3: RAG re-ranking 토글. */
   rag?: RagConfig;
   /** Phase 32 W6: 백엔드 경로 선택 (모델 벤더 의미의 agents.defaults.provider 와 분리). */
-  provider?: 'anthropic-sdk' | 'claude-cli';
+  provider?: 'claude-cli';
   /** Phase 32 W6: claude-cli 백엔드 옵션 (provider='claude-cli' 일 때만 유효). */
   cliBackend?: CliBackendOptions;
 }

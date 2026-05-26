@@ -88,9 +88,7 @@ async function main(): Promise<void> {
   ];
 
   // 1. env 검증
-  // Phase 40 D: ANTHROPIC_API_KEY 는 optional — 키 없이 Claude 구독(CLI)+MCP 로 부팅 가능.
-  // provider 별 하드 게이트는 finclawConfig 로드 후(아래). Discord 는 여전히 필수.
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  // Phase 41: CLI 단일 런타임 — ANTHROPIC_API_KEY 미사용 (Claude 구독 + in-process MCP). Discord 는 필수.
   const discordToken = requireEnv('DISCORD_BOT_TOKEN');
   const discordAppId = requireEnv('DISCORD_APPLICATION_ID');
 
@@ -108,13 +106,6 @@ async function main(): Promise<void> {
   // 2a. 전체 config 로드 + strict 재검증 (Phase 24 — routing 등 잘못된 설정으로 기동 차단)
   const finclawConfig = loadConfig({ logger });
   validateConfigStrict(finclawConfig);
-  // Phase 40 D: SDK provider 는 키 필수 — 키 없이 anthropic-sdk 선택 시 명확히 종료.
-  if ((finclawConfig.provider ?? 'claude-cli') === 'anthropic-sdk' && !anthropicKey) {
-    console.error(
-      '[fatal] provider=anthropic-sdk requires ANTHROPIC_API_KEY. Set the key, or use provider=claude-cli (Claude 구독+MCP).',
-    );
-    process.exit(1);
-  }
   const routing = finclawConfig.routing;
   if (routing) {
     logger.info('Model routing table loaded', {
@@ -190,9 +181,8 @@ async function main(): Promise<void> {
   logger.info('Discord adapter logged in');
 
   // 4. Agent 레이어 (툴 레지스트리 + 러너 팩토리)
-  const { sdkAdapter, routerLlm, providerAdapter, lanes, toolRegistry } = buildProviders({
+  const { providerAdapter, lanes, toolRegistry } = buildProviders({
     finclawConfig,
-    anthropicKey,
     logger,
     // Phase 40 C: CLI 모드의 claude 가 접속할 in-process /mcp 엔드포인트 + JWT mint secret.
     // jwtSecret 은 gatewayConfig.auth (= defaultConfig.auth) 와 동일해야 /mcp 검증 통과.
@@ -217,7 +207,6 @@ async function main(): Promise<void> {
       storage,
       logger,
       finclawConfig,
-      anthropicKey,
       discordAdapter,
       routerHelper,
       profileHealth,
@@ -236,7 +225,6 @@ async function main(): Promise<void> {
     modelCatalog,
     modelAliasIndex,
     profileHealth,
-    routerLlm,
     logger,
     defaultModel: DEFAULT_MODEL,
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
@@ -253,7 +241,6 @@ async function main(): Promise<void> {
     newsHandle,
     embeddingProvider,
     finclawConfig,
-    sdkAdapter,
     tracer,
     logger,
     defaultModel: DEFAULT_MODEL,
