@@ -142,6 +142,7 @@ export {
   BUILT_IN_GROUPS,
   toApiToolDefinition,
   InMemoryToolRegistry,
+  jsonSchemaToZod,
   evaluateToolPolicy,
   matchToolPattern,
   guardToolResult,

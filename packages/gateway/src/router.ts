@@ -59,6 +59,13 @@ export async function handleHttpRequest(
     return;
   }
 
+  // Phase 40 A: in-process HTTP MCP 라우트 (mcpHost 활성 시 — toolRegistry 주입됨).
+  // StreamableHTTP 는 POST/GET/DELETE 를 모두 처리하므로 method 고정 없이 분기.
+  if (ctx.mcpHost && req.url?.startsWith('/mcp')) {
+    await ctx.mcpHost.handleRequest(req, res);
+    return;
+  }
+
   // 라우트 매칭
   const route = routes.find((r) => r.method === req.method && req.url?.startsWith(r.path));
 

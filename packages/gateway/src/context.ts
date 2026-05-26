@@ -27,4 +27,6 @@ export interface GatewayServerContext {
   readonly accessLogger?: ReturnType<typeof import('./access-log.js').createAccessLogger>;
   /** Phase 29 E4: auth 실패 IP rate limiter (없으면 비활성화) */
   readonly authRateLimiter?: AuthRateLimiter;
+  /** Phase 40 A: in-process HTTP MCP 호스트 (deps.toolRegistry 주입 시 생성, 없으면 /mcp 비활성). */
+  readonly mcpHost?: import('./mcp/host.js').McpHost;
 }

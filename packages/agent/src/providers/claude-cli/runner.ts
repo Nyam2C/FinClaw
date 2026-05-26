@@ -47,6 +47,25 @@ export async function runCliAgent(req: RunCliAgentRequest): Promise<RunCliAgentR
   ) {
     args.push(backend.systemPromptArg, req.systemPrompt);
   }
+  // Phase 40 C: in-process HTTP MCP 배선 (backend.mcp 설정 시). 격리: --tools "" 가 내장
+  // 도구(Bash/Edit/Read) 전체 차단, --strict-mcp-config 가 사용자 전역 MCP 배제, --allowedTools
+  // 가 FinClaw 도구만 자동 승인. 권한 우회는 base args 의 --dangerously-skip-permissions 가 담당.
+  if (backend.mcp) {
+    const mcpConfig = {
+      mcpServers: {
+        finclaw: {
+          type: 'http',
+          url: backend.mcp.url,
+          headers: { Authorization: `Bearer ${backend.mcp.mintToken()}` },
+        },
+      },
+    };
+    args.push('--mcp-config', JSON.stringify(mcpConfig));
+    args.push('--strict-mcp-config');
+    args.push('--tools', '');
+    args.push('--allowedTools', backend.mcp.allowedTools ?? 'mcp__finclaw__*');
+  }
+
   if (backend.input === 'arg') {
     args.push(req.prompt);
   }

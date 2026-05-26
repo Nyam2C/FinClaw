@@ -43,7 +43,8 @@ export interface RegisterSkillsDeps {
   readonly storage: Storage;
   readonly logger: FinClawLogger;
   readonly finclawConfig: FinClawConfig;
-  readonly anthropicKey: string;
+  /** Phase 40 D: optional — 키 없으면 news 분석(analyze_market) LLM 만 degrade, news 조회는 유지. */
+  readonly anthropicKey: string | undefined;
   readonly discordAdapter: DiscordAdapter;
   readonly routerHelper: RouterHelper;
   readonly profileHealth: ProfileHealthMonitor;
@@ -209,13 +210,14 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
     logger.info('Brokerage (KIS) tools registered', { env: kisEnv });
 
     // Phase 33 C: 매일 뉴스 브리프 cron 을 idempotent seed — 고정 id 라 onRunComplete 의
-    // news-memorizer 분기(§B-3 화이트리스트)가 실제로 발동한다. SDK 모드 전용(§B-0): CLI 모드는
-    // tool_use 비활성이라 brokerage_sync_holdings 가 안 돌아 seed 를 skip (조용한 빈 출력 방지).
-    const isCliMode = (finclawConfig.provider ?? 'anthropic-sdk') === 'claude-cli';
+    // news-memorizer 분기(§B-3 화이트리스트)가 발동한다. 단 brief 는 brokerage_sync_holdings 로
+    // 홀딩스를 갱신해야 의미가 있는데, Phase 40 read-only CLI 모드에선 그 도구가 MCP deny(사람만)라
+    // 자동 실행 불가 → CLI 모드는 seed skip. SDK 모드(키 보유)에선 ReAct 루프가 sync 를 돌려 seed.
+    const isCliMode = (finclawConfig.provider ?? 'claude-cli') === 'claude-cli';
     if (isCliMode) {
       logger.warn('news_brief.seed_skipped_cli', {
         event: 'news_brief.seed_skipped_cli',
-        note: 'CLI mode disables tool_use; news-brief cron needs SDK mode. Schedule not seeded.',
+        note: 'read-only CLI mode denies brokerage_sync_holdings (humans-only); the holdings brief needs it. Seed skipped — use SDK mode for the scheduled brief.',
       });
     } else if (getSchedule(storage.db, NEWS_BRIEF_SCHEDULE_ID) === null) {
       const briefCron = '0 0 * * *'; // 매일 00:00 UTC = 09:00 KST
@@ -264,18 +266,8 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
     }
   });
 
-  // Phase 32 P1-1: CLI 모드는 tool_use 를 bypass — 등록된 도구가 비활성임을 부팅 시 경고로 가시화.
-  // (CLI adapter 의 streamCompletion 은 text-only 라 skills-finance/general 도구가 호출되지 않음.)
-  if (finclawConfig.provider === 'claude-cli') {
-    const toolCount = toolRegistry.list().length;
-    if (toolCount > 0) {
-      logger.warn('provider.cli_tools_disabled', {
-        event: 'provider.cli_tools_disabled',
-        toolCount,
-        note: 'CLI mode bypasses tool_use; registered tools are inactive. Use provider=anthropic-sdk for live data.',
-      });
-    }
-  }
+  // Phase 40 D: 이전의 'provider.cli_tools_disabled' 경고 제거 — CLI 모드는 이제 in-process /mcp
+  // 로 도구를 활성화하므로(read-only 필터) "tools are inactive" 가정이 거짓이 됨.
 
   return { marketHandle, newsHandle, alertHandle, brokerageSyncService, kisEnv };
 }

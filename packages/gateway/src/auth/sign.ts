@@ -1,0 +1,35 @@
+// packages/gateway/src/auth/sign.ts
+import { createHmac } from 'node:crypto';
+
+export interface SignTokenClaims {
+  /** subject = userId */
+  readonly sub: string;
+  /** CLI spawn 별 sessionId (MCP ctx 조립용) */
+  readonly sessionId?: string;
+  /** 만료 (epoch seconds). 미지정 시 발급 + 15분. */
+  readonly exp?: number;
+  readonly permissions?: readonly string[];
+}
+
+/**
+ * Phase 40 B: 간이 JWT 발급 (HS256). validateToken (token.ts) 과 대칭.
+ * per-spawn 으로 claude CLI 에 주입할 단명 Bearer 토큰 mint 에 사용.
+ */
+export function signToken(claims: SignTokenClaims, secret: string): string {
+  const header = base64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const exp = claims.exp ?? Math.floor(Date.now() / 1000) + 15 * 60;
+  const payload = base64url(
+    JSON.stringify({
+      sub: claims.sub,
+      ...(claims.sessionId ? { sessionId: claims.sessionId } : {}),
+      ...(claims.permissions ? { permissions: claims.permissions } : {}),
+      exp,
+    }),
+  );
+  const signature = createHmac('sha256', secret).update(`${header}.${payload}`).digest('base64url');
+  return `${header}.${payload}.${signature}`;
+}
+
+function base64url(s: string): string {
+  return Buffer.from(s, 'utf8').toString('base64url');
+}

@@ -33,7 +33,8 @@ corepack prepare pnpm@10.4.1 --activate
 
 ```bash
 pnpm setup            # .env 복사 + pnpm install + ~/.finclaw/ 생성
-# 그 다음 .env 를 편집해 ANTHROPIC_API_KEY, DISCORD_BOT_TOKEN, DISCORD_APPLICATION_ID 입력
+# 그 다음 .env 를 편집해 DISCORD_BOT_TOKEN, DISCORD_APPLICATION_ID 입력
+# ANTHROPIC_API_KEY 는 선택 — 기본은 Claude 구독(CLI) 모드 (아래 "Claude 구독(CLI)-only" 참고)
 pnpm build
 ```
 
@@ -50,6 +51,14 @@ pnpm dev:all
 부팅이 완료되면 로그에 `Gateway listening on …` 이 찍힌다. Discord 봇이 온라인 상태가 되면 멘션이나 `!finclaw <메시지>` 로 대화할 수 있다.
 
 > ⚠️ **함정**: 로컬 `pnpm dev` 는 `.env` 자동 로드를 하지 않는다. 셸에서 `export` 하거나 `node --env-file=.env` 를 쓰거나, Docker 경로(`pnpm dev:all`) 를 사용해야 한다. Docker compose 는 `env_file: .env` 로 자동 주입한다.
+
+### Claude 구독(CLI)-only (기본 모드)
+
+FinClaw 는 기본적으로 **Anthropic API 키 없이 Claude 구독(`claude` CLI 로그인)만으로** 구동한다 (`provider: 'claude-cli'`). `claude` CLI 가 추론 백엔드이고, FinClaw 의 금융 도구는 **in-process HTTP MCP**(`/mcp`)로 노출되어 CLI 가 호출한다.
+
+- **선행 조건:** `claude` CLI 설치 + `claude login`(구독 인증). `ANTHROPIC_API_KEY` 불필요.
+- **읽기 전용:** 자동 claude 에 노출되는 도구는 **조회 전용**(시세/뉴스/차트/포트폴리오/알림목록/날짜시간)이다. 매수·변경류(알림 생성·삭제, 스케줄, 브로커리지 동기화)와 임의 파일읽기·웹페치는 기본 차단되며 `gateway.mcp.allowTools` 로만 명시 opt-in 한다 — **주식 매수 권한은 사람에게만.**
+- **API(SDK) 모드로 전환:** `provider: 'anthropic-sdk'` + `ANTHROPIC_API_KEY` 설정 시 기존 SDK 경로(스트리밍·도구 ReAct 루프·자동화 cron)를 쓴다. 키 없이 `anthropic-sdk` 를 선택하면 부팅이 종료된다. (키가 있으면 CLI 모드에서도 SDK 가 인증 만료 시 폴백 안전판으로 휴면 대기.)
 
 ## 기능
 
@@ -252,11 +261,11 @@ sequenceDiagram
 
 ### 필수 (없으면 부팅 차단)
 
-| 변수                     | 설명                    |
-| ------------------------ | ----------------------- |
-| `ANTHROPIC_API_KEY`      | Anthropic Claude SDK 키 |
-| `DISCORD_BOT_TOKEN`      | Discord 봇 로그인 토큰  |
-| `DISCORD_APPLICATION_ID` | Discord 애플리케이션 ID |
+| 변수                     | 설명                                                                                |
+| ------------------------ | ----------------------------------------------------------------------------------- |
+| `ANTHROPIC_API_KEY`      | Anthropic Claude SDK 키 (선택 — `anthropic-sdk` 모드에서만 필수. CLI 모드는 불필요) |
+| `DISCORD_BOT_TOKEN`      | Discord 봇 로그인 토큰                                                              |
+| `DISCORD_APPLICATION_ID` | Discord 애플리케이션 ID                                                             |
 
 미설정 시: `[fatal] Missing required env: <NAME>` 로그 후 `process.exit(1)`.
 
@@ -279,7 +288,7 @@ sequenceDiagram
 
 `KIS_APP_KEY`/`KIS_APP_SECRET`/`KIS_ACCOUNT_NO` 중 하나라도 미설정 시 brokerage 도구 등록을 건너뛴다(`KIS not configured` 로그). KIS 연동은 **read-only**(잔고 조회만, 매매 없음)이며, 동기화된 보유 종목은 `portfolio_holdings.source='kis'` 로 저장되어 거래 파생(`source='tx'`) holdings 와 분리된다.
 
-> ⚠️ **자동화는 SDK 모드 전용(§B-0):** `brokerage_sync_holdings`·뉴스 요약 cron 같은 도구 호출은 `provider` 미지정 또는 `anthropic-sdk` 모드에서만 동작한다. CLI 모드(`provider:'claude-cli'`)는 `tool_use` 를 yield 하지 않아 KIS sync·뉴스 메모리화 도구가 비활성이다 (수동 대화 전용).
+> ⚠️ **CLI 모드는 읽기 전용 도구만:** CLI 모드(`provider:'claude-cli'`, 기본)에서도 도구는 in-process MCP 로 활성이지만 **조회 전용 화이트리스트**로 제한된다. `brokerage_sync_holdings`(KIS 동기화)·뉴스 메모리화 cron 같은 **변경/자동화** 도구는 read-only deny 라 CLI 모드에서 비활성이며, 매일 뉴스 브리프 cron 도 seed 되지 않는다 (그 brief 가 KIS 동기화에 의존하기 때문). 이런 자동화가 필요하면 `provider:'anthropic-sdk'` + `ANTHROPIC_API_KEY` 로 SDK 모드를 쓴다.
 
 ### 선택 — Gateway / Web UI 인증
 
@@ -412,7 +421,8 @@ curl -X POST http://localhost:3000/rpc \
 
 | 증상                                                                         | 원인                                                            | 대응                                                                                       |
 | ---------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `[fatal] Missing required env: ANTHROPIC_API_KEY` (또는 DISCORD\_\*)         | `requireEnv()` throw                                            | `.env` 채우거나 export. 로컬은 `.env` 자동로드 없음 — `node --env-file=.env` 필요          |
+| `[fatal] Missing required env: DISCORD_BOT_TOKEN` (또는 DISCORD\_\*)         | `requireEnv()` throw                                            | `.env` 채우거나 export. 로컬은 `.env` 자동로드 없음 — `node --env-file=.env` 필요          |
+| `[fatal] provider=anthropic-sdk requires ANTHROPIC_API_KEY`                  | SDK 모드인데 키 없음                                            | `ANTHROPIC_API_KEY` 채우거나 `provider:'claude-cli'`(키 불필요)로 전환                     |
 | WS 인증 실패                                                                 | `GATEWAY_JWT_SECRET=` (빈 값) 라인이 있으면 `??` fallback 안 됨 | 라인을 제거하거나 명시적 값 입력                                                           |
 | `pnpm dev:all` 즉시 종료 + `.env not found`                                  | `scripts/dev-all.sh` 의 사전 체크                               | `pnpm setup` 또는 `cp .env.example .env`                                                   |
 | `Read/Write/Edit ENOENT` (WSL `/mnt/c/...`)                                  | WSL2 ↔ Windows 크로스 파일시스템 캐시                           | 같은 파일을 다시 Read 하면 해소                                                            |

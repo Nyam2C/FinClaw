@@ -8,6 +8,8 @@ export interface CliUsage {
   cacheRead?: number;
   cacheWrite?: number;
   total?: number;
+  /** Phase 40 E: claude CLI result 최상위 total_cost_usd (구독 차감 비용, USD). */
+  costUsd?: number;
 }
 
 export interface CliOutput {
@@ -132,8 +134,13 @@ function pickSessionId(
 
 function pickUsage(obj: Record<string, unknown>): CliUsage | undefined {
   const usage = obj.usage;
+  // Phase 40 E: total_cost_usd 는 result 최상위 (usage 의 형제) — 구독 차감 비용.
+  const costUsd =
+    typeof obj.total_cost_usd === 'number' && Number.isFinite(obj.total_cost_usd)
+      ? (obj.total_cost_usd as number)
+      : undefined;
   if (!usage || typeof usage !== 'object') {
-    return undefined;
+    return costUsd !== undefined ? { costUsd } : undefined;
   }
   const u = usage as Record<string, unknown>;
   const num = (k: string) =>
@@ -144,6 +151,7 @@ function pickUsage(obj: Record<string, unknown>): CliUsage | undefined {
     cacheRead: num('cache_read_input_tokens') ?? num('cacheRead'),
     cacheWrite: num('cache_creation_input_tokens') ?? num('cacheWrite'),
     total: num('total_tokens') ?? num('total'),
+    costUsd,
   };
 }
 
@@ -157,5 +165,9 @@ function mergeUsage(a: CliUsage | undefined, b: CliUsage): CliUsage {
     cacheRead: (a.cacheRead ?? 0) + (b.cacheRead ?? 0),
     cacheWrite: (a.cacheWrite ?? 0) + (b.cacheWrite ?? 0),
     total: (a.total ?? 0) + (b.total ?? 0),
+    costUsd:
+      a.costUsd !== undefined || b.costUsd !== undefined
+        ? (a.costUsd ?? 0) + (b.costUsd ?? 0)
+        : undefined,
   };
 }

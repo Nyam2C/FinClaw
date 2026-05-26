@@ -53,6 +53,8 @@ export class CliProviderAdapter implements ProviderAdapter {
           outputTokens: result.usage.output ?? 0,
           cacheReadTokens: result.usage.cacheRead ?? 0,
           cacheWriteTokens: result.usage.cacheWrite ?? 0,
+          // Phase 40 E: 구독 차감 실비용(total_cost_usd) → agent_runs 의 estimatedCostUsd 로 회계.
+          estimatedCostUsd: result.usage.costUsd ?? 0,
         },
       };
     }

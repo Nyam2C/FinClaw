@@ -20,6 +20,7 @@ import {
   createProviderHealthChecker,
   registerHealthChecker,
 } from './health.js';
+import { createMcpHost } from './mcp/host.js';
 import { RequestRateLimiter } from './rate-limit.js';
 import { ChatRegistry } from './registry.js';
 import { handleHttpRequest } from './router.js';
@@ -63,6 +64,8 @@ export interface GatewayServerDeps {
   readonly accessLogDb?: import('node:sqlite').DatabaseSync;
   /** Phase 30 C3: 현재 active span 의 traceId 를 가져오는 함수 (옵션). */
   readonly getTraceId?: () => string | undefined;
+  /** Phase 40 A: /mcp 라우트가 in-process 호출할 라이브 ToolRegistry (생략 시 /mcp 비활성). */
+  readonly toolRegistry?: import('@finclaw/agent').ToolRegistry;
 }
 
 export interface GatewayServer {
@@ -121,6 +124,11 @@ export function createGatewayServer(
     rateLimiter,
     accessLogger,
     authRateLimiter,
+    // Phase 40: toolRegistry 주입 + mcp.enabled !== false 일 때 /mcp 호스트 활성 (세션 맵 캡슐화).
+    mcpHost:
+      deps.toolRegistry && config.mcp?.enabled !== false
+        ? createMcpHost(deps.toolRegistry, config)
+        : undefined,
   };
 
   // Phase 29 E5: deep health checker 등록. db ping 은 storage.db.exec('SELECT 1'),

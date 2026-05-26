@@ -12,6 +12,10 @@ describe('getDefaults', () => {
     expect(defaults.session?.resetPolicy).toBe('idle');
   });
 
+  it('provider 기본값은 claude-cli (Phase 40: 키 없는 구독+MCP 부팅)', () => {
+    expect(getDefaults().provider).toBe('claude-cli');
+  });
+
   it('반환값은 frozen이다', () => {
     const defaults = getDefaults();
     expect(Object.isFrozen(defaults)).toBe(true);

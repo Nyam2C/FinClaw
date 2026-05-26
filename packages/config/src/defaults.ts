@@ -57,8 +57,8 @@ const DEFAULTS = Object.freeze({
     automation: { strictFallback: true, logVerbose: true },
     override: { allowClientHint: true, respectMinModel: true },
   },
-  // Phase 32 W6: 기본 SDK 경로 유지 → CLI opt-in, 회귀 0.
-  provider: 'anthropic-sdk',
+  // Phase 40 D: 키 없는 구독(CLI)+MCP 부팅이 기본 경험. SDK 는 키 보유 시 휴면 안전판(phase41 제거).
+  provider: 'claude-cli',
 }) satisfies FinClawConfig;
 
 /** 기본값을 유저 설정에 병합 (유저 값 우선) */

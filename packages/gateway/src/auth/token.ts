@@ -46,7 +46,13 @@ export function validateToken(token: string, secret: string): AuthResult {
   }
 
   // 페이로드 파싱
-  let payload: { sub?: string; clientId?: string; permissions?: string[]; exp?: number };
+  let payload: {
+    sub?: string;
+    clientId?: string;
+    sessionId?: string;
+    permissions?: string[];
+    exp?: number;
+  };
   try {
     payload = JSON.parse(Buffer.from(payloadB64 ?? '', 'base64url').toString('utf8'));
   } catch {
@@ -64,6 +70,8 @@ export function validateToken(token: string, secret: string): AuthResult {
       level: 'token',
       userId: payload.sub,
       clientId: payload.clientId,
+      // Phase 40 B: per-spawn JWT 의 sessionId claim 운반 (MCP ctx 조립용).
+      sessionId: payload.sessionId,
       // TODO(review-2): payload.permissions 각 요소의 유효성 검증 추가 권장 — 현재는 캐스트만 수행
       permissions: (payload.permissions ?? []) as Permission[],
     },
