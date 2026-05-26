@@ -207,7 +207,3 @@ export type {
 
 // ── Phase 33: News brief cron prompt ──
 export { NEWS_BRIEF_PROMPT, NEWS_BRIEF_SCHEDULE_ID } from './prompts/news-brief.js';
-
-// ── Phase 34: LLM 오케스트레이터 라우터 ──
-export { createLlmRouter, ROUTER_MODEL_ID } from './router/llm-router.js';
-export type { LlmRouter, RouterIntent, RouterDecision, RouterInput } from './router/llm-router.js';

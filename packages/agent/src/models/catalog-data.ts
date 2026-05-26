@@ -67,9 +67,5 @@ export const BUILT_IN_MODELS: readonly ModelEntry[] = [
   },
 ];
 
-/** 권장 폴백 체인 순서 */
-export const DEFAULT_FALLBACK_CHAIN = [
-  'claude-opus-4-7',
-  'claude-sonnet-4-6',
-  'claude-haiku-4-5-20251001',
-] as const;
+/** 권장 폴백 체인 순서 — Phase 41: sonnet 기본 (opus 는 analyze_market 전용 격리, 토큰 관리). */
+export const DEFAULT_FALLBACK_CHAIN = ['claude-sonnet-4-6', 'claude-haiku-4-5-20251001'] as const;
