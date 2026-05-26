@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   loadAnalysisPrompt,
-  loadSentimentPrompt,
   SkillPromptLoadError,
   type AnalysisDepth,
   type AnalysisLanguage,
@@ -30,26 +29,6 @@ describe('loadAnalysisPrompt', () => {
     expect(await loadAnalysisPrompt('brief', 'ko')).toContain('Detail level: brief');
     expect(await loadAnalysisPrompt('detailed', 'ko')).toContain('Detail level: detailed');
     expect(await loadAnalysisPrompt('standard', 'ko')).toContain('Detail level: standard');
-  });
-});
-
-describe('loadSentimentPrompt', () => {
-  it('substitutes {{ruleHint}} with 2-decimal value', async () => {
-    const text = await loadSentimentPrompt(0.4);
-    expect(text).toContain('hint score: 0.40');
-    expect(text).not.toContain('{{ruleHint}}');
-  });
-
-  it('rounds to 2 decimals', async () => {
-    expect(await loadSentimentPrompt(0.4567)).toContain('hint score: 0.46');
-  });
-
-  it('handles negative values', async () => {
-    expect(await loadSentimentPrompt(-0.5)).toContain('hint score: -0.50');
-  });
-
-  it('handles zero', async () => {
-    expect(await loadSentimentPrompt(0)).toContain('hint score: 0.00');
   });
 });
 

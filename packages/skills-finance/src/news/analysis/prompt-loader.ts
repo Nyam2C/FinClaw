@@ -40,8 +40,3 @@ export async function loadAnalysisPrompt(
     `loadAnalysisPrompt(${depth},${language})`,
   );
 }
-
-export async function loadSentimentPrompt(ruleHint: number): Promise<string> {
-  const tpl = await readPromptFile('sentiment.system.md', 'loadSentimentPrompt');
-  return tpl.replaceAll('{{ruleHint}}', ruleHint.toFixed(2));
-}
