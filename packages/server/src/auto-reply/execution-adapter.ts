@@ -2,11 +2,12 @@ import { randomUUID } from 'node:crypto';
 // packages/server/src/auto-reply/execution-adapter.ts
 import type {
   AliasIndex,
+  ChatExecutionPort,
   ExecutionToolDispatcher,
   ModelCatalog,
   ModelPricing,
   ProfileHealthMonitor,
-  Runner,
+  RunnerFactory,
   StreamEventListener,
   ToolRegistry,
 } from '@finclaw/agent';
@@ -25,6 +26,8 @@ import {
   type RouterDecision,
   type TranscriptEntry,
 } from '@finclaw/agent';
+import { buildDispatcher, collectToolCalls, extractAssistantText } from '@finclaw/agent';
+import type { ToolCallRecord } from '@finclaw/agent';
 import type { FinClawLogger } from '@finclaw/infra';
 import type {
   AgentId,
@@ -40,7 +43,6 @@ import type {
 import { createAgentId } from '@finclaw/types';
 import type { PipelineMsgContext } from './pipeline-context.js';
 import { formatBackgroundSection } from './stages/memory-retrieval.js';
-import { buildDispatcher } from './tool-dispatcher-adapter.js';
 
 /**
  * 메시지 본문에서 role 추론 — 단순 키워드 휴리스틱 (Phase 24).
@@ -86,16 +88,10 @@ export interface ExecutionAdapter {
   execute(ctx: PipelineMsgContext, signal: AbortSignal): Promise<ExecutionResult>;
 }
 
-/** Phase 22: 도구 호출 감사용 메타데이터 — DeliverStage 출처 footer·DB 병렬 저장에서 소비 */
-export interface ToolCallRecord {
-  readonly name: string;
-  readonly input: unknown;
-  readonly output: string;
-  readonly source?: string;
-  readonly timestamp: number;
-  readonly durationMs?: number;
-  readonly isError?: boolean;
-}
+// Phase 39: ToolCallRecord/collectToolCalls/extractAssistantText 는 @finclaw/agent 로 이동.
+// 기존 소비자(테스트 포함) 호환을 위해 re-export.
+export { collectToolCalls, extractAssistantText } from '@finclaw/agent';
+export type { ToolCallRecord } from '@finclaw/agent';
 
 export interface ExecutionResult {
   readonly content: string;
@@ -152,13 +148,8 @@ export class MockExecutionAdapter implements ExecutionAdapter {
   }
 }
 
-/**
- * Runner 생성 팩토리 — per-request dispatcher를 받아 Runner를 반환.
- *
- * Runner는 생성 시점에 `toolExecutor`를 고정하므로 요청마다 새 Runner가 필요하다.
- * provider와 laneManager는 공유 자원이므로 팩토리 클로저에서 재사용한다.
- */
-export type RunnerFactory = (dispatcher: ExecutionToolDispatcher) => Runner;
+// Phase 39: RunnerFactory 는 @finclaw/agent 로 이동 (agent-native). 기존 server 소비자 호환 re-export.
+export type { RunnerFactory } from '@finclaw/agent';
 
 export interface RunnerExecutionAdapterDeps {
   readonly runnerFactory: RunnerFactory;
@@ -194,7 +185,7 @@ export interface RunnerExecutionAdapterDeps {
  * - Milestone A: storage/toolRegistry 없이 단발 호출
  * - Milestone B: storage로 대화 이력 load/save + toolRegistry로 per-request dispatcher 구성
  */
-export class RunnerExecutionAdapter implements ExecutionAdapter {
+export class RunnerExecutionAdapter implements ExecutionAdapter, ChatExecutionPort {
   private readonly defaultAgentId: AgentId;
   private readonly historyLimit: number;
 
@@ -645,25 +636,6 @@ export interface TuiExecutionResult {
   readonly usage: { readonly inputTokens: number; readonly outputTokens: number };
 }
 
-export function extractAssistantText(messages: readonly ConversationMessage[]): string {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i];
-    if (msg?.role !== 'assistant') {
-      continue;
-    }
-    if (typeof msg.content === 'string') {
-      return msg.content;
-    }
-    if (Array.isArray(msg.content)) {
-      return msg.content
-        .filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text')
-        .map((block) => block.text)
-        .join('');
-    }
-  }
-  return '';
-}
-
 function toMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
@@ -794,36 +766,4 @@ function isOrphanedToolResult(msg: ConversationMessage | undefined): boolean {
     return msg.content.every((b) => b.type === 'tool_result');
   }
   return false;
-}
-
-/** assistant tool_use 블록과 뒤따르는 tool tool_result 블록을 페어링해 감사 레코드 생성 */
-export function collectToolCalls(
-  messages: readonly ConversationMessage[],
-  fallbackTimestamp: number,
-): ToolCallRecord[] {
-  const records: ToolCallRecord[] = [];
-  for (let i = 0; i < messages.length; i++) {
-    const msg = messages[i];
-    if (msg?.role !== 'assistant' || !Array.isArray(msg.content)) {
-      continue;
-    }
-    for (const block of msg.content) {
-      if (block.type !== 'tool_use') {
-        continue;
-      }
-      const resultMsg = messages.slice(i + 1).find((r) => r?.role === 'tool');
-      const resultBlock =
-        resultMsg && Array.isArray(resultMsg.content)
-          ? resultMsg.content.find((b) => b.type === 'tool_result' && b.toolUseId === block.id)
-          : undefined;
-      records.push({
-        name: block.name,
-        input: block.input,
-        output: resultBlock?.type === 'tool_result' ? resultBlock.content : '',
-        timestamp: fallbackTimestamp,
-        isError: resultBlock?.type === 'tool_result' ? resultBlock.isError : undefined,
-      });
-    }
-  }
-  return records;
 }

@@ -1,10 +1,10 @@
 // packages/server/src/composition/schedule-rpc.ts
 // Phase 36: main.ts 305-353 에서 추출 (순수 이동). Phase 31 F 의 agent ScheduleRpc.
 
+import { CronParseError, nextRunAt as computeNextRunAt, parseCron } from '@finclaw/infra';
 import { addSchedule, deleteSchedule, listSchedules, type createStorage } from '@finclaw/storage';
 import type { ScheduleRpc, Timestamp } from '@finclaw/types';
 import { createAgentId } from '@finclaw/types';
-import { CronParseError, nextRunAt as computeNextRunAt, parseCron } from '../automation/cron.js';
 
 type Storage = ReturnType<typeof createStorage>;
 

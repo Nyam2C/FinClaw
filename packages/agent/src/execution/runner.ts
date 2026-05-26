@@ -42,6 +42,14 @@ export interface RunnerOptions {
   readonly tracer?: RunnerTracerAdapter;
 }
 
+/**
+ * Runner 생성 팩토리 — per-request dispatcher를 받아 Runner를 반환.
+ *
+ * Runner는 생성 시점에 `toolExecutor`를 고정하므로 요청마다 새 Runner가 필요하다.
+ * Phase 39: server execution-adapter 에서 이동 (agent-native — gateway 가 직접 import).
+ */
+export type RunnerFactory = (dispatcher: ExecutionToolDispatcher) => Runner;
+
 /** streamLLMCall 내부 반환값 */
 interface LLMCallResult {
   readonly message: ConversationMessage;

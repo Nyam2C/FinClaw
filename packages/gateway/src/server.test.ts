@@ -1,8 +1,8 @@
+import type { ChatExecutionPort } from '@finclaw/agent';
 import { resetEventBus } from '@finclaw/infra';
 import type { ConversationRecord, MemoryEntry, ModelRef, SearchResult } from '@finclaw/types';
-// packages/server/src/gateway/server.test.ts
+// packages/gateway/src/server.test.ts
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
-import type { RunnerExecutionAdapter } from '../auto-reply/execution-adapter.js';
 import type { GatewayServerConfig } from './rpc/types.js';
 import { createGatewayServer, type GatewayServer, type GatewayServerDeps } from './server.js';
 
@@ -13,7 +13,7 @@ const TEST_MODEL: ModelRef = {
   maxOutputTokens: 8_192,
 };
 
-function makeStubAdapter(): RunnerExecutionAdapter {
+function makeStubAdapter(): ChatExecutionPort {
   return {
     execute: async () => ({ content: '', usage: { inputTokens: 0, outputTokens: 0 } }),
     executeForTui: async () => ({
@@ -21,7 +21,7 @@ function makeStubAdapter(): RunnerExecutionAdapter {
       content: '',
       usage: { inputTokens: 0, outputTokens: 0 },
     }),
-  } as unknown as RunnerExecutionAdapter;
+  } as unknown as ChatExecutionPort;
 }
 
 function makeTestDeps(): GatewayServerDeps {

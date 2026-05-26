@@ -1,10 +1,20 @@
-// packages/server/src/gateway/index.ts
+// packages/gateway/src/index.ts
 
 // 서버
-export { createGatewayServer, type GatewayServer } from './server.js';
+export { createGatewayServer, type GatewayServer, type GatewayServerDeps } from './server.js';
 
 // DI 컨테이너
 export type { GatewayServerContext } from './context.js';
+
+// RPC 메서드 등록자 + deps 타입 (Phase 39: server 재배치 통합 테스트 + main 이 참조)
+export {
+  registerAgentMethods,
+  resetAgentStats,
+  type AgentRpcDeps,
+  type AgentInfo,
+} from './rpc/methods/agent.js';
+export { registerAgentRunsMethods } from './rpc/methods/agent-runs.js';
+export { registerMemoryMethods } from './rpc/methods/memory.js';
 
 // 타입
 export type {

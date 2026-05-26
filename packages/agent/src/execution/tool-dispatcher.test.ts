@@ -4,7 +4,7 @@ import {
   type ToolExecutor,
 } from '@finclaw/agent';
 import { describe, expect, it, vi } from 'vitest';
-import { buildDispatcher } from '../tool-dispatcher-adapter.js';
+import { buildDispatcher } from './tool-dispatcher.js';
 
 function registerEcho(registry: InMemoryToolRegistry, executor?: ToolExecutor): void {
   const def: RegisteredToolDefinition = {

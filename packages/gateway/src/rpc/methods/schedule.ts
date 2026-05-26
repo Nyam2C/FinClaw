@@ -2,6 +2,7 @@
 // Phase 28 C: schedule.* RPC.
 
 import type { DatabaseSync } from 'node:sqlite';
+import { CronParseError, nextRunAt as computeNextRunAt, parseCron } from '@finclaw/infra';
 import {
   addSchedule,
   deleteSchedule,
@@ -9,21 +10,15 @@ import {
   listSchedules,
   updateSchedule,
 } from '@finclaw/storage';
-import type { AgentId, Schedule, Timestamp } from '@finclaw/types';
+import type { AgentId, Schedule, SchedulerPort, Timestamp } from '@finclaw/types';
 import { createAgentId } from '@finclaw/types';
 import { z } from 'zod/v4';
-import {
-  CronParseError,
-  nextRunAt as computeNextRunAt,
-  parseCron,
-} from '../../../automation/cron.js';
-import type { SchedulerService } from '../../../automation/scheduler.js';
 import type { MethodRegistry } from '../index.js';
 import type { RpcMethodHandler } from '../types.js';
 
 export interface ScheduleRpcDeps {
   readonly db?: DatabaseSync;
-  readonly scheduler?: SchedulerService;
+  readonly scheduler?: SchedulerPort;
 }
 
 const MAX_LIMIT = 200;
@@ -40,7 +35,7 @@ function requireDb(deps: ScheduleRpcDeps): DatabaseSync {
   return deps.db;
 }
 
-function requireScheduler(deps: ScheduleRpcDeps): SchedulerService {
+function requireScheduler(deps: ScheduleRpcDeps): SchedulerPort {
   if (!deps.scheduler) {
     throw new Error('provider_unavailable: scheduler not initialized');
   }

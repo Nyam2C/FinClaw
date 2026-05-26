@@ -1,0 +1,28 @@
+{
+  "name": "@finclaw/gateway",
+  "version": "0.1.0",
+  "private": true,
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@finclaw/agent": "workspace:*",
+    "@finclaw/infra": "workspace:*",
+    "@finclaw/skills-finance": "workspace:*",
+    "@finclaw/storage": "workspace:*",
+    "@finclaw/types": "workspace:*",
+    "chokidar": "^5.0.0",
+    "ws": "^8.19.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1"
+  }
+}

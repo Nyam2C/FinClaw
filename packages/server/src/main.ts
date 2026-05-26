@@ -10,6 +10,7 @@ import {
 } from '@finclaw/agent';
 import { DiscordAccountSchema, DiscordAdapter } from '@finclaw/channel-discord';
 import { ConfigValidationError, loadConfig, validateConfigStrict } from '@finclaw/config';
+import { createGatewayServer, type GatewayServerConfig } from '@finclaw/gateway';
 import {
   assertPortAvailable,
   ConcurrencyLane,
@@ -42,11 +43,9 @@ import { buildProviders } from './composition/providers.js';
 import { buildAutomation, buildExecution, buildPipeline } from './composition/runtime.js';
 import { buildScheduleRpc } from './composition/schedule-rpc.js';
 import { registerSkills } from './composition/skills.js';
-import type { GatewayServerConfig } from './gateway/rpc/types.js';
-import { createGatewayServer } from './gateway/server.js';
 import { ProcessLifecycle } from './process/lifecycle.js';
 import { MessageRouter } from './process/message-router.js';
-import { loadPrompt } from './prompts/loader.js';
+import { loadPrompt, requireFrontmatterKeys } from './prompts/loader.js';
 
 export class MissingEnvError extends Error {
   constructor(public readonly envName: string) {
@@ -71,6 +70,22 @@ async function main(): Promise<void> {
   // 0. 시스템 프롬프트 외부 .md 로드 (Phase 25)
   const systemPromptDoc = await loadPrompt('finclaw.system.ko.md', 'main:DEFAULT_SYSTEM_PROMPT');
   const DEFAULT_SYSTEM_PROMPT = systemPromptDoc.body;
+
+  // Phase 39: agent 메타데이터 (이전 gateway/agent.ts loadAgents() 가 하던 일 — gateway→server fs 결합 제거).
+  const identityDoc = await loadPrompt('finclaw.identity.md', 'main:agentMeta');
+  requireFrontmatterKeys(
+    identityDoc,
+    'finclaw.identity.md',
+    ['id', 'name', 'description'],
+    'main:agentMeta',
+  );
+  const AGENT_METADATA = [
+    {
+      id: identityDoc.frontmatter.id,
+      name: identityDoc.frontmatter.name,
+      description: identityDoc.frontmatter.description,
+    },
+  ];
 
   // 1. env 검증
   const anthropicKey = requireEnv('ANTHROPIC_API_KEY');
@@ -311,6 +326,7 @@ async function main(): Promise<void> {
     },
     agentDeps: {
       toolRegistry,
+      agents: AGENT_METADATA,
       runnerFactory,
       agentRunLane,
       profileHealth,
@@ -377,7 +393,7 @@ async function main(): Promise<void> {
 
   // Phase 29 E6: dev 모드에서만 hot reload — prompts 디렉터리 watch.
   if (process.env.NODE_ENV !== 'production') {
-    const { createHotReloader } = await import('./gateway/hot-reload.js');
+    const { createHotReloader } = await import('@finclaw/gateway');
     const promptsPath = join(import.meta.dirname, '..', 'prompts', 'finclaw.system.ko.md');
     const hotReloader = createHotReloader(
       { configPath: promptsPath, debounceMs: 500, validateBeforeApply: false, mode: 'watch' },

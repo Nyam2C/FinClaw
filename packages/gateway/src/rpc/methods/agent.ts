@@ -1,35 +1,44 @@
 // packages/server/src/gateway/rpc/methods/agent.ts
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
-import type { AliasIndex, ModelCatalog, ProfileHealthMonitor, ToolRegistry } from '@finclaw/agent';
+import type {
+  AliasIndex,
+  ModelCatalog,
+  ProfileHealthMonitor,
+  RouterHelper,
+  RunnerFactory,
+  ToolRegistry,
+} from '@finclaw/agent';
 import {
+  buildDispatcher,
   calculateEstimatedCost,
+  collectToolCalls,
   DEFAULT_FALLBACK_TRIGGERS,
+  extractAssistantText,
   ModelFloorExhaustedError,
   resolveModel,
   runWithModelFallback,
 } from '@finclaw/agent';
 import type { ConcurrencyLane, FinClawLogger } from '@finclaw/infra';
 import { addAgentRun, type AddAgentRunInput } from '@finclaw/storage';
-import type { AgentRunParams, ConversationMessage, ModelRef, SessionKey } from '@finclaw/types';
+import type {
+  AgentRunParams,
+  AttachMemoryPort,
+  ConversationMessage,
+  ModelRef,
+  SessionKey,
+  TracerPort,
+} from '@finclaw/types';
 import { createAgentId, createSessionKey } from '@finclaw/types';
 import { z } from 'zod/v4';
-import type { AttachMemoryService } from '../../../auto-reply/agent-memory-hook.js';
-import {
-  collectToolCalls,
-  extractAssistantText,
-  type RunnerFactory,
-} from '../../../auto-reply/execution-adapter.js';
-import type { RouterHelper } from '../../../auto-reply/router-helper.js';
-import { buildDispatcher } from '../../../auto-reply/tool-dispatcher-adapter.js';
-import type { FinclawTracer } from '../../../observability/tracer.js';
-import { loadPrompt, requireFrontmatterKeys } from '../../../prompts/loader.js';
 import type { MethodRegistry } from '../index.js';
 import type { RpcMethodHandler } from '../types.js';
 
 /** agent.* RPC 메서드 의존성 (main.ts 에서 주입) */
 export interface AgentRpcDeps {
   readonly toolRegistry: ToolRegistry;
+  /** Phase 39: main.ts 가 finclaw.identity.md frontmatter 로부터 로드해 주입 (이전 loadAgents() 대체). */
+  readonly agents: readonly AgentInfo[];
   readonly runnerFactory: RunnerFactory;
   /** agent.run 전용 큐잉 lane (main.ts 에서 maxConcurrent:1 로 주입) */
   readonly agentRunLane: ConcurrencyLane;
@@ -51,7 +60,7 @@ export interface AgentRpcDeps {
    * Phase 26 D: agent.run 종료 후 output 을 memory 로 저장하는 훅.
    * 미주입 시 저장 단계 자체 생략. 호출 위치는 rpc-engineer 가 결정.
    */
-  readonly attachMemoryService?: AttachMemoryService;
+  readonly attachMemoryService?: AttachMemoryPort;
   /**
    * Phase 26 D: agent_runs 영속화용 sqlite 핸들.
    * 미주입 시 agent_runs 저장 + attachMemoryService 호출 모두 skip (best-effort).
@@ -61,41 +70,13 @@ export interface AgentRpcDeps {
    * Phase 30 hotfix P0-1: agent.run RPC 진입을 span 으로 감싸 active trace context
    * 를 강제. 미주입 시 traceId 부착 skip (기존 동작).
    */
-  readonly tracer?: FinclawTracer;
+  readonly tracer?: TracerPort;
 }
 
-interface AgentInfo {
+export interface AgentInfo {
   readonly id: string;
   readonly name: string;
   readonly description: string;
-}
-
-let cachedAgents: readonly AgentInfo[] | null = null;
-
-async function loadAgents(): Promise<readonly AgentInfo[]> {
-  if (cachedAgents) {
-    return cachedAgents;
-  }
-  const doc = await loadPrompt('finclaw.identity.md', 'agent.ts:loadAgents');
-  requireFrontmatterKeys(
-    doc,
-    'finclaw.identity.md',
-    ['id', 'name', 'description'],
-    'agent.ts:loadAgents',
-  );
-  cachedAgents = [
-    {
-      id: doc.frontmatter.id,
-      name: doc.frontmatter.name,
-      description: doc.frontmatter.description,
-    },
-  ];
-  return cachedAgents;
-}
-
-/** 테스트용: AGENTS 캐시 초기화 */
-export function resetAgentsCache(): void {
-  cachedAgents = null;
 }
 
 /**
@@ -171,9 +152,8 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
     schema: z.object({}),
     async execute() {
       const toolCount = deps.toolRegistry.list().length;
-      const agents = await loadAgents();
       return {
-        agents: agents.map((a) => ({
+        agents: deps.agents.map((a) => ({
           id: a.id,
           name: a.name,
           description: a.description,
@@ -190,8 +170,7 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
     authLevel: 'token',
     schema: z.object({ agentId: z.string() }),
     async execute(params) {
-      const agents = await loadAgents();
-      const info = agents.find((a) => a.id === params.agentId);
+      const info = deps.agents.find((a) => a.id === params.agentId);
       if (!info) {
         throw new Error(`unknown_agent: ${params.agentId}`);
       }
@@ -232,8 +211,7 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
       role: z.enum(['fetch', 'chat', 'analysis', 'summarize']).default('analysis'),
     }),
     async execute(params) {
-      const agents = await loadAgents();
-      if (!agents.find((a) => a.id === params.agentId)) {
+      if (!deps.agents.find((a) => a.id === params.agentId)) {
         throw new Error(`unknown_agent: ${params.agentId}`);
       }
       if (params.stream) {

@@ -11,6 +11,7 @@ import {
   ProfileHealthMonitor,
 } from '@finclaw/agent';
 import type { DiscordAdapter } from '@finclaw/channel-discord';
+import { nextRunAt as computeNextRunAt, parseCron } from '@finclaw/infra';
 import type { FinClawLogger } from '@finclaw/infra';
 import {
   KeyRotator,
@@ -30,7 +31,6 @@ import { addSchedule, getSchedule, type createStorage } from '@finclaw/storage';
 import type { FinClawConfig, ModelRef, ScheduleRpc, Timestamp } from '@finclaw/types';
 import { createAgentId } from '@finclaw/types';
 import type { makeRouterHelper } from '../auto-reply/router-helper.js';
-import { nextRunAt as computeNextRunAt, parseCron } from '../automation/cron.js';
 import { loadPlugins } from '../plugins/loader.js';
 import type { ProcessLifecycle } from '../process/lifecycle.js';
 import { BrokerageSyncService } from '../services/brokerage-sync-service.js';

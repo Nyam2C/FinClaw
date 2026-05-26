@@ -1,4 +1,4 @@
-// packages/server/src/automation/cron.ts
+// packages/infra/src/cron.ts
 // Phase 28 B: 5필드 cron (분 시 일 월 요일).
 // 지원: '*', '*/N', 'M-N', 'M,N,O' 단순 조합. 한 필드당 number[].
 // 비지원: 'L'(last day), 'W'(weekday), '?'.

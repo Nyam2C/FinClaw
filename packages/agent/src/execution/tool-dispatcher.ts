@@ -1,11 +1,11 @@
-// packages/server/src/auto-reply/tool-dispatcher-adapter.ts
+// packages/agent/src/execution/tool-dispatcher.ts
+import type { ToolDefinition } from '@finclaw/types';
 import {
-  ExecutionToolDispatcher,
   toApiToolDefinition,
   type ToolExecutionContext,
   type ToolRegistry,
-} from '@finclaw/agent';
-import type { ToolDefinition } from '@finclaw/types';
+} from '../agents/tools/registry.js';
+import { ExecutionToolDispatcher } from './tool-executor.js';
 
 export interface DispatcherContextBase {
   readonly sessionId: string;
