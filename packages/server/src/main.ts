@@ -185,6 +185,12 @@ async function main(): Promise<void> {
     finclawConfig,
     anthropicKey,
     logger,
+    // Phase 40 C: CLI 모드의 claude 가 접속할 in-process /mcp 엔드포인트 + JWT mint secret.
+    // jwtSecret 은 gatewayConfig.auth (= defaultConfig.auth) 와 동일해야 /mcp 검증 통과.
+    mcpEndpoint: {
+      url: `http://127.0.0.1:${gatewayPort}/mcp`,
+      jwtSecret: defaultConfig.auth.jwtSecret,
+    },
   });
 
   const scheduleRpc = buildScheduleRpc(storage);
