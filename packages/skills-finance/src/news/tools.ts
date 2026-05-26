@@ -1,4 +1,3 @@
-import type Anthropic from '@anthropic-ai/sdk';
 // packages/skills-finance/src/news/tools.ts
 import type {
   ModelCatalog,
@@ -11,7 +10,7 @@ import type {
 import { ModelFloorExhaustedError } from '@finclaw/agent';
 import type { ModelRef, TickerSymbol } from '@finclaw/types';
 import { z } from 'zod/v4';
-import { analyzeMarket } from './analysis/market-analysis.js';
+import { analyzeMarket, type AnalyzeRunner } from './analysis/market-analysis.js';
 import type { PortfolioStore } from './portfolio/store.js';
 import { createPortfolioTracker, type QuoteService } from './portfolio/tracker.js';
 import type { NewsAggregator, AnalysisOptions, NewsCategory } from './types.js';
@@ -109,7 +108,7 @@ export function registerAnalyzeMarketTool(
   registry: ToolRegistry,
   deps: {
     newsAggregator: NewsAggregator;
-    client: Anthropic;
+    runAnalysis: AnalyzeRunner;
     router?: RouterHelper;
     defaultModel?: ModelRef;
     /** Phase 24 E: 스킬 내부 LLM 비용·건강 기록용 (선택) */
@@ -180,7 +179,7 @@ export function registerAnalyzeMarketTool(
         modelRef = { ...baseModel, model: modelId };
       }
 
-      const analysis = await analyzeMarket(deps.client, news, options, modelRef, {
+      const analysis = await analyzeMarket(deps.runAnalysis, news, options, modelRef, {
         profileHealth: deps.profileHealth,
         profileId: deps.profileId,
         modelCatalog: deps.modelCatalog,

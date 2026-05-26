@@ -1,5 +1,4 @@
 import type { DatabaseSync } from 'node:sqlite';
-import Anthropic from '@anthropic-ai/sdk';
 // packages/skills-finance/src/news/index.ts
 import type {
   ModelCatalog,
@@ -7,6 +6,7 @@ import type {
   RouterHelper,
   ToolRegistry,
 } from '@finclaw/agent';
+import { runCliAgent } from '@finclaw/agent';
 import type { ModelRef, SkillMetadata } from '@finclaw/types';
 import type { KeyRotator } from '../shared/key-rotator.js';
 import { createNewsAggregator } from './aggregator.js';
@@ -37,7 +37,6 @@ export interface NewsSkillConfig {
   /** Phase 27: Finnhub 시세와 공유하는 KeyRotator */
   readonly finnhubRotator?: KeyRotator;
   readonly rssFeedUrls?: string[];
-  readonly anthropicApiKey?: string;
   readonly quoteService: QuoteService;
   /**
    * Phase 24: 모델 라우터. analyze_market 도구 실행 시 role='analysis' 로
@@ -100,19 +99,32 @@ export async function registerNewsTools(
   // 도구 등록: get_financial_news
   registerGetFinancialNewsTool(registry, { newsAggregator });
 
-  // 도구 등록: analyze_market (Anthropic API 키가 있을 때만)
-  if (config.anthropicApiKey) {
-    const client = new Anthropic({ apiKey: config.anthropicApiKey });
-    registerAnalyzeMarketTool(registry, {
-      newsAggregator,
-      client,
-      router: config.router,
-      defaultModel: config.defaultModel,
-      profileHealth: config.profileHealth,
-      profileId: config.profileId,
-      modelCatalog: config.modelCatalog,
-    });
-  }
+  // 도구 등록: analyze_market — Phase 41: CLI runner 무조건 등록 (구독 모드).
+  // inner runCliAgent 은 전용 queueKey('claude-analysis') + 세션 비공유로 중첩 spawn 데드락 회피.
+  registerAnalyzeMarketTool(registry, {
+    newsAggregator,
+    runAnalysis: async (req) => {
+      const res = await runCliAgent({
+        systemPrompt: req.systemPrompt,
+        prompt: req.prompt,
+        modelId: req.modelId,
+        timeoutMs: req.timeoutMs,
+        queueKey: 'claude-analysis',
+        // cliSessionId 미전달 — stateless 1-shot (세션 비공유).
+      });
+      return {
+        text: res.text,
+        usage: res.usage
+          ? { input: res.usage.input ?? 0, output: res.usage.output ?? 0 }
+          : undefined,
+      };
+    },
+    router: config.router,
+    defaultModel: config.defaultModel,
+    profileHealth: config.profileHealth,
+    profileId: config.profileId,
+    modelCatalog: config.modelCatalog,
+  });
 
   // 도구 등록: get_portfolio_summary
   const portfolioStore = new PortfolioStore(config.db);
@@ -136,13 +148,7 @@ export const NEWS_SKILL_METADATA: SkillMetadata = {
   version: '1.0.0',
   requires: {
     env: [],
-    optionalEnv: [
-      'NEWSAPI_KEY',
-      'ALPHA_VANTAGE_KEY',
-      'FINNHUB_KEY',
-      'NEWSDATA_API_KEY',
-      'ANTHROPIC_API_KEY',
-    ],
+    optionalEnv: ['NEWSAPI_KEY', 'ALPHA_VANTAGE_KEY', 'FINNHUB_KEY', 'NEWSDATA_API_KEY'],
   },
   tools: [
     { name: 'get_financial_news', minModel: 'haiku', reason: '리스트 반환' },

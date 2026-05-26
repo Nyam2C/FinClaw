@@ -1,5 +1,4 @@
 // packages/skills-finance/src/news/analysis/market-analysis.ts
-import type Anthropic from '@anthropic-ai/sdk';
 import type { ModelCatalog, ProfileHealthMonitor } from '@finclaw/agent';
 import { calculateEstimatedCost } from '@finclaw/agent';
 import type { ModelRef, NewsItem } from '@finclaw/types';
@@ -13,6 +12,19 @@ export interface AnalysisRecordDeps {
   readonly profileId?: string;
   readonly modelCatalog?: ModelCatalog;
 }
+
+/** Phase 41: analyze_market 의 LLM 실행 추상화 — runCliAgent 기본 주입, 테스트는 mock 주입. */
+export interface AnalyzeRunnerRequest {
+  readonly systemPrompt: string;
+  readonly prompt: string;
+  readonly modelId: string;
+  readonly timeoutMs?: number;
+}
+export interface AnalyzeRunnerResult {
+  readonly text: string;
+  readonly usage?: { readonly input: number; readonly output: number };
+}
+export type AnalyzeRunner = (req: AnalyzeRunnerRequest) => Promise<AnalyzeRunnerResult>;
 
 const EvidenceSchema = z.array(z.number().int().min(1)).default([]);
 const ImpactSchema = z.enum(['high', 'medium', 'low']);
@@ -57,7 +69,7 @@ const AnalysisResponseSchema = z.object({
 });
 
 export async function analyzeMarket(
-  client: Anthropic,
+  runAnalysis: AnalyzeRunner,
   news: readonly NewsItem[],
   options: AnalysisOptions,
   modelRef: ModelRef,
@@ -81,13 +93,13 @@ export async function analyzeMarket(
     options.includeIndicators,
   );
 
-  let message;
+  let result: AnalyzeRunnerResult;
   try {
-    message = await client.messages.create({
-      model: modelRef.model,
-      max_tokens: depth === 'brief' ? 500 : depth === 'detailed' ? 2000 : 1000,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }],
+    result = await runAnalysis({
+      systemPrompt,
+      prompt: userPrompt,
+      modelId: modelRef.model,
+      timeoutMs: 30_000,
     });
   } catch (err) {
     // Phase 24 E: 실패도 기록 — modelId 만 알면 충분 (tokens 0).
@@ -101,18 +113,17 @@ export async function analyzeMarket(
   // Phase 24 E: 성공 호출 기록 — !finclaw status 의 모델 분포에 포함.
   if (recordDeps?.profileHealth) {
     const pricing = recordDeps.modelCatalog?.getModel(modelRef.model)?.pricing;
+    const inTok = result.usage?.input ?? 0;
+    const outTok = result.usage?.output ?? 0;
     recordDeps.profileHealth.recordResult(recordDeps.profileId ?? 'skill-news-analyze', {
       success: true,
       modelId: modelRef.model,
-      tokens: { input: message.usage.input_tokens, output: message.usage.output_tokens },
-      costUsd: pricing
-        ? calculateEstimatedCost(message.usage.input_tokens, message.usage.output_tokens, pricing)
-        : 0,
+      tokens: { input: inTok, output: outTok },
+      costUsd: pricing ? calculateEstimatedCost(inTok, outTok, pricing) : 0,
     });
   }
 
-  const text = message.content[0]?.type === 'text' ? message.content[0].text : '';
-  const parsed = AnalysisResponseSchema.safeParse(JSON.parse(text));
+  const parsed = AnalysisResponseSchema.safeParse(JSON.parse(result.text));
   if (!parsed.success) {
     throw new Error(`LLM response validation failed: ${parsed.error.message}`);
   }

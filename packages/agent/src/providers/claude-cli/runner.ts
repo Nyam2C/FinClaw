@@ -17,6 +17,9 @@ export interface RunCliAgentRequest {
   abortSignal?: AbortSignal;
   cwd?: string;
   backend?: CliBackendConfig;
+  /** Phase 41: 큐 키 override. inner analyze_market spawn 이 outer ReAct 와 다른 큐를 쓰게 해
+   *  중첩 spawn 데드락 회피. 미지정 시 buildCliQueueKey(backendId:'claude', ...) 기본. */
+  queueKey?: string;
 }
 
 export interface RunCliAgentResponse {
@@ -80,11 +83,13 @@ export async function runCliAgent(req: RunCliAgentRequest): Promise<RunCliAgentR
   const timeoutMs = req.timeoutMs ?? 60_000;
   const noOutputTimeoutMs = resolveCliNoOutputTimeoutMs({ backend, timeoutMs, useResume });
 
-  // queue
-  const queueKey = buildCliQueueKey({
-    backendId: 'claude',
-    cliSessionId: useResume ? req.cliSessionId : undefined,
-  });
+  // queue — Phase 41: req.queueKey override 우선, 미지정 시 기존 backendId/세션 기반 키.
+  const queueKey =
+    req.queueKey ??
+    buildCliQueueKey({
+      backendId: 'claude',
+      cliSessionId: useResume ? req.cliSessionId : undefined,
+    });
 
   const result = await enqueueCliRun(queueKey, async () => {
     return spawnWithWatchdog({

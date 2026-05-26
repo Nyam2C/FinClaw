@@ -68,7 +68,6 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
     storage,
     logger,
     finclawConfig,
-    anthropicKey,
     discordAdapter,
     routerHelper,
     profileHealth,
@@ -123,7 +122,6 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
       newsdataRotator,
       finnhubRotator, // 시세 KeyRotator 와 동일 인스턴스 공유
       quoteService: marketHandle.quoteService,
-      anthropicApiKey: anthropicKey,
       router: routerHelper,
       defaultModel,
       // Phase 24 E: 스킬 내부 analyze_market LLM 호출도 status 분포에 포함.
