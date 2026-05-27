@@ -7,8 +7,6 @@ import { ChatRegistry } from './registry.js';
 const TEST_MODEL: ModelRef = {
   provider: 'anthropic',
   model: 'claude-test',
-  contextWindow: 200_000,
-  maxOutputTokens: 8_192,
 };
 
 /** 기본 세션 파라미터 — 테스트에서 agentId/connectionId만 오버라이드. */

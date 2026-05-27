@@ -36,8 +36,6 @@ describe('requireEnv', () => {
 const TEST_MODEL: ModelRef = {
   provider: 'anthropic',
   model: 'claude-test',
-  contextWindow: 200_000,
-  maxOutputTokens: 8_192,
 };
 
 function makeStubAdapter(): RunnerExecutionAdapter {

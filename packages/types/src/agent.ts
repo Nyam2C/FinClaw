@@ -17,17 +17,6 @@ export interface AgentProfile {
 export interface ModelRef {
   provider: string;
   model: string;
-  contextWindow: number;
-  maxOutputTokens: number;
-}
-
-/** 인증 프로필 */
-export interface AuthProfile {
-  provider: string;
-  apiKey: string;
-  organizationId?: string;
-  baseUrl?: string;
-  rotationIndex?: number;
 }
 
 /** 에이전트 실행 파라미터 */

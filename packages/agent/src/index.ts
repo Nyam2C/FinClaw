@@ -100,19 +100,6 @@ export type {
   RecordOptions,
 } from './auth/health.js';
 
-// ─── auth: profiles ───
-export { InMemoryAuthProfileStore } from './auth/profiles.js';
-export type { ManagedAuthProfile, AuthProfileStore, CreateProfileInput } from './auth/profiles.js';
-
-// ─── auth: resolver ───
-export { resolveApiKeyForProvider } from './auth/resolver.js';
-export type {
-  ResolverOptions,
-  ResolvedApiKey,
-  ApiKeySource,
-  AgentResolverConfig,
-} from './auth/resolver.js';
-
 // ── Phase 7: Tools ──
 export type {
   ToolGroupId,

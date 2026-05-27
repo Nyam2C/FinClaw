@@ -13,13 +13,10 @@ import type {
 } from '@finclaw/agent';
 import {
   calculateEstimatedCost,
-  compactContext,
   DEFAULT_FALLBACK_TRIGGERS,
-  evaluateContextWindow,
   ExecutionToolDispatcher as ToolDispatcherCtor,
   resolveModel,
   runWithModelFallback,
-  type TranscriptEntry,
 } from '@finclaw/agent';
 import { buildDispatcher, collectToolCalls, extractAssistantText } from '@finclaw/agent';
 import type { ToolCallRecord } from '@finclaw/agent';
@@ -27,7 +24,6 @@ import type { FinClawLogger } from '@finclaw/infra';
 import type {
   AgentId,
   AgentRunParams,
-  ContentBlock,
   ConversationMessage,
   ModelRef,
   ModelTier,
@@ -174,13 +170,7 @@ export class RunnerExecutionAdapter implements ExecutionAdapter, ChatExecutionPo
       ? `${baseSystemPrompt}\n\n${backgroundSection}`
       : baseSystemPrompt;
 
-    // Phase 31 C: 컨텍스트 윈도우 critical/exceeded 시 compaction. 미주입 시 원본 그대로.
-    const requestMessages = await maybeCompactMessages(
-      [...priorMessages, userMessage],
-      this.deps.defaultModel,
-      ctx,
-      this.deps.logger,
-    );
+    const requestMessages = [...priorMessages, userMessage];
 
     const buildParams = (model: ModelRef): AgentRunParams => ({
       agentId: this.defaultAgentId,
@@ -214,11 +204,6 @@ export class RunnerExecutionAdapter implements ExecutionAdapter, ChatExecutionPo
               ...this.deps.defaultModel,
               provider: resolved.provider,
               model: resolved.modelId,
-              contextWindow: resolved.entry.contextWindow,
-              maxOutputTokens: Math.min(
-                resolved.entry.maxOutputTokens,
-                this.deps.defaultModel.maxOutputTokens,
-              ),
             };
             return runner.execute(buildParams(model));
           },
@@ -403,99 +388,6 @@ export interface TuiExecutionResult {
 
 function toMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
-}
-
-/** ConversationMessage 의 content (string | ContentBlock[]) 를 단일 문자열로 평탄화. */
-function flattenContent(content: string | ContentBlock[]): string {
-  if (typeof content === 'string') {
-    return content;
-  }
-  return content
-    .map((block) => {
-      switch (block.type) {
-        case 'text':
-          return block.text;
-        case 'tool_result':
-          return block.content;
-        case 'tool_use':
-          return JSON.stringify(block.input);
-        default:
-          return '';
-      }
-    })
-    .join('\n');
-}
-
-function toTranscriptEntry(msg: ConversationMessage): TranscriptEntry {
-  return {
-    role: msg.role,
-    content: flattenContent(msg.content),
-    timestamp: new Date().toISOString(),
-  };
-}
-
-/**
- * Phase 31 C — 컨텍스트 윈도우 평가 후 critical/exceeded 면 compactContext 로 압축.
- *
- * tokenCounter/summarizer 미주입 시 원본 messages 그대로 반환 (compaction 비활성).
- * 압축 결과는 string content 의 ConversationMessage[] 로 환원하고, 선두 orphan tool 메시지를
- * 제거해 Anthropic tool_use/tool_result 페어 제약을 지킨다.
- */
-export async function maybeCompactMessages(
-  messages: readonly ConversationMessage[],
-  model: ModelRef,
-  ctx: Pick<PipelineMsgContext, 'tokenCounter' | 'summarizer'>,
-  logger?: FinClawLogger,
-): Promise<ConversationMessage[]> {
-  const { tokenCounter, summarizer } = ctx;
-  if (!tokenCounter || !summarizer) {
-    return [...messages];
-  }
-
-  const entries = messages.map(toTranscriptEntry);
-  const windowState = evaluateContextWindow(
-    entries,
-    model.contextWindow,
-    model.maxOutputTokens,
-    { warningThreshold: 0.7, criticalThreshold: 0.85, reserveTokens: 4096 },
-    tokenCounter,
-  );
-
-  if (windowState.status !== 'critical' && windowState.status !== 'exceeded') {
-    return [...messages];
-  }
-
-  logger?.warn('context.compaction_triggered', {
-    event: 'context.compaction_triggered',
-    status: windowState.status,
-    usedTokens: windowState.currentTokens,
-    maxTokens: windowState.maxTokens,
-  });
-
-  const result = await compactContext(
-    entries,
-    {
-      strategy: 'summarize',
-      targetTokens: Math.floor(model.contextWindow * 0.5),
-      preserveRecentMessages: 4,
-      preserveSystemPrompt: false,
-    },
-    summarizer,
-    tokenCounter,
-  );
-
-  logger?.info('context.compacted', {
-    event: 'context.compacted',
-    strategy: result.strategy,
-    beforeTokens: result.beforeTokens,
-    afterTokens: result.afterTokens,
-  });
-
-  const compactedMessages: ConversationMessage[] = result.compactedEntries.map((e) => ({
-    role: e.role,
-    content: e.content,
-  }));
-  return sliceHistoryRespectingToolPairs(compactedMessages, compactedMessages.length);
 }
 
 /**

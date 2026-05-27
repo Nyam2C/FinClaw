@@ -31,8 +31,6 @@ function createBaseParams(overrides?: Partial<AgentRunParams>): AgentRunParams {
     model: {
       provider: 'anthropic',
       model: 'claude-sonnet-4-6',
-      contextWindow: 200_000,
-      maxOutputTokens: 8192,
     },
     systemPrompt: '테스트 시스템 프롬프트',
     messages: [{ role: 'user', content: '안녕하세요' }],

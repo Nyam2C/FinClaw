@@ -33,8 +33,6 @@ export const AnalyzeMarketOutputSchema = z.object({
 const ANALYZE_MARKET_FALLBACK_MODEL: ModelRef = {
   provider: 'anthropic',
   model: 'claude-opus-4-7',
-  contextWindow: 200_000,
-  maxOutputTokens: 8192,
 };
 
 // ─── get_financial_news ───

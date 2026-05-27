@@ -20,7 +20,7 @@ export class TokenCounter {
   private warned80 = false;
   private warned95 = false;
 
-  constructor(private readonly contextWindow: number) {}
+  constructor(private readonly contextWindow: number = 200_000) {}
 
   /** 토큰 사용량 누적 */
   add(delta: TokenUsage): void {

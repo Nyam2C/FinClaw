@@ -322,11 +322,6 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
                     ...deps.defaultModel,
                     provider: resolved.provider,
                     model: resolved.modelId,
-                    contextWindow: resolved.entry.contextWindow,
-                    maxOutputTokens: Math.min(
-                      resolved.entry.maxOutputTokens,
-                      deps.defaultModel.maxOutputTokens,
-                    ),
                   };
                   return runner.execute(buildRunParams(model));
                 },

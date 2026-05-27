@@ -14,8 +14,6 @@ import { SchedulerService } from './scheduler.js';
 const DEFAULT_MODEL: ModelRef = {
   provider: 'anthropic',
   model: 'claude-sonnet-4-6',
-  contextWindow: 200_000,
-  maxOutputTokens: 8_192,
 };
 
 function makeLogger(): FinClawLogger {

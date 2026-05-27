@@ -281,11 +281,6 @@ export class SchedulerService implements SchedulerPort {
                     ...this.deps.defaultModel,
                     provider: resolved.provider,
                     model: resolved.modelId,
-                    contextWindow: resolved.entry.contextWindow,
-                    maxOutputTokens: Math.min(
-                      resolved.entry.maxOutputTokens,
-                      this.deps.defaultModel.maxOutputTokens,
-                    ),
                   }),
                 ),
               (ref) => resolveModel(ref, catalog, aliasIndex),

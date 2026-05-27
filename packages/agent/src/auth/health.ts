@@ -1,6 +1,5 @@
 // packages/agent/src/auth/health.ts
 import { getEventBus } from '@finclaw/infra';
-import type { ManagedAuthProfile } from './profiles.js';
 
 /** 프로필 건강 상태 */
 export type ProfileHealthStatus = 'healthy' | 'degraded' | 'unhealthy' | 'disabled';
@@ -169,11 +168,6 @@ export class ProfileHealthMonitor {
     state.records = state.records.filter((r) => r.timestamp >= cutoff);
 
     return this.computeHealth(state);
-  }
-
-  /** 건강한 프로필만 필터링 (disabled 제외) */
-  filterHealthy(profiles: readonly ManagedAuthProfile[]): readonly ManagedAuthProfile[] {
-    return profiles.filter((p) => this.getHealth(p.id) !== 'disabled');
   }
 
   /** 건강 상태 요약 */

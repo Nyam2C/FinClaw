@@ -102,7 +102,7 @@ export class Runner {
    * 3. Lane 핸들 release
    */
   async execute(params: AgentRunParams, listener?: StreamEventListener): Promise<ExecutionResult> {
-    const tokenCounter = new TokenCounter(params.model.contextWindow);
+    const tokenCounter = new TokenCounter();
     const startTime = Date.now();
     const messages: ConversationMessage[] = [...params.messages];
 
@@ -263,7 +263,7 @@ export class Runner {
       tools: params.tools,
       systemPrompt: params.systemPrompt,
       temperature: params.temperature,
-      maxTokens: params.maxTokens ?? params.model.maxOutputTokens,
+      maxTokens: params.maxTokens,
       abortSignal: params.abortSignal,
       ...(forceToolName ? { forceToolChoice: { name: forceToolName } } : {}),
     };

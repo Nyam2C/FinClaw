@@ -98,8 +98,6 @@ function makeDeps(overrides: Partial<AgentRpcDeps> = {}): AgentRpcDeps {
     defaultModel: {
       provider: 'anthropic',
       model: 'claude-sonnet-4-6',
-      contextWindow: 200_000,
-      maxOutputTokens: 8_192,
     },
     logger: {
       trace: vi.fn(),

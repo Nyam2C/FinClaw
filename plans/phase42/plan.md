@@ -58,3 +58,44 @@ interface AgentProfile {
 
 - 이 결정은 **타입 토대만** (사용자 결정). reader(1~8)는 후속. 타입은 단순해지나 복잡도는 "로더+포맷+집행"으로 **이전**됨 (소멸 아님).
 - `AgentProfile` 은 dead 였으므로 필드 제거는 회귀 위험 0 (소비자 0 검증).
+
+---
+
+## 결정 2 — `ModelRef` 슬림: `contextWindow`/`maxOutputTokens` 제거 (실행 완료, 미커밋)
+
+### 배경 (검증 완료)
+
+- `ModelRef` (`types/src/agent.ts`) 는 live(8+ 사용)지만 두 필드는 phase41 CLI 전환 후 **잔재**:
+  - `maxOutputTokens`: `runner.ts:266` 서 계산되나 `CliProviderAdapter` 가 안 읽음(claude-cli grep 0) → CLI 경계 폐기. phase41 이 SDK 소비처(`anthropic.ts`) 삭제하며 잔재화.
+  - `contextWindow`: `TokenCounter`(observability, 이벤트만) + 죽은 compaction 경로(summarizer 영구 미주입)만 읽음 → load-bearing 0.
+- CLI 가 컨텍스트·출력을 자체 관리 → ModelRef 가 들 이유 없음. 토큰 메타 원본은 `ModelEntry`(catalog) 보유 → 정보 손실 0.
+
+### 실행 (cascade, 사용자 "지금 제거")
+
+- `ModelRef` → `{ provider, model }`.
+- 읽기 2(runner: `TokenCounter` 기본값 200_000 / `maxTokens` fallback 제거), 생성 5(constants·news-tools·gateway·scheduler·execution-adapter), 죽은 `maybeCompactMessages` **gut**(−110 LOC, 프로덕션 no-op라 동작 동일), 테스트 fixture 9 + 전용 테스트파일 1 삭제.
+- 검증: typecheck 0 / lint 0 / test 1641→**1638**(−3=삭제 테스트). 17파일 +4 −146.
+
+### 부산물 — orphan (→ `todo.md` dead-code 백로그)
+
+- `evaluateContextWindow`(window-guard.ts) · `compactContext`(compaction.ts) = `maybeCompactMessages` 제거로 **프로덕션 orphan**(런타임 호출 0, 자체 유닛테스트 + 배럴 export 생존). → `agent/src/agents/context/` 압축 서브시스템 전체가 프로덕션 dead 후보. §3대로 미삭제.
+
+---
+
+## 결정 3 — `AuthProfile` 제거: 죽은 LLM 키-로테이션 클러스터 (실행 완료, 미커밋)
+
+### 배경 (검증 완료)
+
+- `AuthProfile`(types) + `agent/src/auth/{profiles,resolver}.ts`(`ManagedAuthProfile`·`InMemoryAuthProfileStore`·`resolveApiKeyForProvider`) = **Phase 6 부터 dead-on-arrival** (production 호출 0). claude CLI OAuth(구독) 인증이 API-키 인증을 대체(`backends.ts:49` env 키 비움).
+- **사용자 질문 검증(중요):** 시세 API 키 로테이션은 **별개 live 클래스 `KeyRotator`**(`skills-finance/src/shared/key-rotator.ts`, finnhub·twelveData·alphaVantage)가 담당 — AuthProfile 과 import 무관. 즉 AuthProfile 제거가 시세 키 로테이션을 **안 건드림** → 제거 안전.
+
+### 실행 (cascade)
+
+- **삭제**: `auth/profiles.ts`(165) · `auth/resolver.ts`(97) · `test/resolver.test.ts`(131).
+- **수정**: `types/agent.ts`(AuthProfile 제거) · `auth/health.ts`(`filterHealthy` 만 제거) · `agent/index.ts`(죽은 re-export 제거) · `health.test.ts`(filterHealthy 케이스 제거).
+- ⚠️ **보존**: `ProfileHealthMonitor` · `CooldownTracker` (gateway/server live 소비) — typecheck/test 통과 확인. live→dead 의존 없었음.
+- 검증: typecheck 0 / lint 0 / test 1638→**1628**(−10 = resolver 9 + filterHealthy 1).
+
+### 부산물 — orphan
+
+- `infra/events.ts:64` `'auth:resolve'` 이벤트 타입 = 유일 emit 처(resolver) 삭제로 **dead(unemitted)**. §3대로 미삭제, `todo.md` 백로그. (`auth:health:change` 는 live `ProfileHealthMonitor` 가 emit — 생존.)
