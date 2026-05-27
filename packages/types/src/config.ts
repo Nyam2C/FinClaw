@@ -1,6 +1,6 @@
 import type { LogLevel } from './common.js';
 
-/** FinClaw 루트 설정 타입 -- OpenClaw의 OpenClawConfig 대응 */
+/** FinClaw 루트 설정 타입 */
 export interface FinClawConfig {
   gateway?: GatewayConfig;
   agents?: AgentsConfig;
