@@ -18,12 +18,7 @@ import {
   evaluateContextWindow,
   ExecutionToolDispatcher as ToolDispatcherCtor,
   resolveModel,
-  ROUTER_MODEL_ID,
   runWithModelFallback,
-  tierToModelId,
-  type LlmRouter,
-  type ModelRole,
-  type RouterDecision,
   type TranscriptEntry,
 } from '@finclaw/agent';
 import { buildDispatcher, collectToolCalls, extractAssistantText } from '@finclaw/agent';
@@ -43,41 +38,6 @@ import type {
 import { createAgentId } from '@finclaw/types';
 import type { PipelineMsgContext } from './pipeline-context.js';
 import { formatBackgroundSection } from './stages/memory-retrieval.js';
-
-/**
- * 메시지 본문에서 role 추론 — 단순 키워드 휴리스틱 (Phase 24).
- *
- * 우선순위: analysis > fetch > chat
- * - analysis: 명시적 분석/판단 요청 → Opus + 모든 도구 (analyze_market 포함)
- * - fetch: 단순 시세/가격/환율/차트 조회 → Haiku + haiku-min 도구 11개
- * - chat: 그 외 일반 대화 → Sonnet + sonnet-min 이하 도구 13개
- *
- * 사용자 직접 입력이라 모호하므로 키워드 명시 시에만 fetch/analysis 로 승격.
- */
-const ANALYSIS_KEYWORDS = ['분석', '리포트', '판단', 'analyze', 'report'];
-const FETCH_KEYWORDS = [
-  '얼마',
-  '가격',
-  '시세',
-  '주가',
-  '환율',
-  '차트',
-  'price',
-  'quote',
-  'rate',
-  'chart',
-];
-
-function inferRole(message: string): ModelRole {
-  const lower = message.toLowerCase();
-  if (ANALYSIS_KEYWORDS.some((kw) => lower.includes(kw))) {
-    return 'analysis';
-  }
-  if (FETCH_KEYWORDS.some((kw) => lower.includes(kw))) {
-    return 'fetch';
-  }
-  return 'chat';
-}
 
 /**
  * Phase 9 AI 실행 엔진과의 브릿지 인터페이스
@@ -171,12 +131,6 @@ export interface RunnerExecutionAdapterDeps {
   readonly profileHealth?: ProfileHealthMonitor;
   /** 건강 기록용 프로필 ID (기본 'default') */
   readonly profileId?: string;
-  /**
-   * Phase 34: LLM 오케스트레이터 라우터 (SDK Haiku 고정). 주입 시 매 요청마다
-   * intent 분류 → {modelTier, allowedToolNames}. 실패 시 inferRole 키워드 폴백 (B-2).
-   * 키워드 RouterHelper(Phase 24) 정상 경로는 폐기 — main.ts 는 routerLlm 만 주입.
-   */
-  readonly routerLlm?: LlmRouter;
 }
 
 /**
@@ -207,19 +161,8 @@ export class RunnerExecutionAdapter implements ExecutionAdapter, ChatExecutionPo
     const profileId = this.deps.profileId ?? 'default';
     const startedAt = Date.now();
 
-    // Phase 34/35: LLM 라우터 1회 호출 → intent 기반 모델/도구. signal 전달로 abort 시 취소.
-    const routed = await this.routeToChain(
-      ctx.normalizedBody,
-      toolDefinitions,
-      'pipeline.routed',
-      signal,
-    );
-
-    // Phase 24 보정: 라우터가 결정한 allowedToolNames 만 LLM 에 노출.
-    // minModel 미충족 도구는 자동 제외되어 chat → Opus 부작용 방지.
-    const exposedTools = routed
-      ? toolDefinitions.filter((t) => routed.allowedToolNames.includes(t.name))
-      : toolDefinitions;
+    // Phase 41: LLM 라우터 제거 — 전체 도구 노출 + fallbackChain(sonnet 선두) 직결.
+    const exposedTools = toolDefinitions;
 
     // Phase 26 C: retrievalResult 가 있으면 "사용자 배경지식" 섹션을 system prompt 끝에 합성.
     // 빈 섹션 (snippets·transactions 모두 0) 이면 base 그대로 — 빈 헤더 노출 방지.
@@ -251,10 +194,7 @@ export class RunnerExecutionAdapter implements ExecutionAdapter, ChatExecutionPo
 
     try {
       const { modelCatalog, modelAliasIndex, fallbackChain } = this.deps;
-      // 라우터 활성: routed.chain (라우터 결정 모델 선두) + routed.floor 로 floor 미만 차단.
-      // 라우터 미주입: 기존 fallbackChain 동작 (floor 없음 → AggregateError).
-      const effectiveChain = routed?.chain ?? fallbackChain;
-      const effectiveFloor = routed?.floor;
+      const effectiveChain = fallbackChain;
       let result;
       // Phase 24 E: byModel 집계용 — fallback path 에서만 정확한 modelId/pricing 확보.
       let usedModelId: string | undefined;
@@ -268,7 +208,6 @@ export class RunnerExecutionAdapter implements ExecutionAdapter, ChatExecutionPo
             retryBaseDelayMs: 500,
             fallbackOn: DEFAULT_FALLBACK_TRIGGERS,
             abortSignal: signal,
-            floor: effectiveFloor,
           },
           async (resolved) => {
             const model: ModelRef = {
@@ -310,31 +249,6 @@ export class RunnerExecutionAdapter implements ExecutionAdapter, ChatExecutionPo
         });
       } else {
         this.deps.profileHealth?.recordResult(profileId, true);
-      }
-
-      // Phase 34 D-0: 라우터 Haiku 토큰을 메인 호출과 분리하여 byModel 집계.
-      // ROUTER_MODEL_ID 의 catalog pricing 으로 비용 환산 → "≤$0.0005" 완료조건 검증 가능.
-      if (
-        routed?.routerUsage &&
-        (routed.routerUsage.inputTokens > 0 || routed.routerUsage.outputTokens > 0)
-      ) {
-        const routerPricing = this.deps.modelCatalog?.getModel(ROUTER_MODEL_ID)?.pricing;
-        this.deps.profileHealth?.recordResult(profileId, {
-          success: true,
-          modelId: ROUTER_MODEL_ID,
-          tokens: {
-            input: routed.routerUsage.inputTokens,
-            output: routed.routerUsage.outputTokens,
-          },
-          costUsd: routerPricing
-            ? calculateEstimatedCost(
-                routed.routerUsage.inputTokens,
-                routed.routerUsage.outputTokens,
-                routerPricing,
-              )
-            : 0,
-          isFallback: false,
-        });
       }
 
       const content = extractAssistantText(result.messages);
@@ -389,18 +303,8 @@ export class RunnerExecutionAdapter implements ExecutionAdapter, ChatExecutionPo
     });
     const runner = this.deps.runnerFactory(dispatcher);
 
-    // Phase 34/35: TUI 도 LLM 라우터 사용 (B-3). signal 전달로 abort 시 취소.
-    const routed = await this.routeToChain(
-      input.userMessage,
-      toolDefinitions,
-      'tui.routed',
-      signal,
-    );
-
-    // Phase 24 보정: 라우터 결정 allowedToolNames 만 LLM 노출.
-    const exposedTools = routed
-      ? toolDefinitions.filter((t) => routed.allowedToolNames.includes(t.name))
-      : toolDefinitions;
+    // Phase 41: LLM 라우터 제거 — TUI 도 전체 도구 노출.
+    const exposedTools = toolDefinitions;
 
     const buildParams = (model: ModelRef): AgentRunParams => ({
       agentId: input.agentId,
@@ -412,61 +316,15 @@ export class RunnerExecutionAdapter implements ExecutionAdapter, ChatExecutionPo
       abortSignal: signal,
     });
 
-    const { modelCatalog, modelAliasIndex } = this.deps;
-    let result;
-    // Phase 24 E: byModel 집계용 — fallback path 에서만 정확한 modelId/pricing.
-    let usedModelId: string | undefined;
-    let usedPricing: ModelPricing | undefined;
-    let usedIsFallback = false;
-    if (routed && modelCatalog && modelAliasIndex) {
-      const fallback = await runWithModelFallback(
-        {
-          models: routed.chain.map((raw) => ({ raw })),
-          maxRetriesPerModel: 1,
-          retryBaseDelayMs: 500,
-          fallbackOn: DEFAULT_FALLBACK_TRIGGERS,
-          abortSignal: signal,
-          floor: routed.floor,
-        },
-        async (resolved) => {
-          const model: ModelRef = {
-            ...input.model,
-            provider: resolved.provider,
-            model: resolved.modelId,
-            contextWindow: resolved.entry.contextWindow,
-            maxOutputTokens: Math.min(resolved.entry.maxOutputTokens, input.model.maxOutputTokens),
-          };
-          return runner.execute(buildParams(model), listener);
-        },
-        (ref) => resolveModel(ref, modelCatalog, modelAliasIndex),
-      );
-      result = fallback.result;
-      usedModelId = fallback.modelUsed.modelId;
-      usedPricing = fallback.modelUsed.entry.pricing;
-      usedIsFallback = fallback.modelUsed.modelId !== routed.chain[0];
-    } else {
-      result = await runner.execute(buildParams(input.model), listener);
-    }
+    // Phase 41: LLM 라우터 제거 — TUI 는 사용자 세션 model 단발 경로 보존 (sonnet 강제 X).
+    // byModel 집계(modelId/pricing)는 fallback path 전용이었으므로 단발 경로는 success-only 기록.
+    const result = await runner.execute(buildParams(input.model), listener);
 
     await this.persistHistory(input.sessionKey, input.agentId, result.messages);
 
-    // Phase 24 E: TUI/chat.send 도 모델 분포에 기록 (execute() 와 동일 정책).
+    // Phase 24 E / Phase 41: TUI/chat.send 도 모델 분포에 기록 (단발 경로 — success-only).
     const profileId = this.deps.profileId ?? 'default';
-    if (usedModelId && usedPricing) {
-      this.deps.profileHealth?.recordResult(profileId, {
-        success: true,
-        modelId: usedModelId,
-        tokens: { input: result.usage.inputTokens, output: result.usage.outputTokens },
-        costUsd: calculateEstimatedCost(
-          result.usage.inputTokens,
-          result.usage.outputTokens,
-          usedPricing,
-        ),
-        isFallback: usedIsFallback,
-      });
-    } else {
-      this.deps.profileHealth?.recordResult(profileId, true);
-    }
+    this.deps.profileHealth?.recordResult(profileId, true);
 
     return {
       messageId: randomUUID(),
@@ -475,99 +333,6 @@ export class RunnerExecutionAdapter implements ExecutionAdapter, ChatExecutionPo
         inputTokens: result.usage.inputTokens,
         outputTokens: result.usage.outputTokens,
       },
-    };
-  }
-
-  /**
-   * Phase 35: applyRouting/applyTuiRouting 의 공통 코어.
-   * 라우터 호출(또는 폴백) → chain + floor + allowedToolNames + routerUsage 구성 + 로깅.
-   * 메시지·로그 이벤트명·signal 만 호출자가 주입 (이전 두 헬퍼의 유일한 차이).
-   * routerLlm 미주입 시 undefined (라우터 비활성, 기존 fallbackChain 동작).
-   */
-  private async routeToChain(
-    message: string,
-    toolDefinitions: readonly { readonly name: string }[],
-    logEvent: 'pipeline.routed' | 'tui.routed',
-    signal: AbortSignal,
-  ): Promise<
-    | {
-        readonly chain: readonly string[];
-        readonly floor: ModelTier;
-        readonly allowedToolNames: ReadonlyArray<string>;
-        readonly routerUsage: { readonly inputTokens: number; readonly outputTokens: number };
-      }
-    | undefined
-  > {
-    if (!this.deps.routerLlm) {
-      return undefined;
-    }
-    const toolNames = toolDefinitions.map((t) => t.name);
-    const decision = await this.routeOrFallback(message, toolNames, signal);
-    this.deps.logger?.info(logEvent, {
-      event: logEvent,
-      intent: decision.intent,
-      tier: decision.modelTier,
-      allowedToolNames: decision.allowedToolNames,
-      reason: decision.reason,
-      fallback: decision.fallback,
-      filteredCount: toolNames.length - decision.allowedToolNames.length,
-      routerInputTokens: decision.routerUsage.inputTokens,
-      routerOutputTokens: decision.routerUsage.outputTokens,
-    });
-    const modelId = tierToModelId(decision.modelTier);
-    const others = (this.deps.fallbackChain ?? []).filter((m) => m !== modelId);
-    return {
-      chain: [modelId, ...others],
-      floor: decision.modelTier,
-      allowedToolNames: decision.allowedToolNames,
-      routerUsage: decision.routerUsage,
-    };
-  }
-
-  /**
-   * Phase 34 B-2: LLM 라우터 호출, 실패 시 inferRole 키워드 폴백.
-   * Phase 35: signal 을 라우터 호출로 전달 (abort 시 in-flight HTTP 취소).
-   */
-  private async routeOrFallback(
-    message: string,
-    availableToolNames: readonly string[],
-    signal: AbortSignal,
-  ): Promise<RouterDecision> {
-    const routerLlm = this.deps.routerLlm;
-    if (!routerLlm) {
-      return this.keywordFallbackDecision(message, availableToolNames);
-    }
-    try {
-      return await routerLlm({
-        message,
-        availableToolNames: [...availableToolNames],
-        abortSignal: signal,
-      });
-    } catch (err) {
-      this.deps.logger?.warn('router.fallback', {
-        event: 'router.fallback',
-        reason: toMessage(err),
-      });
-      return this.keywordFallbackDecision(message, availableToolNames);
-    }
-  }
-
-  /** inferRole 키워드 휴리스틱 → RouterDecision 폴백. analysis=모든 도구, fetch/chat=sonnet 도구. */
-  private keywordFallbackDecision(
-    message: string,
-    availableToolNames: readonly string[],
-  ): RouterDecision {
-    const role = inferRole(message); // 잔존: 폴백 전용 (B-2)
-    const intent = role === 'analysis' ? 'analysis' : role === 'fetch' ? 'fetch' : 'other';
-    const modelTier: ModelTier = role === 'analysis' ? 'sonnet' : 'haiku';
-    // 폴백은 보수적: analysis 면 전체 노출, 그 외는 전체 노출(키워드 시대 동작 보존).
-    return {
-      intent,
-      modelTier,
-      allowedToolNames: [...availableToolNames],
-      reason: `keyword-fallback(role=${role})`,
-      routerUsage: { inputTokens: 0, outputTokens: 0 },
-      fallback: true,
     };
   }
 

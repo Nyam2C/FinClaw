@@ -4,14 +4,12 @@
 import {
   approxTokenCount,
   buildModelAliasIndex,
-  createLlmRouter,
   DEFAULT_FALLBACK_CHAIN,
   InMemoryModelCatalog,
   InMemoryToolRegistry,
   NEWS_BRIEF_SCHEDULE_ID,
   ProfileHealthMonitor,
   Runner,
-  type AnthropicAdapter,
   type ProviderAdapter,
   type RunnerTracerAdapter,
 } from '@finclaw/agent';
@@ -50,8 +48,6 @@ export interface BuildExecutionDeps {
   readonly modelCatalog: InMemoryModelCatalog;
   readonly modelAliasIndex: ReturnType<typeof buildModelAliasIndex>;
   readonly profileHealth: ProfileHealthMonitor;
-  // Phase 40 D: 키 없는 CLI 부팅 시 undefined — RunnerExecutionAdapter 가 fallbackChain 으로 degrade.
-  readonly routerLlm: ReturnType<typeof createLlmRouter> | undefined;
   readonly logger: FinClawLogger;
   readonly defaultModel: ModelRef;
   readonly systemPrompt: string;
@@ -72,7 +68,6 @@ export function buildExecution(deps: BuildExecutionDeps): ExecutionBundle {
     modelCatalog,
     modelAliasIndex,
     profileHealth,
-    routerLlm,
     logger,
     defaultModel,
     systemPrompt,
@@ -106,8 +101,6 @@ export function buildExecution(deps: BuildExecutionDeps): ExecutionBundle {
     fallbackChain: DEFAULT_FALLBACK_CHAIN,
     profileHealth,
     profileId: 'default',
-    // Phase 34: LLM 라우터 (SDK Haiku). 키워드 routerHelper 정상 경로 폐기 (B-3).
-    routerLlm,
   });
 
   return { tracer, runnerFactory, adapter };
@@ -124,8 +117,6 @@ export interface BuildPipelineDeps {
   readonly newsHandle: NewsSkillHandle | undefined;
   readonly embeddingProvider: EmbeddingProvider | undefined;
   readonly finclawConfig: import('@finclaw/types').FinClawConfig;
-  // Phase 40 D: 키 없는 CLI 부팅 시 undefined → summarizer 미생성 (compaction 비활성 degrade).
-  readonly sdkAdapter: AnthropicAdapter | undefined;
   readonly tracer: Tracer;
   readonly logger: FinClawLogger;
   readonly defaultModel: ModelRef;
@@ -147,7 +138,6 @@ export function buildPipeline(deps: BuildPipelineDeps): PipelineBundle {
     newsHandle,
     embeddingProvider,
     finclawConfig,
-    sdkAdapter,
     tracer,
     logger,
     defaultModel,
@@ -189,12 +179,8 @@ export function buildPipeline(deps: BuildPipelineDeps): PipelineBundle {
     },
   );
 
-  // Phase 31 C: 컨텍스트 압축용 토큰 카운터 + 요약기 (Anthropic 1회 호출).
-  // Phase 40 D: sdkAdapter 있을 때만 요약기 생성 — 키 없으면 undefined (pipeline 이 compaction skip).
-  const summarizer = sdkAdapter
-    ? (text: string) => sdkAdapter.summarize(text, defaultModel.model)
-    : undefined;
-
+  // Phase 31 C / Phase 41: SDK summarizer 영구 제거 — compaction off (tokenCounter 만 유지,
+  // maybeCompactMessages 가 summarizer 미주입 시 원본 messages 그대로 반환 = graceful degrade).
   const pipeline = new AutoReplyPipeline(
     {
       enableAck: true,
@@ -213,7 +199,6 @@ export function buildPipeline(deps: BuildPipelineDeps): PipelineBundle {
       memoryRetrievalService,
       tracer,
       tokenCounter: approxTokenCount,
-      summarizer,
     },
   );
 

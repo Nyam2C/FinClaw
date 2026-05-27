@@ -192,8 +192,8 @@ export const FinClawConfigSchema = z.strictObject({
       lastTouchedAt: z.string().optional(),
     })
     .optional(),
-  // Phase 32 W6: 백엔드 경로 선택 (top-level, 기존 agents.defaults.provider 와 분리).
-  provider: z.enum(['anthropic-sdk', 'claude-cli']).optional(),
+  // Phase 32 W6 / Phase 41: 백엔드 경로 — claude-cli 단일 (SDK 모드 제거).
+  provider: z.literal('claude-cli').optional(),
   cliBackend: z
     .strictObject({
       command: z.string().optional(),

@@ -1,6 +1,8 @@
 // packages/skills-finance/src/brokerage/kis/client.ts
+import type { BrokerageClient } from '../types.js';
 import { KisTokenManager } from './auth.js';
-import type { KisCredentials } from './types.js';
+import { fetchNormalizedHoldings } from './holdings.js';
+import type { KisCredentials, NormalizedHolding } from './types.js';
 import { KisError } from './types.js';
 
 /** 간단 token bucket — 초당 capacity 만큼 충전. */
@@ -38,7 +40,7 @@ export interface KisRawBalances {
   readonly overseas: unknown; // inquire-balance (US) 원응답
 }
 
-export class KisClient {
+export class KisClient implements BrokerageClient {
   private readonly bucket: TokenBucket;
   constructor(
     private readonly creds: KisCredentials,
@@ -50,6 +52,11 @@ export class KisClient {
       new Promise((r) => setTimeout(r, ms)),
   ) {
     this.bucket = new TokenBucket(creds.env === 'prod' ? 5 : 20, now);
+  }
+
+  /** Phase 41: BrokerageClient 구현 — fetchBalances + normalize 위임. */
+  async fetchHoldings(): Promise<readonly NormalizedHolding[]> {
+    return fetchNormalizedHoldings(this);
   }
 
   /** read-only: 한국 + 해외 잔고 원응답을 함께 조회. */

@@ -14,27 +14,13 @@ const logger = {
   flush: vi.fn(),
 } as unknown as FinClawLogger;
 
-describe('buildProviders — Phase 40 D keyless CLI boot', () => {
-  it('omits sdkAdapter/routerLlm when no anthropicKey (pure CLI)', () => {
+describe('buildProviders — Phase 41 CLI-only', () => {
+  it('creates CLI providerAdapter + toolRegistry', () => {
     const b = buildProviders({
       finclawConfig: { provider: 'claude-cli' } as unknown as FinClawConfig,
-      anthropicKey: undefined,
       logger,
     });
-    expect(b.sdkAdapter).toBeUndefined();
-    expect(b.routerLlm).toBeUndefined();
-    // CLI adapter 는 키 없이도 정상 생성.
     expect(b.providerAdapter).toBeDefined();
     expect(b.toolRegistry).toBeDefined();
-  });
-
-  it('creates sdkAdapter + routerLlm when anthropicKey present (dual-path 휴면)', () => {
-    const b = buildProviders({
-      finclawConfig: { provider: 'claude-cli' } as unknown as FinClawConfig,
-      anthropicKey: 'sk-test',
-      logger,
-    });
-    expect(b.sdkAdapter).toBeDefined();
-    expect(b.routerLlm).toBeDefined();
   });
 });
