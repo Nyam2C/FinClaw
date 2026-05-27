@@ -86,7 +86,7 @@ phase 의 `plan.md` 를 읽고 **구현 가능한 단계** 까지 분해된 `tod
 
 - **plan.md 가 명시한 결정·범위를 확장하지 않는다** (CLAUDE.md §3). plan.md 가 밀스톤 A/B/C 만 요구했으면 D/E 를 만들지 말 것. plan.md 의 모호한 부분은 `_workspace/phase-execute/{phase}-questions.md` 로 사용자 질문 모음을 만들고 SendMessage 로 알린 뒤 진행 보류.
 - **FinClaw 컨벤션 준수**:
-  - 패키지 의존 그래프 (types ← config/infra/storage/agent/skills-\*/channels ← server ← tui/web) 역방향 X
+  - 패키지 의존 그래프 (types ← infra/config/storage/agent/skills-\*/channel-discord ← gateway ← server; tui/web 는 types 만 의존) 역방향 X
   - workspace deps 는 `workspace:*` 사용
   - composite tsconfig + project references
   - oxfmt 가 package.json 키 순서 재정렬 → 강제 형식 X (단계에 `pnpm format:fix` 포함)

@@ -111,7 +111,7 @@ phase 가 추가한 `*.test.ts` 파일 검토:
 
 | 측면            | 위치                                               |
 | --------------- | -------------------------------------------------- |
-| RPC 메서드 정의 | `packages/server/src/gateway/rpc/methods/*.ts`     |
+| RPC 메서드 정의 | `packages/gateway/src/rpc/methods/*.ts`            |
 | Web 호출        | `packages/web/src/**/use-*.ts`, `app-gateway`      |
 | TUI 호출        | `packages/tui/src/**/*.ts` (rpc 클라이언트 사용처) |
 
@@ -124,10 +124,10 @@ phase 가 추가한 `*.test.ts` 파일 검토:
 
 ### 6.2 storage ↔ RPC
 
-| 측면            | 위치                                           |
-| --------------- | ---------------------------------------------- |
-| 테이블 row 타입 | `packages/storage/src/tables/*.ts`             |
-| RPC 응답 변환   | `packages/server/src/gateway/rpc/methods/*.ts` |
+| 측면            | 위치                                    |
+| --------------- | --------------------------------------- |
+| 테이블 row 타입 | `packages/storage/src/tables/*.ts`      |
+| RPC 응답 변환   | `packages/gateway/src/rpc/methods/*.ts` |
 
 snake_case ↔ camelCase 변환 누락, 컬럼 추가됐는데 RPC 가 반영 안 함, 등.
 
@@ -142,10 +142,10 @@ stage 가 채우지만 prompt 가 안 읽음, 또는 prompt 가 읽지만 stage 
 
 ### 6.4 broadcaster ↔ subscriber
 
-| 측면 | 위치                                                                           |
-| ---- | ------------------------------------------------------------------------------ |
-| 발신 | `packages/server/src/gateway/broadcaster.ts`, `broadcastToChannel(...)` 호출지 |
-| 수신 | `packages/web/src/**/*ws*.ts`, `subscribe(...)` 호출지                         |
+| 측면 | 위치                                                                    |
+| ---- | ----------------------------------------------------------------------- |
+| 발신 | `packages/gateway/src/broadcaster.ts`, `broadcastToChannel(...)` 호출지 |
+| 수신 | `packages/web/src/**/*ws*.ts`, `subscribe(...)` 호출지                  |
 
 토픽 이름 typo, payload shape 불일치, 발신만 있고 구독 없음.
 

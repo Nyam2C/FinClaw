@@ -24,7 +24,7 @@ phase 범위 밖의 인접 코드는 "관련 없는 죽은 코드를 발견하�
 1. **네이밍** — 변수/함수/타입명이 의도를 드러내는가? 약어, 타입을 그대로 쓴 이름(data, info, manager) 발견.
 2. **중복** — 같은 로직이 ≥2 곳에 있는가? 한 번 쓰는 추상화는 만들지 말 것 (CLAUDE.md §2). 3 회 이상 반복일 때만 추출 권장.
 3. **추상화 수준** — 과대(쓰지 않는 옵션·인자), 과소(레이어 누수, 하나의 함수가 여러 책임) 식별.
-4. **경계 위반** — package 의존 그래프 (types ← config/infra/storage/agent/skills-\*/channels ← server ← tui/web) 역방향, 순환 의존 발견.
+4. **경계 위반** — package 의존 그래프 (types ← infra/config/storage/agent/skills-\*/channel-discord ← gateway ← server; tui/web 는 types 만 의존) 역방향, 순환 의존 발견. 특히 gateway → server 역참조는 phase39 가 제거한 순환이므로 P0.
 5. **CLAUDE.md §3 위반** — phase 작업과 무관한 인접 코드 "개선", 요청 없는 리팩토링, 스타일 통일 시도.
 6. **죽은 코드** — 변경 후 미사용된 import/변수/함수. `grep -r "from.*'<symbol>'" packages/` 로 확인.
 7. **과도한 에러 처리** — 일어날 수 없는 시나리오에 대한 try/catch, 내부 호출에 대한 입력 검증, fallback 분기 (CLAUDE.md §2).
