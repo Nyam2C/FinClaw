@@ -1,14 +1,16 @@
 import type { AgentId, SessionKey, Timestamp } from './common.js';
 
-/** 에이전트 프로필 */
+/**
+ * 에이전트(워커) 프로필 — orchestrator-worker 워커 정의의 토대 (phase42).
+ * 런타임 가변 운영값(model·maxConcurrent)만 인라인. systemPrompt·skills 등 정적
+ * 정의는 agentDir 디렉토리의 파일로 분리 (로더는 후속 — plans/phase42 참조).
+ */
 export interface AgentProfile {
   id: AgentId;
   name: string;
-  systemPrompt: string;
   model: ModelRef;
-  skills: string[];
   maxConcurrent: number;
-  agentDir?: string;
+  agentDir: string;
 }
 
 /** 모델 참조 */
