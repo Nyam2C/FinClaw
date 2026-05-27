@@ -99,3 +99,28 @@ interface AgentProfile {
 ### 부산물 — orphan
 
 - `infra/events.ts:64` `'auth:resolve'` 이벤트 타입 = 유일 emit 처(resolver) 삭제로 **dead(unemitted)**. §3대로 미삭제, `todo.md` 백로그. (`auth:health:change` 는 live `ProfileHealthMonitor` 가 emit — 생존.)
+
+---
+
+## 결정 4 — `AgentRunParams`/`ProviderRequestParams` 슬림: CLI 가 무시하는 SDK-era 필드 제거 (실행 완료, 미커밋)
+
+### 배경 (검증 완료 — 직접 + Explore 재확인)
+
+- phase41 CLI 단일 전환 후 `AgentRunParams`(`types/agent.ts`) + `ProviderRequestParams`(`agent/providers/adapter.ts`) 가 SDK 시절 필드 잔존. **결정 2(ModelRef)와 동일 "CLI 경계 폐기" 패턴.**
+- 검증된 데이터 흐름: `buildParams`(gateway/scheduler/execution-adapter) → `AgentRunParams` → `runner.ts:260-269` `ProviderRequestParams` 복사 → `CliProviderAdapter.#run()` 서 **누락** → `runCliAgent`(`RunCliAgentRequest` 에 필드 부재). 유일 `ProviderAdapter` 구현체 = claude-cli (anthropic/openai adapter phase41 삭제).
+- 도구는 `backend.mcp`(`--allowedTools`)가 대체 — in-process MCP host(`gateway/mcp/{host,bridge}.ts`)가 `toolRegistry.list()` 를 노출하고 CLI 가 당겨감. 즉 도구 소스가 `AgentRunParams.tools` 가 아님.
+- 필드 판정: `temperature`·`maxTokens` = **DEAD**(구성 사이트 set 0 + CLI 누락, 항상 undefined), `tools` = **plumbed-but-ignored**(구성서 채워지고 runner 가 복사하나 CLI 누락). `abortSignal` 만 CLI 도달(spawn SIGTERM/SIGKILL) — 생존.
+
+### 실행 (cascade, 사용자 "셋 다 + cascade 지금")
+
+- **제거**: `AgentRunParams` + `ProviderRequestParams` 의 `temperature`·`maxTokens`·`tools` + 고아 `ToolDefinition` import(adapter.ts). `runner.ts:260-269` 복사 3줄.
+- **`tools` cascade**: gateway/agent.ts·scheduler.ts·execution-adapter.ts(execute+TUI 2경로) 의 `exposedTools`(라우터 `allowedToolNames` 필터) + `tools:` 줄 제거. execution-adapter 의 고아 `toolDefinitions` destructure 2 + `buildRequestDispatcher` 반환(타입+값) 동반 정리.
+- 검증: typecheck 0 / lint 0 / **test 1628 불변**(footprint 0 — 어느 테스트도 3필드 미참조). 6파일 +4 −32.
+
+### 의미 / 주의
+
+- 라우터의 **model-selection 절반은 live 유지**(`decision.tier` → resolved model → fallback chain). 제거된 건 **tool-gating 절반**(per-run minModel 도구 필터) — CLI 모드선 MCP bridge 가 group/deny 로 정적 노출하므로 이미 vestigial 이었음.
+
+### 부산물 — orphan (→ `todo.md` 백로그)
+
+- `forceToolChoice`(adapter.ts:20) + runner `forceToolName` plumbing(127·137·244·268) = 동류 CLI-drop 잔재. 범위 밖 보류 (별 필드, `tools` 와 독립 제거 가능).

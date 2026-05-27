@@ -148,7 +148,7 @@ export class RunnerExecutionAdapter implements ExecutionAdapter, ChatExecutionPo
     const priorMessages = await this.loadHistory(ctx.sessionKey);
     const userMessage: ConversationMessage = { role: 'user', content: ctx.normalizedBody };
 
-    const { dispatcher, toolDefinitions } = this.buildRequestDispatcher({
+    const { dispatcher } = this.buildRequestDispatcher({
       sessionId: ctx.sessionKey as string,
       userId: ctx.senderId,
       channelId: ctx.channelId as unknown as string,
@@ -156,9 +156,6 @@ export class RunnerExecutionAdapter implements ExecutionAdapter, ChatExecutionPo
     const runner = this.deps.runnerFactory(dispatcher);
     const profileId = this.deps.profileId ?? 'default';
     const startedAt = Date.now();
-
-    // Phase 41: LLM 라우터 제거 — 전체 도구 노출 + fallbackChain(sonnet 선두) 직결.
-    const exposedTools = toolDefinitions;
 
     // Phase 26 C: retrievalResult 가 있으면 "사용자 배경지식" 섹션을 system prompt 끝에 합성.
     // 빈 섹션 (snippets·transactions 모두 0) 이면 base 그대로 — 빈 헤더 노출 방지.
@@ -178,7 +175,6 @@ export class RunnerExecutionAdapter implements ExecutionAdapter, ChatExecutionPo
       model,
       systemPrompt: composedSystemPrompt,
       messages: requestMessages,
-      tools: exposedTools.length > 0 ? [...exposedTools] : undefined,
       abortSignal: signal,
     });
 
@@ -281,15 +277,12 @@ export class RunnerExecutionAdapter implements ExecutionAdapter, ChatExecutionPo
     const priorMessages = await this.loadHistory(input.sessionKey);
     const userMessage: ConversationMessage = { role: 'user', content: input.userMessage };
 
-    const { dispatcher, toolDefinitions } = this.buildRequestDispatcher({
+    const { dispatcher } = this.buildRequestDispatcher({
       sessionId: input.sessionKey as string,
       userId: 'tui',
       channelId: 'tui',
     });
     const runner = this.deps.runnerFactory(dispatcher);
-
-    // Phase 41: LLM 라우터 제거 — TUI 도 전체 도구 노출.
-    const exposedTools = toolDefinitions;
 
     const buildParams = (model: ModelRef): AgentRunParams => ({
       agentId: input.agentId,
@@ -297,7 +290,6 @@ export class RunnerExecutionAdapter implements ExecutionAdapter, ChatExecutionPo
       model,
       systemPrompt: this.deps.systemPrompt,
       messages: [...priorMessages, userMessage],
-      tools: exposedTools.length > 0 ? [...exposedTools] : undefined,
       abortSignal: signal,
     });
 
@@ -346,10 +338,9 @@ export class RunnerExecutionAdapter implements ExecutionAdapter, ChatExecutionPo
     readonly channelId: string;
   }): {
     dispatcher: ExecutionToolDispatcher;
-    toolDefinitions: readonly import('@finclaw/types').ToolDefinition[];
   } {
     if (!this.deps.toolRegistry) {
-      return { dispatcher: new ToolDispatcherCtor(), toolDefinitions: [] };
+      return { dispatcher: new ToolDispatcherCtor() };
     }
     return buildDispatcher(this.deps.toolRegistry, ctx);
   }

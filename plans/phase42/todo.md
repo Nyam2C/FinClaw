@@ -23,11 +23,16 @@
 
 - [x] `ModelRef` → `{ provider, model }` + cascade(8 사이트·9 fixture·`maybeCompactMessages` gut·테스트파일 1 삭제). typecheck/lint/test green. 상세 = `plan.md` 결정 2.
 
+## 결정 4 — AgentRunParams/ProviderRequestParams 슬림 (완료, 미커밋)
+
+- [x] `temperature`·`maxTokens`(DEAD) + `tools`(CLI 무시·MCP 대체) 제거 — `AgentRunParams`(types) + `ProviderRequestParams`(adapter.ts) + runner 복사 3줄 + cascade(`exposedTools` 3사이트·`toolDefinitions` destructure 2·`buildRequestDispatcher` 반환). `abortSignal` 만 생존(CLI 도달). typecheck/lint/test **1628 불변**(footprint 0). 6파일 +4 −32. 상세 = `plan.md` 결정 4.
+
 ## dead-code 백로그
 
 - [x] **AuthProfile + auth 키-로테이션 클러스터 제거 (결정 3)** — `AuthProfile`·`auth/{profiles,resolver}.ts`·`filterHealthy`·죽은 re-export·`resolver.test` 삭제. `ProfileHealthMonitor`·`CooldownTracker` 보존. test 1638→1628(−10). 시세 키는 별개 live `KeyRotator`(skills-finance)가 담당 — 무관 확인.
 - [ ] **압축 서브시스템** `agent/src/agents/context/` — `evaluateContextWindow`·`compactContext` 가 결정 2 이후 프로덕션 orphan(런타임 호출 0, 유닛테스트만 + 배럴 export). 제거 시 배럴·테스트 동반 `[agent]`
 - [ ] **`auth:resolve` 이벤트 타입** (`infra/events.ts:64`) — 유일 emit 처(resolver) 삭제로 dead(unemitted). 제거 검토 `[infra]`
+- [ ] **`forceToolChoice` + `forceToolName` plumbing** (`adapter.ts:20` + `runner.ts` 127·137·244·268) — 결정 4 와 동류 CLI-drop 잔재(CLI adapter 미전달). 별 필드라 독립 제거 가능 `[agent]`
 
 ## (기존) 검증 백로그 — kickoff.md P0/P1/dead
 

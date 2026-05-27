@@ -1,6 +1,6 @@
 // packages/agent/src/providers/adapter.ts
 import { createCircuitBreaker, type CircuitBreaker } from '@finclaw/infra';
-import type { ConversationMessage, ToolDefinition } from '@finclaw/types';
+import type { ConversationMessage } from '@finclaw/types';
 import type { ProviderId } from '../models/catalog.js';
 import type { StreamChunk } from '../models/provider-normalize.js';
 
@@ -8,10 +8,7 @@ import type { StreamChunk } from '../models/provider-normalize.js';
 export interface ProviderRequestParams {
   readonly model: string;
   readonly messages: ConversationMessage[];
-  readonly tools?: ToolDefinition[];
   readonly systemPrompt?: string;
-  readonly temperature?: number;
-  readonly maxTokens?: number;
   readonly abortSignal?: AbortSignal;
   /**
    * Phase 30 B2: 강제 도구 선택. provider 가 LLM API body 의 tool_choice 필드로 전달.

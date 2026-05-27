@@ -260,10 +260,7 @@ export class Runner {
     const requestParams: ProviderRequestParams = {
       model: params.model.model,
       messages,
-      tools: params.tools,
       systemPrompt: params.systemPrompt,
-      temperature: params.temperature,
-      maxTokens: params.maxTokens,
       abortSignal: params.abortSignal,
       ...(forceToolName ? { forceToolChoice: { name: forceToolName } } : {}),
     };

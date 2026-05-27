@@ -245,16 +245,12 @@ export class SchedulerService implements SchedulerPort {
         const decision = this.deps.router
           ? this.deps.router({ role, toolNames: toolDefinitions.map((t) => t.name) })
           : undefined;
-        const exposedTools = decision
-          ? toolDefinitions.filter((t) => decision.allowedToolNames.includes(t.name))
-          : toolDefinitions;
         const buildParams = (model: ModelRef): AgentRunParams => ({
           agentId: agentIdBrand,
           sessionKey,
           model,
           systemPrompt: this.deps.systemPrompt,
           messages: [userMsg],
-          tools: exposedTools.length > 0 ? [...exposedTools] : undefined,
           abortSignal: abortController.signal,
         });
 

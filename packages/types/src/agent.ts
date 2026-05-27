@@ -1,15 +1,16 @@
-import type { AgentId, SessionKey, Timestamp } from './common.js';
+import type { AgentId, Timestamp } from './common.js';
 
 /**
- * 에이전트(워커) 프로필 — orchestrator-worker 워커 정의의 토대 (phase42).
- * 런타임 가변 운영값(model·maxConcurrent)만 인라인. systemPrompt·skills 등 정적
- * 정의는 agentDir 디렉토리의 파일로 분리 (로더는 후속 — plans/phase42 참조).
+ * 에이전트(워커) 프로필 — orchestrator-worker 워커 정의 (phase42).
+ * model 은 인라인 (스킬 정의 파일에 모델명을 넣지 않음 → 프로필이 단일 출처).
+ * systemPrompt·도구 허용목록 등 정적 정의는 agentDir 파일로 분리.
+ * 이 프로필로 서브에이전트를 선택·호출하고, AgentRunParams 로 실행한다.
+ * (동시성 제한은 spawn 레이어의 ConcurrencyLane 책임 — 프로필 필드 아님.)
  */
 export interface AgentProfile {
   id: AgentId;
   name: string;
   model: ModelRef;
-  maxConcurrent: number;
   agentDir: string;
 }
 
@@ -19,16 +20,14 @@ export interface ModelRef {
   model: string;
 }
 
-/** 에이전트 실행 파라미터 */
+/**
+ * 워커 1회 spawn 입력 — "이 워커(profile)에게 이 task 를 시킨다".
+ * 일회성·무상태: 대화 세션 없음(부모 연결은 trace), 입력은 task 프롬프트 하나.
+ * model·systemPrompt 는 runner 가 profile.model / profile.agentDir 에서 해석.
+ */
 export interface AgentRunParams {
-  agentId: AgentId;
-  sessionKey: SessionKey;
-  model: ModelRef;
-  systemPrompt: string;
-  messages: ConversationMessage[];
-  tools?: ToolDefinition[];
-  temperature?: number;
-  maxTokens?: number;
+  profile: AgentProfile;
+  prompt: string;
   abortSignal?: AbortSignal;
 }
 

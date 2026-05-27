@@ -280,11 +280,6 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
             });
           }
 
-          // Phase 24 보정: 라우터 결정 allowedToolNames 만 LLM 노출.
-          const exposedTools = decision
-            ? toolDefinitions.filter((t) => decision.allowedToolNames.includes(t.name))
-            : toolDefinitions;
-
           try {
             const buildRunParams = (model: ModelRef): AgentRunParams => ({
               agentId: agentIdBrand,
@@ -292,7 +287,6 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
               model,
               systemPrompt: deps.systemPrompt,
               messages: [userMessage],
-              tools: exposedTools.length > 0 ? [...exposedTools] : undefined,
               abortSignal: abortController.signal,
             });
 
