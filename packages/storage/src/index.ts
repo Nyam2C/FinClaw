@@ -104,7 +104,7 @@ export {
   listAgentRuns,
   linkMemoryToAgentRun,
   updateAgentRunCliSession,
-  type AgentRun,
+  type AgentRunLog,
   type AgentRunRow,
   type AddAgentRunInput,
   type ListAgentRunsOptions,

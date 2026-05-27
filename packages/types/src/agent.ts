@@ -31,18 +31,16 @@ export interface AgentRunParams {
   abortSignal?: AbortSignal;
 }
 
-/** 대화 메시지 (LLM API용) */
+/** 대화 메시지 — 대화 이력·provider 입력의 표준 표현 */
 export interface ConversationMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string | ContentBlock[];
-  toolCallId?: string;
   name?: string;
 }
 
 /** 콘텐츠 블록 */
 export type ContentBlock =
   | { type: 'text'; text: string }
-  | { type: 'image'; url: string; mimeType?: string }
   | { type: 'tool_use'; id: string; name: string; input: unknown }
   | { type: 'tool_result'; toolUseId: string; content: string; isError?: boolean };
 
@@ -53,15 +51,6 @@ export interface ToolDefinition {
   inputSchema: Record<string, unknown>;
 }
 
-/** 에이전트 실행 결과 */
-export interface AgentRunResult {
-  text: string;
-  toolCalls?: ToolCall[];
-  usage?: TokenUsage;
-  model: string;
-  finishReason: 'end_turn' | 'max_tokens' | 'tool_use' | 'stop';
-}
-
 /** 도구 호출 */
 export interface ToolCall {
   id: string;
@@ -69,27 +58,17 @@ export interface ToolCall {
   input: unknown;
 }
 
-/** 토큰 사용량 */
-export interface TokenUsage {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens?: number;
-  cacheWriteTokens?: number;
-}
-
 /**
  * 에이전트 실행 1회의 영속화 레코드 (감사 + RAG 소스).
  * DB 컬럼은 snake_case, 본 인터페이스는 camelCase 변환.
  */
-export interface AgentRun {
+export interface AgentRunLog {
   id: string;
   agentId: AgentId;
   prompt: string;
   output: string;
   /** tool_calls_json — 호출자가 JSON.stringify 한 raw 문자열 */
   toolCalls?: string;
-  tokensInput?: number;
-  tokensOutput?: number;
   durationMs?: number;
   /** Phase 24 routing 결과 모델명 */
   modelUsed?: string;
