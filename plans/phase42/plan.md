@@ -124,3 +124,99 @@ interface AgentProfile {
 ### 부산물 — orphan (→ `todo.md` 백로그)
 
 - `forceToolChoice`(adapter.ts:20) + runner `forceToolName` plumbing(127·137·244·268) = 동류 CLI-drop 잔재. 범위 밖 보류 (별 필드, `tools` 와 독립 제거 가능).
+
+---
+
+## 결정 5 — `RoutingConfig`/`routerHelper` 폐기 → `route_task` 도구 신규 (재설계, 미실행)
+
+### 배경 (검증 완료)
+
+- `RoutingConfig` + `routerHelper` 의 4 역할 × 3 tier 매트릭스 12 조합 중 **실제 사용 = 1** (`analysis` → opus, `skills-finance/src/news/tools.ts:174`). 나머지 11 조합은 정의되어 있으나 호출 사이트 0.
+- 라우팅이 **텍스트 분류가 아닌 호출자 인자 매핑**임이 확인됨 (`agent/src/models/routing.ts:64` `resolveModelForRequest` 가 `cfg.roles[req.role].preferred` lookup 만). 메인 에이전트도 분류 안 함 — `analyze_market` 도구가 자기 코드에 `role: 'analysis'` 박아둠 + `agent.run` RPC 는 클라이언트 파라미터 (`gateway/rpc/methods/agent.ts:211` 디폴트 `'analysis'`).
+- phase41 "3 겹 무력화" 확인: claude CLI 본체가 `routeToChain` 결과 무시 → 라우팅 효력은 `analyze_market` 호출 시 모델 선택 1 곳뿐. Discord 일반 대화 파이프라인(`pipeline.process`) 는 `routerHelper` 호출 자체 없음 — `defaultModel` 직사용.
+- `tier` (`'haiku'|'sonnet'|'opus'`) 추상화는 Claude 단일 provider 전환 후 **모델 id 와 1:1**. `tierToModelId` 한 함수가 변환만 수행 → 추상화의 정당성 0.
+- 결정 4 (`AgentRunParams.tools` 제거) 가 라우터의 tool-gating 절반을 vestigial 처리 → model-selection 절반만 남음. 그 절반도 호출처 1 곳.
+
+### 설계 (option 2: main agent first, router as tool)
+
+> 메인 ReAct 가 모든 input 을 받고, trivial · OSS · 전문 분석은 `route_task` 도구 1 회 호출로 위임.
+
+- 메인 에이전트(claude CLI) 의 시스템 프롬프트가 "단순 조회·결정적 계산·전문 분석은 `route_task` 로 위임" 가이드.
+- `route_task` 는 intent 별 3 분기:
+  - **함수** — 결정적 내부 (e.g. `get_stock_price`). LLM 호출 0.
+  - **OSS** — 외부 lib 직접 (e.g. `pykrx`). LLM 호출 0.
+  - **sub-agent** — 좁은 system + 좁은 도구 세트 + 좁은 컨텍스트의 별도 LLM 실행. 메인 풀 컨텍스트(~10k) 미상속.
+- **토큰 절감 source = sub-agent 의 좁은 컨텍스트**. 메인 입력은 그대로 들어가므로 trivial 쿼리 절감 0%, analysis-heavy 쿼리에서 sub-agent 컨텍스트 분리분 ~25% 절감 (한 줄 추산).
+
+### 결과 타입 (신규)
+
+```ts
+// packages/router/src/types.ts (신규, workspace 의존 0)
+export type RouteIntent =
+  | 'price_lookup'
+  | 'chart_data'
+  | 'news_summary'
+  | 'market_analysis'
+  | 'portfolio_calc';
+
+export interface RouteRequest {
+  intent: RouteIntent;
+  query: string;
+  symbol?: string;
+}
+
+export interface RouteResult {
+  content: string;
+  source: 'function' | 'oss' | 'sub-agent';
+  modelUsed?: string;
+  isError: boolean;
+}
+
+export type Dispatcher = (req: RouteRequest) => Promise<RouteResult>;
+```
+
+### 제거 대상
+
+| 파일 | 변경 |
+| ---- | ---- |
+| `packages/agent/src/models/routing.ts` | 전체 삭제 (ModelRole · RouteRequest · RouteDecision · resolveModelForRequest · RouterHelper · tierToModelId · maxTier · computeFloor · modelIdToTier) |
+| `packages/server/src/auto-reply/router-helper.ts` | 전체 삭제 (makeRouterHelper · buildToolMetaIndex) |
+| `packages/types/src/config.ts` | `RoutingConfig`, `RoleProfile`, `ModelTier` 제거 (cross-ref 검증 필요) |
+| `packages/config/src/defaults.ts` | `DEFAULTS.routing` 블록 제거 |
+| `packages/config/src/zod-schema.ts` | routing 스키마 제거 |
+| `packages/server/src/main.ts:107-138` | routing 로드/로그 + `routerHelper` 생성 제거 |
+| `packages/server/src/main.ts:206,296,335` | `routerHelper` 주입 3 곳 제거 |
+| `packages/server/src/composition/{runtime,skills}.ts` | `routerHelper` deps 필드 제거 |
+| `packages/skills-finance/src/news/tools.ts:172-178` | router 분기 → sub-agent dispatch 로 대체 |
+
+### 신규 구조
+
+| 파일 | 책임 |
+| ---- | ---- |
+| `packages/router/src/types.ts` | RouteIntent · RouteRequest · RouteResult · Dispatcher (workspace 의존 0) |
+| `packages/router/src/dispatch.ts` | `dispatchRoute(req)` — intent 별 분기. 함수/OSS 직접 호출 + sub-agent 위임 |
+| `packages/router/src/sub-agent.ts` | 좁은 컨텍스트 spawn 유틸 (좁은 system + 좁은 도구 → runner) |
+| `packages/skills-general/src/route-task.ts` | `route_task` 도구 정의 (Zod 입력 + dispatch 호출) |
+
+### 마일스톤 (모두 phase42 안)
+
+- **A. 골격** — `packages/router/` 패키지 (types only). typecheck 통과. 소비자 0 검증.
+- **B. PoC (intent=market_analysis)** — sub-agent (opus + 좁은 system + `analyze_market` 도구만) 로 디스패치. 기존 `analyze_market` 본문이 sub-agent 내부로 이동. 메인 도구 목록에서 `analyze_market` 제거 → `route_task` 노출.
+- **C. routerHelper 제거** — 위 "제거 대상" 표 전체 cascade. typecheck + 기존 unit test 가 인터페이스 의존 0 검증.
+- **D. 확장** — `price_lookup` (함수 디스패치) + `chart_data` (pykrx OSS). 분류 = 메인 에이전트 (정규식 분류기 미도입).
+
+### 결정 (사용자 확정)
+
+- **sub-agent LLM 호출 방식 = claude CLI 재호출**. 별 프로세스 spawn. 메모리 "키 없이 부팅" 원칙 유지. spawn 비용/지연은 실측 없이 수용.
+- **측정 마일스톤 (E) 제외**. 절감 실측은 별도 phase 또는 사용자 요청 시.
+
+### 미결 / 주의
+
+- **분류기 위치**: option 2 에서 메인 에이전트가 intent 를 결정 (`route_task({ intent: 'X', ... })` 직접 호출). 별도 분류기 LLM 불필요. 다만 메인 system prompt 가이드 정교화 필요 (어느 intent 가 있고, 언제 위임할지).
+- **`agent.run` RPC `role` 파라미터**: 외부 호출자 (TUI/Web) 가 `role: 'analysis'|...` 보냄. 이 인터페이스 호환성 유지 vs 같이 제거 — TUI/Web 의 실제 사용 검증 필요 (A 단계 직전 grep).
+- **결정 4 잔재 (`forceToolChoice`)**: 본 결정과 독립. orphan 백로그 그대로.
+
+### 부산물 — orphan (예상)
+
+- `ModelTier` 가 `routing.ts` 외에 쓰이면 부분 제거 어려움. cross-ref grep 검증 필요. (현재 추정: `models/routing.ts` 와 `config/zod-schema.ts` 두 곳뿐.)
+- `tierToModelId` 사용처 grep 결과에 따라 `models/catalog.ts` 의 모델 id 매핑이 직접 노출되어야 할 수 있음. A 단계 직전 확인.
