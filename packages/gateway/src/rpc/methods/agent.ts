@@ -37,7 +37,7 @@ import type { RpcMethodHandler } from '../types.js';
 /** agent.* RPC 메서드 의존성 (main.ts 에서 주입) */
 export interface AgentRpcDeps {
   readonly toolRegistry: ToolRegistry;
-  /** Phase 39: main.ts 가 finclaw.identity.md frontmatter 로부터 로드해 주입 (이전 loadAgents() 대체). */
+  /** main.ts 가 finclaw.system.ko.md frontmatter (id/name/description) 로부터 로드해 주입. */
   readonly agents: readonly AgentInfo[];
   readonly runnerFactory: RunnerFactory;
   /** agent.run 전용 큐잉 lane (main.ts 에서 maxConcurrent:1 로 주입) */

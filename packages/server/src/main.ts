@@ -37,7 +37,6 @@ import type { ChannelPlugin, ConfigValidationIssue, FinClawConfig } from '@fincl
 import { buildToolMetaIndex, makeRouterHelper } from './auto-reply/router-helper.js';
 import { deliverScheduleResult } from './automation/delivery.js';
 import { initChannels } from './channels/index.js';
-// Phase 36: composition 빌더
 import { DEFAULT_MODEL, defaultConfig } from './composition/constants.js';
 import { buildProviders } from './composition/providers.js';
 import { buildAutomation, buildExecution, buildPipeline } from './composition/runtime.js';
@@ -67,28 +66,24 @@ export function requireEnv(name: string, env: NodeJS.ProcessEnv = process.env): 
 }
 
 async function main(): Promise<void> {
-  // 0. 시스템 프롬프트 외부 .md 로드 (Phase 25)
-  const systemPromptDoc = await loadPrompt('finclaw.system.ko.md', 'main:DEFAULT_SYSTEM_PROMPT');
-  const DEFAULT_SYSTEM_PROMPT = systemPromptDoc.body;
-
-  // Phase 39: agent 메타데이터 (이전 gateway/agent.ts loadAgents() 가 하던 일 — gateway→server fs 결합 제거).
-  const identityDoc = await loadPrompt('finclaw.identity.md', 'main:agentMeta');
+  // 0. 시스템 프롬프트 외부 .md 로드 — 본문은 system prompt, frontmatter 는 agent 메타.
+  const systemPromptDoc = await loadPrompt('finclaw.system.ko.md', 'main:systemPrompt');
   requireFrontmatterKeys(
-    identityDoc,
-    'finclaw.identity.md',
+    systemPromptDoc,
+    'finclaw.system.ko.md',
     ['id', 'name', 'description'],
     'main:agentMeta',
   );
+  const DEFAULT_SYSTEM_PROMPT = systemPromptDoc.body;
   const AGENT_METADATA = [
     {
-      id: identityDoc.frontmatter.id,
-      name: identityDoc.frontmatter.name,
-      description: identityDoc.frontmatter.description,
+      id: systemPromptDoc.frontmatter.id,
+      name: systemPromptDoc.frontmatter.name,
+      description: systemPromptDoc.frontmatter.description,
     },
   ];
 
   // 1. env 검증
-  // Phase 41: CLI 단일 런타임 — ANTHROPIC_API_KEY 미사용 (Claude 구독 + in-process MCP). Discord 는 필수.
   const discordToken = requireEnv('DISCORD_BOT_TOKEN');
   const discordAppId = requireEnv('DISCORD_APPLICATION_ID');
 
