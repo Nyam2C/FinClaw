@@ -33,6 +33,19 @@ phase42 = 재설계 그라운드워크. 결정 1~5 중:
   - C cascade 일관성: fallback chain(floor 제거 후 단순 model-id 리스트), scheduler/gateway/status 모두 일관
 - **mock 격리:** 1582 유닛 전부 외부 키 없이 통과.
 
+### 2.1 broken build 수정 (CI 발견 — QA 게이트 갭)
+
+QA/로컬은 `pnpm typecheck`(**tsgo**) + `pnpm test`(vitest)만 돌려 green 이었으나, CI Quality Gate 의 **Build 단계(`tsc --build`)** 가 실패했다. tsgo(preview) 와 vitest(esbuild, 타입 erase) 둘 다 못 잡는 타입 에러를 tsc 가 잡은 것. 원인 = phase42 type slim(`18eb84d` + WIP `31937ca`)이 **여전히 live 소비되는 타입을 제거**한 잔재:
+
+- `AgentRunParams` — `{profile, prompt}` worker-spawn 형태로 선반영됐으나 runner/gateway/scheduler/execution-adapter 가 옛 필드(`agentId/sessionKey/model/systemPrompt/messages`)를 직접 소비 → 실사용 형태로 복원, worker-spawn 전환은 phase43(consumer 마이그레이션 동반).
+- `TokenUsage` 복원 (agent/execution 전반 live).
+- `AgentRunLog.tokensInput/tokensOutput` 복원 (gateway/scheduler 쓰기·읽기, storage 컬럼·테스트 live).
+- `AgentRunResult` 는 dead(소비 0) 라 제거 유지.
+
+수정 후 **tsc --build 0 / tsgo 0 / lint 0 / format 0 / 1582 test green** 전부 통과. (커밋 `2054b73`)
+
+> **교훈:** phase QA 게이트는 `pnpm typecheck`(tsgo) 만으로 불충분 — CI 와 동일하게 `pnpm build`(tsc --build) 와 `pnpm format` 도 반드시 포함해야 한다. type-first 변경은 tsc 로 검증.
+
 ## 3. 리팩토링 검토 (phase-refactor-expert)
 
 7 후보. **merge-blocker 0.** P0 만 적용, 나머지 phase43 이연.
