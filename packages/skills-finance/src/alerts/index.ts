@@ -141,9 +141,9 @@ export const ALERT_SKILL_METADATA: SkillMetadata = {
     ],
   },
   tools: [
-    { name: 'set_alert', minModel: 'haiku', reason: 'CRUD' },
-    { name: 'list_alerts', minModel: 'haiku', reason: 'CRUD' },
-    { name: 'remove_alert', minModel: 'haiku', reason: 'CRUD' },
-    { name: 'get_alert_history', minModel: 'haiku', reason: '조회' },
+    { name: 'set_alert', reason: 'CRUD' },
+    { name: 'list_alerts', reason: 'CRUD' },
+    { name: 'remove_alert', reason: 'CRUD' },
+    { name: 'get_alert_history', reason: '조회' },
   ],
 };

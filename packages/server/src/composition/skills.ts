@@ -31,14 +31,12 @@ import { registerGeneralTools, registerRouteTaskTool } from '@finclaw/skills-gen
 import { addSchedule, getSchedule, type createStorage } from '@finclaw/storage';
 import type { FinClawConfig, ModelRef, ScheduleRpc, Timestamp } from '@finclaw/types';
 import { createAgentId } from '@finclaw/types';
-import type { makeRouterHelper } from '../auto-reply/router-helper.js';
 import { loadPlugins } from '../plugins/loader.js';
 import type { ProcessLifecycle } from '../process/lifecycle.js';
 import { buildDispatcher } from '../router/dispatch.js';
 import { BrokerageSyncService } from '../services/brokerage-sync-service.js';
 
 type Storage = ReturnType<typeof createStorage>;
-type RouterHelper = ReturnType<typeof makeRouterHelper> | undefined;
 
 export interface RegisterSkillsDeps {
   readonly toolRegistry: InMemoryToolRegistry;
@@ -46,7 +44,6 @@ export interface RegisterSkillsDeps {
   readonly logger: FinClawLogger;
   readonly finclawConfig: FinClawConfig;
   readonly discordAdapter: DiscordAdapter;
-  readonly routerHelper: RouterHelper;
   readonly profileHealth: ProfileHealthMonitor;
   readonly modelCatalog: InMemoryModelCatalog;
   readonly defaultModel: ModelRef;
@@ -69,7 +66,6 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
     logger,
     finclawConfig,
     discordAdapter,
-    routerHelper,
     profileHealth,
     modelCatalog,
     defaultModel,
@@ -122,9 +118,7 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
       newsdataRotator,
       finnhubRotator, // 시세 KeyRotator 와 동일 인스턴스 공유
       quoteService: marketHandle.quoteService,
-      router: routerHelper,
       defaultModel,
-      // Phase 24 E: 스킬 내부 analyze_market LLM 호출도 status 분포에 포함.
       profileHealth,
       profileId: 'default',
       modelCatalog,

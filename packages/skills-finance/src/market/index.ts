@@ -260,9 +260,9 @@ export const MARKET_SKILL_METADATA: SkillMetadata = {
     optionalEnv: ['ALPHA_VANTAGE_KEY', 'FINNHUB_KEY', 'TWELVE_DATA_KEY', 'COINGECKO_API_KEY'],
   },
   tools: [
-    { name: 'get_stock_price', minModel: 'haiku', reason: '구조화 조회' },
-    { name: 'get_crypto_price', minModel: 'haiku', reason: '구조화 조회' },
-    { name: 'get_forex_rate', minModel: 'haiku', reason: '구조화 조회' },
-    { name: 'get_market_chart', minModel: 'haiku', reason: '데이터 포매팅' },
+    { name: 'get_stock_price', reason: '구조화 조회' },
+    { name: 'get_crypto_price', reason: '구조화 조회' },
+    { name: 'get_forex_rate', reason: '구조화 조회' },
+    { name: 'get_market_chart', reason: '데이터 포매팅' },
   ],
 };

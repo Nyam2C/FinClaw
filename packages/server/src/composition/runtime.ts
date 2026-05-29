@@ -28,14 +28,12 @@ import { InMemoryCommandRegistry } from '../auto-reply/commands/registry.js';
 import { RunnerExecutionAdapter, type RunnerFactory } from '../auto-reply/execution-adapter.js';
 import { StubFinanceContextProvider } from '../auto-reply/pipeline-context.js';
 import { AutoReplyPipeline } from '../auto-reply/pipeline.js';
-import type { makeRouterHelper } from '../auto-reply/router-helper.js';
 import { SchedulerService } from '../automation/scheduler.js';
 import { createTracer } from '../observability/tracer.js';
 import { NewsMemorizer } from '../services/news-memorizer.js';
 import { wireMemoryServices } from './memory-services.js';
 
 type Storage = ReturnType<typeof createStorage>;
-type RouterHelper = ReturnType<typeof makeRouterHelper> | undefined;
 type Tracer = ReturnType<typeof createTracer>;
 
 // ───────────────────────── buildExecution (561-591) ─────────────────────────
@@ -222,7 +220,6 @@ export interface BuildAutomationDeps {
   readonly systemPrompt: string;
   readonly logger: FinClawLogger;
   readonly profileHealth: ProfileHealthMonitor;
-  readonly routerHelper: RouterHelper;
   readonly modelCatalog: InMemoryModelCatalog;
   readonly modelAliasIndex: ReturnType<typeof buildModelAliasIndex>;
   readonly tracer: Tracer;
@@ -246,7 +243,6 @@ export function buildAutomation(deps: BuildAutomationDeps): AutomationBundle {
     systemPrompt,
     logger,
     profileHealth,
-    routerHelper,
     modelCatalog,
     modelAliasIndex,
     tracer,
@@ -287,7 +283,6 @@ export function buildAutomation(deps: BuildAutomationDeps): AutomationBundle {
     logger,
     profileHealth,
     profileId: 'default',
-    router: routerHelper,
     modelCatalog,
     modelAliasIndex,
     fallbackChain: DEFAULT_FALLBACK_CHAIN,

@@ -248,7 +248,7 @@ describe('agent.* RPC methods', () => {
         database.close();
       });
 
-      it('persists agent_runs row with prompt/output/role on success', async () => {
+      it('persists agent_runs row with prompt/output on success', async () => {
         const longOutput = 'A'.repeat(150); // > 100자 → attach 도 호출됨
         const runner = {
           execute: vi.fn().mockResolvedValue(
@@ -267,7 +267,6 @@ describe('agent.* RPC methods', () => {
         const result = await call('agent.run', {
           agentId: 'finclaw-partner',
           prompt: 'analyze AAPL',
-          role: 'analysis',
         });
         const r = (result as { result: { runId?: string; output: string } }).result;
         expect(r.runId).toBeTruthy();
@@ -277,7 +276,6 @@ describe('agent.* RPC methods', () => {
         expect(stored).not.toBeNull();
         expect(stored?.prompt).toBe('analyze AAPL');
         expect(stored?.output).toBe(longOutput);
-        expect(stored?.role).toBe('analysis');
         expect(stored?.error).toBeUndefined();
         expect(stored?.tokensInput).toBe(10);
         expect(stored?.tokensOutput).toBe(5);

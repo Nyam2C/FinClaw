@@ -26,7 +26,6 @@ import type {
   AgentRunParams,
   ConversationMessage,
   ModelRef,
-  ModelTier,
   SessionKey,
   StorageAdapter,
   Timestamp,
@@ -268,8 +267,6 @@ export class RunnerExecutionAdapter implements ExecutionAdapter, ChatExecutionPo
       readonly agentId: AgentId;
       readonly userMessage: string;
       readonly model: ModelRef;
-      /** Phase 24: 사용자 modelHint (chat.send.modelHint 또는 chat.start.model 유래) */
-      readonly userHint?: ModelTier;
     },
     listener: StreamEventListener | undefined,
     signal: AbortSignal,

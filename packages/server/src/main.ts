@@ -21,12 +21,6 @@ import {
   PortInUseError,
 } from '@finclaw/infra';
 import {
-  ALERT_SKILL_METADATA,
-  MARKET_SKILL_METADATA,
-  NEWS_SKILL_METADATA,
-} from '@finclaw/skills-finance';
-import { GENERAL_SKILL_METADATA } from '@finclaw/skills-general';
-import {
   assertEmbeddingDimension,
   createEmbeddingProvider,
   createStorage,
@@ -34,7 +28,6 @@ import {
   type EmbeddingProvider,
 } from '@finclaw/storage';
 import type { ChannelPlugin, ConfigValidationIssue, FinClawConfig } from '@finclaw/types';
-import { buildToolMetaIndex, makeRouterHelper } from './auto-reply/router-helper.js';
 import { deliverScheduleResult } from './automation/delivery.js';
 import { initChannels } from './channels/index.js';
 import { DEFAULT_MODEL, defaultConfig } from './composition/constants.js';
@@ -98,39 +91,10 @@ async function main(): Promise<void> {
   const logger = createLogger({ name: 'finclaw', level: 'info' });
   const lifecycle = new ProcessLifecycle({ logger });
 
-  // 2a. 전체 config 로드 + strict 재검증 (Phase 24 — routing 등 잘못된 설정으로 기동 차단)
+  // 2a. 전체 config 로드 + strict 재검증
   const finclawConfig = loadConfig({ logger });
   validateConfigStrict(finclawConfig);
-  const routing = finclawConfig.routing;
-  if (routing) {
-    logger.info('Model routing table loaded', {
-      event: 'routing.loaded',
-      table: {
-        fetch: routing.roles.fetch.preferred,
-        chat: routing.roles.chat.preferred,
-        analysis: routing.roles.analysis.preferred,
-        summarize: routing.roles.summarize.preferred,
-      },
-      automation: routing.automation,
-      override: routing.override,
-    });
-  } else {
-    logger.warn('routing config not found, using defaults', { event: 'routing.config_missing' });
-  }
 
-  // Phase 24: 라우터 helper 구축 — 4개 스킬 메타에서 도구 인덱스 수집.
-  // routing 미주입 시 helper 생성하지 않음 (어댑터/agent.run 모두 fallback 동작).
-  const routerHelper = routing
-    ? makeRouterHelper(
-        routing,
-        buildToolMetaIndex([
-          MARKET_SKILL_METADATA,
-          NEWS_SKILL_METADATA,
-          ALERT_SKILL_METADATA,
-          GENERAL_SKILL_METADATA,
-        ]),
-      )
-    : undefined;
   const dbPath = process.env.FINCLAW_DB_PATH ?? join(homedir(), '.finclaw', 'db.sqlite');
   const storage = createStorage({ dbPath });
   await storage.initialize();
@@ -203,7 +167,6 @@ async function main(): Promise<void> {
       logger,
       finclawConfig,
       discordAdapter,
-      routerHelper,
       profileHealth,
       modelCatalog,
       defaultModel: DEFAULT_MODEL,
@@ -293,7 +256,6 @@ async function main(): Promise<void> {
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     logger,
     profileHealth,
-    routerHelper,
     modelCatalog,
     modelAliasIndex,
     tracer,
@@ -332,7 +294,6 @@ async function main(): Promise<void> {
       defaultModel: DEFAULT_MODEL,
       logger,
       profileId: 'default',
-      router: routerHelper,
       modelCatalog,
       modelAliasIndex,
       fallbackChain: DEFAULT_FALLBACK_CHAIN,

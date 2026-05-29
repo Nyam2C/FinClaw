@@ -47,16 +47,6 @@ const DEFAULTS = Object.freeze({
     enabled: [] as string[],
     disabled: [] as string[],
   },
-  routing: {
-    roles: {
-      fetch: { preferred: 'haiku' as const, maxTokens: 1024 },
-      chat: { preferred: 'sonnet' as const, maxTokens: 4096 },
-      analysis: { preferred: 'opus' as const, maxTokens: 8192 },
-      summarize: { preferred: 'haiku' as const, maxTokens: 2048 },
-    },
-    automation: { strictFallback: true, logVerbose: true },
-    override: { allowClientHint: true, respectMinModel: true },
-  },
   // Phase 40 D: 키 없는 구독(CLI)+MCP 부팅이 기본 경험. SDK 는 키 보유 시 휴면 안전판(phase41 제거).
   provider: 'claude-cli',
 }) satisfies FinClawConfig;

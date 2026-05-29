@@ -457,7 +457,6 @@ describe('boundary: agent.run → agent_runs + memories → agent.runs.get (mock
     expect(got.run.output).toBe(longOutput);
     expect(got.run.memoryId).toBe(memRow.id);
     expect(Array.isArray(got.run.toolCalls)).toBe(true);
-    expect(got.run.role).toBe('analysis');
     // 정상 경로 → error 없음
     expect(got.run.error == null).toBe(true);
   });

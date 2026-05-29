@@ -66,37 +66,38 @@
 > 사용자 스탠스: 다 삭제하고 typecheck 깨지는 곳마다 그때그때 가장 단순한 방식으로 정리. compatibility seam 두지 않음.
 
 **routing 코어:**
-- [ ] `packages/agent/src/models/routing.ts` 전체 삭제 (tierToModelId/modelIdToTier 포함)
-- [ ] `packages/server/src/auto-reply/router-helper.ts` 전체 삭제
-- [ ] `packages/agent/src/index.ts` — routing/tierToModelId/modelIdToTier re-export 제거
-- [ ] `packages/agent/test/routing.test.ts` 삭제
+- [x] `packages/agent/src/models/routing.ts` 전체 삭제 (tierToModelId/modelIdToTier 포함)
+- [x] `packages/server/src/auto-reply/router-helper.ts` 전체 삭제
+- [x] `packages/agent/src/index.ts` — routing/tierToModelId/modelIdToTier re-export 제거
+- [x] `packages/agent/test/routing.test.ts` 삭제
 
 **types/config:**
-- [ ] `packages/types/src/config.ts` — `RoutingConfig`/`RoleProfile`/`ModelTier` 제거
-- [ ] `packages/types/src/skill.ts` — `ModelTier` import 및 사용 필드 제거
-- [ ] `packages/config/src/defaults.ts` — `DEFAULTS.routing` 블록 제거
-- [ ] `packages/config/src/zod-schema.ts` — `ModelTierSchema`·`RoleProfileSchema`·routing 스키마 제거
-- [ ] `packages/config/test/zod-schema.test.ts` — routing 관련 케이스 제거
+- [x] `packages/types/src/config.ts` — `RoutingConfig`/`RoleProfile`/`ModelTier` 제거
+- [x] `packages/types/src/skill.ts` — `ModelTier` import 및 사용 필드(minModel) 제거
+- [x] `packages/config/src/defaults.ts` — `DEFAULTS.routing` 블록 제거
+- [x] `packages/config/src/zod-schema.ts` — `ModelTierSchema`·`RoleProfileSchema`·routing 스키마 제거
+- [x] `packages/config/test/zod-schema.test.ts` — routing 관련 케이스 제거 (+ defaults.test.ts)
 
 **main.ts/composition:**
-- [ ] `packages/server/src/main.ts` — routing 로드/로그 블록 (L107-138) + `routerHelper` 생성·주입 3 곳 제거
-- [ ] `packages/server/src/composition/{runtime,skills}.ts` — `routerHelper` deps 필드·생성자 인자 제거
-- [ ] `packages/skills-finance/src/news/tools.ts:172-178` — router 분기 제거 (analyze_market 본문 이미 sub-agent 로 이동)
+- [x] `packages/server/src/main.ts` — routing 로드/로그 블록 + `routerHelper` 생성·주입 3 곳 제거
+- [x] `packages/server/src/composition/{runtime,skills}.ts` — `routerHelper` deps 필드·생성자 인자 제거
+- [x] `packages/skills-finance/src/news/tools.ts` — router 분기 제거 (analyze_market 본문 이미 sub-agent 로 이동) + `news/index.ts` router 주입 제거
 
 **ModelTier downstream (typecheck 따라가며 정리):**
-- [ ] `packages/agent/src/models/fallback.ts` — `floor: ModelTier` 제거. fallback chain 을 단순 model id 리스트로. `modelIdToTier`·`TIER_RANK` 제거. (floor 개념 자체 제거)
-- [ ] `packages/agent/test/fallback.test.ts` — floor 관련 케이스 정리
-- [ ] `packages/agent/src/execution/chat-execution-port.ts:22` — `userHint?: ModelTier` 필드 제거
-- [ ] `packages/gateway/src/rpc/methods/chat.ts:75` — `modelHint?: ModelTier` 제거 (RPC schema. TUI/Web 미사용 확인됨)
-- [ ] `packages/server/src/auto-reply/execution-adapter.ts:272` — `userHint?: ModelTier` 필드 제거
-- [ ] `packages/server/src/auto-reply/commands/status.ts:68,71` — tier 정렬 로직 제거 (model id 알파벳 정렬 또는 그냥 등록 순서)
+- [x] `packages/agent/src/models/fallback.ts` — `floor: ModelTier` 제거. fallback chain 을 단순 model id 리스트로. `modelIdToTier`·`TIER_RANK` 제거.
+- [x] `packages/agent/test/fallback.test.ts` — floor 관련 케이스 정리
+- [x] `packages/agent/src/execution/chat-execution-port.ts` — `userHint?: ModelTier` 필드 제거
+- [x] `packages/gateway/src/rpc/methods/chat.ts` — `modelHint?: ModelTier` 제거 (RPC schema. TUI/Web 미사용 확인됨)
+- [x] `packages/server/src/auto-reply/execution-adapter.ts` — `userHint?: ModelTier` 필드 제거
+- [x] `packages/server/src/auto-reply/commands/status.ts` — tier 정렬 로직 제거
+- [x] 스킬 메타데이터 `minModel` 필드 제거 (alerts/market/news/general index.ts)
 
 **RPC:**
-- [ ] `packages/gateway/src/rpc/methods/agent.ts:211,225,239,418` — `role` 파라미터 제거 (TUI/Web 미사용)
+- [x] `packages/gateway/src/rpc/methods/agent.ts` — `role` 파라미터 제거 (TUI/Web 미사용) + 미사용 `toolDefinitions` destructure 정리 (gateway/agent.ts·automation/scheduler.ts)
 
 **검증:**
-- [ ] typecheck 통과
-- [ ] 기존 unit test 통과 (삭제된 테스트 제외)
+- [x] typecheck 통과 (exit 0)
+- [x] 기존 unit test 통과 (188 files / 1582 tests green, −46 = 삭제 테스트) + lint 0
 
 ### 마일스톤 D — 확장
 
