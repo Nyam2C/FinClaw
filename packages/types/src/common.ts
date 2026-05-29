@@ -1,21 +1,8 @@
 /** 브랜드 타입 -- 원시 타입에 의미론적 구분 부여 */
 export type Brand<T, B extends string> = T & { readonly __brand: B };
 
-/** 불투명 타입 -- 내부 표현을 숨기고 타입 안전성 보장 */
-export type Opaque<T, K extends string> = T & { readonly __opaque: K };
-
 /** 결과 타입 -- 에러 핸들링의 명시적 표현 */
 export type Result<T, E = Error> = { ok: true; value: T } | { ok: false; error: E };
-
-/** 깊은 부분 타입 */
-export type DeepPartial<T> = {
-  [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
-};
-
-/** 깊은 읽기 전용 */
-export type DeepReadonly<T> = {
-  readonly [P in keyof T]: T[P] extends object ? DeepReadonly<T[P]> : T[P];
-};
 
 /** 타임스탬프 (밀리초 Unix epoch) */
 export type Timestamp = Brand<number, 'Timestamp'>;
