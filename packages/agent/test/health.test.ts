@@ -1,7 +1,6 @@
 import { resetEventBus } from '@finclaw/infra';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ProfileHealthMonitor } from '../src/auth/health.js';
-import type { ManagedAuthProfile } from '../src/auth/profiles.js';
 
 describe('ProfileHealthMonitor', () => {
   let monitor: ProfileHealthMonitor;
@@ -84,20 +83,6 @@ describe('ProfileHealthMonitor', () => {
     // 윈도우 내 기록: 성공 1개 → healthy
     // (단, consecutiveFailures가 리셋되지 않았을 수 있으므로 recordResult(true)에서 리셋됨)
     expect(monitor.getHealth('p1')).toBe('healthy');
-  });
-
-  it('filterHealthy: disabled 프로필 제외', () => {
-    monitor.recordResult('p1', false);
-    monitor.recordResult('p1', false);
-    monitor.recordResult('p1', false); // disabled
-
-    const profiles = [
-      { id: 'p1' } as unknown as ManagedAuthProfile,
-      { id: 'p2' } as unknown as ManagedAuthProfile,
-    ];
-    const healthy = monitor.filterHealthy(profiles);
-    expect(healthy).toHaveLength(1);
-    expect(healthy[0].id).toBe('p2');
   });
 
   it('getSummary: 모든 추적 프로필의 상태 반환', () => {

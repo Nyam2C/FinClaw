@@ -5,14 +5,8 @@
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import type { AliasIndex, ModelCatalog, ProfileHealthMonitor, ToolRegistry } from '@finclaw/agent';
-import {
-  DEFAULT_FALLBACK_TRIGGERS,
-  ModelFloorExhaustedError,
-  resolveModel,
-  runWithModelFallback,
-} from '@finclaw/agent';
+import { DEFAULT_FALLBACK_TRIGGERS, resolveModel, runWithModelFallback } from '@finclaw/agent';
 import { buildDispatcher, collectToolCalls, extractAssistantText } from '@finclaw/agent';
-import type { RouterHelper } from '@finclaw/agent';
 import type { ConcurrencyLane, FinClawLogger } from '@finclaw/infra';
 import { nextRunAt as computeNextRunAt, parseCron } from '@finclaw/infra';
 import {
@@ -58,7 +52,6 @@ export interface SchedulerDeps extends SchedulerCallbacks {
   readonly logger: FinClawLogger;
   readonly profileHealth: ProfileHealthMonitor;
   readonly profileId?: string;
-  readonly router?: RouterHelper;
   readonly modelCatalog?: ModelCatalog;
   readonly modelAliasIndex?: AliasIndex;
   readonly fallbackChain?: readonly string[];
@@ -230,7 +223,7 @@ export class SchedulerService implements SchedulerPort {
       try {
         const sessionKey = createSessionKey(`schedule-${s.id}-${randomUUID()}`);
         const agentIdBrand = createAgentId(s.agentId as string);
-        const { dispatcher, toolDefinitions } = buildDispatcher(this.deps.toolRegistry, {
+        const { dispatcher } = buildDispatcher(this.deps.toolRegistry, {
           sessionId: sessionKey as string,
           userId: 'scheduler',
           channelId: 'scheduler',
@@ -241,29 +234,24 @@ export class SchedulerService implements SchedulerPort {
         const timeoutMs = s.timeoutMs ?? this.deps.defaultTimeoutMs ?? 60_000;
         const timer = setTimeout(() => abortController.abort(), timeoutMs);
 
-        const role = 'analysis' as const;
-        const decision = this.deps.router
-          ? this.deps.router({ role, toolNames: toolDefinitions.map((t) => t.name) })
-          : undefined;
-        const exposedTools = decision
-          ? toolDefinitions.filter((t) => decision.allowedToolNames.includes(t.name))
-          : toolDefinitions;
         const buildParams = (model: ModelRef): AgentRunParams => ({
           agentId: agentIdBrand,
           sessionKey,
           model,
           systemPrompt: this.deps.systemPrompt,
           messages: [userMsg],
-          tools: exposedTools.length > 0 ? [...exposedTools] : undefined,
           abortSignal: abortController.signal,
         });
 
         let usedModelId: string | undefined;
         try {
           let result;
-          if (decision && this.deps.modelCatalog && this.deps.modelAliasIndex) {
-            const others = (this.deps.fallbackChain ?? []).filter((m) => m !== decision.modelId);
-            const chain = [decision.modelId, ...others];
+          if (
+            this.deps.modelCatalog &&
+            this.deps.modelAliasIndex &&
+            (this.deps.fallbackChain?.length ?? 0) > 0
+          ) {
+            const chain = [this.deps.defaultModel.model, ...(this.deps.fallbackChain ?? [])];
             const catalog = this.deps.modelCatalog;
             const aliasIndex = this.deps.modelAliasIndex;
             const fallback = await runWithModelFallback(
@@ -273,7 +261,6 @@ export class SchedulerService implements SchedulerPort {
                 retryBaseDelayMs: 500,
                 fallbackOn: DEFAULT_FALLBACK_TRIGGERS,
                 abortSignal: abortController.signal,
-                floor: decision.decision.floor,
               },
               async (resolved) =>
                 runner.execute(
@@ -281,11 +268,6 @@ export class SchedulerService implements SchedulerPort {
                     ...this.deps.defaultModel,
                     provider: resolved.provider,
                     model: resolved.modelId,
-                    contextWindow: resolved.entry.contextWindow,
-                    maxOutputTokens: Math.min(
-                      resolved.entry.maxOutputTokens,
-                      this.deps.defaultModel.maxOutputTokens,
-                    ),
                   }),
                 ),
               (ref) => resolveModel(ref, catalog, aliasIndex),
@@ -293,10 +275,7 @@ export class SchedulerService implements SchedulerPort {
             result = fallback.result;
             usedModelId = fallback.modelUsed.modelId;
           } else {
-            const modelRef: ModelRef = decision
-              ? { ...this.deps.defaultModel, model: decision.modelId }
-              : this.deps.defaultModel;
-            result = await runner.execute(buildParams(modelRef));
+            result = await runner.execute(buildParams(this.deps.defaultModel));
           }
           output = extractAssistantText(result.messages);
           const toolCalls = collectToolCalls(result.messages, startedAt);
@@ -310,7 +289,6 @@ export class SchedulerService implements SchedulerPort {
             tokensOutput: result.usage.outputTokens,
             durationMs,
             modelUsed: usedModelId ?? this.deps.defaultModel.model,
-            role,
             // Phase 30 hotfix P0-1: schedule 실행이 자체 trace 의 root, agent_runs 가 그 아래.
             traceId: traceCtx?.traceId,
             parentSpanId: traceCtx?.parentSpanId,
@@ -321,11 +299,7 @@ export class SchedulerService implements SchedulerPort {
             .run(s.id, runId);
           this.deps.profileHealth.recordResult(this.deps.profileId ?? 'default', true);
         } catch (runErr) {
-          if (runErr instanceof ModelFloorExhaustedError) {
-            error = `model_floor_exhausted: ${runErr.floor}`;
-          } else {
-            error = (runErr as Error).message;
-          }
+          error = (runErr as Error).message;
           const durationMs = Date.now() - startedAt;
           const inserted = addAgentRun(this.deps.db, {
             agentId: agentIdBrand,
@@ -333,7 +307,6 @@ export class SchedulerService implements SchedulerPort {
             output: '',
             durationMs,
             modelUsed: this.deps.defaultModel.model,
-            role,
             error,
             // Phase 30 hotfix P0-1: traceId / parentSpanId 부착 (성공/실패 동일).
             traceId: traceCtx?.traceId,

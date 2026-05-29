@@ -1,11 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 // packages/skills-finance/src/news/index.ts
-import type {
-  ModelCatalog,
-  ProfileHealthMonitor,
-  RouterHelper,
-  ToolRegistry,
-} from '@finclaw/agent';
+import type { ModelCatalog, ProfileHealthMonitor, ToolRegistry } from '@finclaw/agent';
 import { runCliAgent } from '@finclaw/agent';
 import type { ModelRef, SkillMetadata } from '@finclaw/types';
 import type { KeyRotator } from '../shared/key-rotator.js';
@@ -38,21 +33,12 @@ export interface NewsSkillConfig {
   readonly finnhubRotator?: KeyRotator;
   readonly rssFeedUrls?: string[];
   readonly quoteService: QuoteService;
-  /**
-   * Phase 24: 모델 라우터. analyze_market 도구 실행 시 role='analysis' 로
-   * 호출되어 modelRef 결정. 미주입 시 defaultModel 사용.
-   */
-  readonly router?: RouterHelper;
-  /**
-   * 라우터 미주입 시 fallback 으로 사용할 LLM modelRef.
-   * 주입 시에도 router 결정 외 다른 ModelRef 필드 (provider, contextWindow 등) 의 출처.
-   */
+  /** analyze_market 의 LLM modelRef 출처 (sub-agent dispatcher 가 흡수해 직접 사용하지 않으나, 도구 등록 호환용으로 유지). */
   readonly defaultModel?: ModelRef;
-  /** Phase 24 E: 스킬 내부 LLM 호출 비용·건강을 status 분포에 포함하기 위한 모니터. */
+  /** 스킬 내부 LLM 호출 비용·건강을 status 분포에 포함하기 위한 모니터. */
   readonly profileHealth?: ProfileHealthMonitor;
-  /** Phase 24 E: 스킬 호출 기록의 profileId (기본 'skill-news-analyze'). */
   readonly profileId?: string;
-  /** Phase 24 E: cost 계산용 카탈로그 (pricing 조회). */
+  /** cost 계산용 카탈로그. */
   readonly modelCatalog?: ModelCatalog;
 }
 
@@ -119,7 +105,6 @@ export async function registerNewsTools(
           : undefined,
       };
     },
-    router: config.router,
     defaultModel: config.defaultModel,
     profileHealth: config.profileHealth,
     profileId: config.profileId,
@@ -151,8 +136,8 @@ export const NEWS_SKILL_METADATA: SkillMetadata = {
     optionalEnv: ['NEWSAPI_KEY', 'ALPHA_VANTAGE_KEY', 'FINNHUB_KEY', 'NEWSDATA_API_KEY'],
   },
   tools: [
-    { name: 'get_financial_news', minModel: 'haiku', reason: '리스트 반환' },
-    { name: 'analyze_market', minModel: 'opus', reason: '금융 판단, 환각 방지' },
-    { name: 'get_portfolio_summary', minModel: 'sonnet', reason: '포트 요약 (판단 일부 포함)' },
+    { name: 'get_financial_news', reason: '리스트 반환' },
+    { name: 'analyze_market', reason: '금융 판단, 환각 방지' },
+    { name: 'get_portfolio_summary', reason: '포트 요약 (판단 일부 포함)' },
   ],
 };

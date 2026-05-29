@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import type { AgentId, AgentRun, Timestamp } from '@finclaw/types';
+import type { AgentId, AgentRunLog, Timestamp } from '@finclaw/types';
 
 // ─── Row type ───
 
@@ -32,7 +32,7 @@ export interface AgentRunRow {
 
 // ─── Public types ───
 
-export type { AgentRun } from '@finclaw/types';
+export type { AgentRunLog } from '@finclaw/types';
 
 /** addAgentRun 입력 — id/createdAt 은 함수 내부에서 생성 */
 export interface AddAgentRunInput {
@@ -74,7 +74,7 @@ export interface ListAgentRunsOptions {
 
 // ─── Helpers ───
 
-function rowToAgentRun(row: AgentRunRow): AgentRun {
+function rowToAgentRun(row: AgentRunRow): AgentRunLog {
   return {
     id: row.id,
     agentId: row.agent_id as AgentId,
@@ -94,7 +94,7 @@ function rowToAgentRun(row: AgentRunRow): AgentRun {
     rerankMeta:
       row.rerank_meta === null
         ? undefined
-        : (JSON.parse(row.rerank_meta) as AgentRun['rerankMeta']),
+        : (JSON.parse(row.rerank_meta) as AgentRunLog['rerankMeta']),
     cliSessionId: row.cli_session_id === null ? undefined : row.cli_session_id,
     error: row.error === null ? undefined : row.error,
     createdAt: row.created_at as Timestamp,
@@ -106,7 +106,7 @@ const MAX_LIMIT = 200;
 
 // ─── CRUD ───
 
-export function addAgentRun(db: DatabaseSync, input: AddAgentRunInput): AgentRun {
+export function addAgentRun(db: DatabaseSync, input: AddAgentRunInput): AgentRunLog {
   const id = randomUUID();
   const createdAt = Date.now() as Timestamp;
 
@@ -143,14 +143,14 @@ export function addAgentRun(db: DatabaseSync, input: AddAgentRunInput): AgentRun
   return rowToAgentRun(row);
 }
 
-export function getAgentRun(db: DatabaseSync, id: string): AgentRun | null {
+export function getAgentRun(db: DatabaseSync, id: string): AgentRunLog | null {
   const row = db.prepare('SELECT * FROM agent_runs WHERE id = ?').get(id) as unknown as
     | AgentRunRow
     | undefined;
   return row ? rowToAgentRun(row) : null;
 }
 
-export function listAgentRuns(db: DatabaseSync, options: ListAgentRunsOptions = {}): AgentRun[] {
+export function listAgentRuns(db: DatabaseSync, options: ListAgentRunsOptions = {}): AgentRunLog[] {
   const clauses: string[] = [];
   const params: Array<string | number> = [];
 

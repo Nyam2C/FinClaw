@@ -1,4 +1,3 @@
-import type { ModelTier } from './config.js';
 import type { MsgContext } from './message.js';
 
 /** 스킬 정의 */
@@ -71,7 +70,6 @@ export interface SkillMedia {
 
 export interface ToolMetadata {
   readonly name: string;
-  readonly minModel?: ModelTier;
   readonly reason?: string;
 }
 

@@ -35,34 +35,13 @@ export type {
 } from './models/provider-normalize.js';
 
 // ─── models: fallback ───
-export {
-  DEFAULT_FALLBACK_TRIGGERS,
-  ModelFloorExhaustedError,
-  runWithModelFallback,
-} from './models/fallback.js';
+export { DEFAULT_FALLBACK_TRIGGERS, runWithModelFallback } from './models/fallback.js';
 export type {
   FallbackConfig,
   FallbackTrigger,
   FallbackResult,
   FallbackAttempt,
 } from './models/fallback.js';
-
-// ─── models: routing (Phase 24) ───
-export {
-  computeFloor,
-  maxTier,
-  modelIdToTier,
-  resolveModelForRequest,
-  tierToModelId,
-} from './models/routing.js';
-export type {
-  ModelRole,
-  RouteDecision,
-  RouteRequest,
-  RouterHelper,
-  RouterHelperRequest,
-  RouterHelperResult,
-} from './models/routing.js';
 
 // ─── providers ───
 export { getBreakerForProvider, resetBreakers } from './providers/adapter.js';
@@ -99,19 +78,6 @@ export type {
   ProfileHealthStatus,
   RecordOptions,
 } from './auth/health.js';
-
-// ─── auth: profiles ───
-export { InMemoryAuthProfileStore } from './auth/profiles.js';
-export type { ManagedAuthProfile, AuthProfileStore, CreateProfileInput } from './auth/profiles.js';
-
-// ─── auth: resolver ───
-export { resolveApiKeyForProvider } from './auth/resolver.js';
-export type {
-  ResolverOptions,
-  ResolvedApiKey,
-  ApiKeySource,
-  AgentResolverConfig,
-} from './auth/resolver.js';
 
 // ── Phase 7: Tools ──
 export type {

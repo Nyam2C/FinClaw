@@ -13,13 +13,10 @@ import type {
 } from '@finclaw/agent';
 import {
   calculateEstimatedCost,
-  compactContext,
   DEFAULT_FALLBACK_TRIGGERS,
-  evaluateContextWindow,
   ExecutionToolDispatcher as ToolDispatcherCtor,
   resolveModel,
   runWithModelFallback,
-  type TranscriptEntry,
 } from '@finclaw/agent';
 import { buildDispatcher, collectToolCalls, extractAssistantText } from '@finclaw/agent';
 import type { ToolCallRecord } from '@finclaw/agent';
@@ -27,10 +24,8 @@ import type { FinClawLogger } from '@finclaw/infra';
 import type {
   AgentId,
   AgentRunParams,
-  ContentBlock,
   ConversationMessage,
   ModelRef,
-  ModelTier,
   SessionKey,
   StorageAdapter,
   Timestamp,
@@ -152,7 +147,7 @@ export class RunnerExecutionAdapter implements ExecutionAdapter, ChatExecutionPo
     const priorMessages = await this.loadHistory(ctx.sessionKey);
     const userMessage: ConversationMessage = { role: 'user', content: ctx.normalizedBody };
 
-    const { dispatcher, toolDefinitions } = this.buildRequestDispatcher({
+    const { dispatcher } = this.buildRequestDispatcher({
       sessionId: ctx.sessionKey as string,
       userId: ctx.senderId,
       channelId: ctx.channelId as unknown as string,
@@ -160,9 +155,6 @@ export class RunnerExecutionAdapter implements ExecutionAdapter, ChatExecutionPo
     const runner = this.deps.runnerFactory(dispatcher);
     const profileId = this.deps.profileId ?? 'default';
     const startedAt = Date.now();
-
-    // Phase 41: LLM 라우터 제거 — 전체 도구 노출 + fallbackChain(sonnet 선두) 직결.
-    const exposedTools = toolDefinitions;
 
     // Phase 26 C: retrievalResult 가 있으면 "사용자 배경지식" 섹션을 system prompt 끝에 합성.
     // 빈 섹션 (snippets·transactions 모두 0) 이면 base 그대로 — 빈 헤더 노출 방지.
@@ -174,13 +166,7 @@ export class RunnerExecutionAdapter implements ExecutionAdapter, ChatExecutionPo
       ? `${baseSystemPrompt}\n\n${backgroundSection}`
       : baseSystemPrompt;
 
-    // Phase 31 C: 컨텍스트 윈도우 critical/exceeded 시 compaction. 미주입 시 원본 그대로.
-    const requestMessages = await maybeCompactMessages(
-      [...priorMessages, userMessage],
-      this.deps.defaultModel,
-      ctx,
-      this.deps.logger,
-    );
+    const requestMessages = [...priorMessages, userMessage];
 
     const buildParams = (model: ModelRef): AgentRunParams => ({
       agentId: this.defaultAgentId,
@@ -188,7 +174,6 @@ export class RunnerExecutionAdapter implements ExecutionAdapter, ChatExecutionPo
       model,
       systemPrompt: composedSystemPrompt,
       messages: requestMessages,
-      tools: exposedTools.length > 0 ? [...exposedTools] : undefined,
       abortSignal: signal,
     });
 
@@ -214,11 +199,6 @@ export class RunnerExecutionAdapter implements ExecutionAdapter, ChatExecutionPo
               ...this.deps.defaultModel,
               provider: resolved.provider,
               model: resolved.modelId,
-              contextWindow: resolved.entry.contextWindow,
-              maxOutputTokens: Math.min(
-                resolved.entry.maxOutputTokens,
-                this.deps.defaultModel.maxOutputTokens,
-              ),
             };
             return runner.execute(buildParams(model));
           },
@@ -287,8 +267,6 @@ export class RunnerExecutionAdapter implements ExecutionAdapter, ChatExecutionPo
       readonly agentId: AgentId;
       readonly userMessage: string;
       readonly model: ModelRef;
-      /** Phase 24: 사용자 modelHint (chat.send.modelHint 또는 chat.start.model 유래) */
-      readonly userHint?: ModelTier;
     },
     listener: StreamEventListener | undefined,
     signal: AbortSignal,
@@ -296,15 +274,12 @@ export class RunnerExecutionAdapter implements ExecutionAdapter, ChatExecutionPo
     const priorMessages = await this.loadHistory(input.sessionKey);
     const userMessage: ConversationMessage = { role: 'user', content: input.userMessage };
 
-    const { dispatcher, toolDefinitions } = this.buildRequestDispatcher({
+    const { dispatcher } = this.buildRequestDispatcher({
       sessionId: input.sessionKey as string,
       userId: 'tui',
       channelId: 'tui',
     });
     const runner = this.deps.runnerFactory(dispatcher);
-
-    // Phase 41: LLM 라우터 제거 — TUI 도 전체 도구 노출.
-    const exposedTools = toolDefinitions;
 
     const buildParams = (model: ModelRef): AgentRunParams => ({
       agentId: input.agentId,
@@ -312,7 +287,6 @@ export class RunnerExecutionAdapter implements ExecutionAdapter, ChatExecutionPo
       model,
       systemPrompt: this.deps.systemPrompt,
       messages: [...priorMessages, userMessage],
-      tools: exposedTools.length > 0 ? [...exposedTools] : undefined,
       abortSignal: signal,
     });
 
@@ -361,10 +335,9 @@ export class RunnerExecutionAdapter implements ExecutionAdapter, ChatExecutionPo
     readonly channelId: string;
   }): {
     dispatcher: ExecutionToolDispatcher;
-    toolDefinitions: readonly import('@finclaw/types').ToolDefinition[];
   } {
     if (!this.deps.toolRegistry) {
-      return { dispatcher: new ToolDispatcherCtor(), toolDefinitions: [] };
+      return { dispatcher: new ToolDispatcherCtor() };
     }
     return buildDispatcher(this.deps.toolRegistry, ctx);
   }
@@ -403,99 +376,6 @@ export interface TuiExecutionResult {
 
 function toMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
-}
-
-/** ConversationMessage 의 content (string | ContentBlock[]) 를 단일 문자열로 평탄화. */
-function flattenContent(content: string | ContentBlock[]): string {
-  if (typeof content === 'string') {
-    return content;
-  }
-  return content
-    .map((block) => {
-      switch (block.type) {
-        case 'text':
-          return block.text;
-        case 'tool_result':
-          return block.content;
-        case 'tool_use':
-          return JSON.stringify(block.input);
-        default:
-          return '';
-      }
-    })
-    .join('\n');
-}
-
-function toTranscriptEntry(msg: ConversationMessage): TranscriptEntry {
-  return {
-    role: msg.role,
-    content: flattenContent(msg.content),
-    timestamp: new Date().toISOString(),
-  };
-}
-
-/**
- * Phase 31 C — 컨텍스트 윈도우 평가 후 critical/exceeded 면 compactContext 로 압축.
- *
- * tokenCounter/summarizer 미주입 시 원본 messages 그대로 반환 (compaction 비활성).
- * 압축 결과는 string content 의 ConversationMessage[] 로 환원하고, 선두 orphan tool 메시지를
- * 제거해 Anthropic tool_use/tool_result 페어 제약을 지킨다.
- */
-export async function maybeCompactMessages(
-  messages: readonly ConversationMessage[],
-  model: ModelRef,
-  ctx: Pick<PipelineMsgContext, 'tokenCounter' | 'summarizer'>,
-  logger?: FinClawLogger,
-): Promise<ConversationMessage[]> {
-  const { tokenCounter, summarizer } = ctx;
-  if (!tokenCounter || !summarizer) {
-    return [...messages];
-  }
-
-  const entries = messages.map(toTranscriptEntry);
-  const windowState = evaluateContextWindow(
-    entries,
-    model.contextWindow,
-    model.maxOutputTokens,
-    { warningThreshold: 0.7, criticalThreshold: 0.85, reserveTokens: 4096 },
-    tokenCounter,
-  );
-
-  if (windowState.status !== 'critical' && windowState.status !== 'exceeded') {
-    return [...messages];
-  }
-
-  logger?.warn('context.compaction_triggered', {
-    event: 'context.compaction_triggered',
-    status: windowState.status,
-    usedTokens: windowState.currentTokens,
-    maxTokens: windowState.maxTokens,
-  });
-
-  const result = await compactContext(
-    entries,
-    {
-      strategy: 'summarize',
-      targetTokens: Math.floor(model.contextWindow * 0.5),
-      preserveRecentMessages: 4,
-      preserveSystemPrompt: false,
-    },
-    summarizer,
-    tokenCounter,
-  );
-
-  logger?.info('context.compacted', {
-    event: 'context.compacted',
-    strategy: result.strategy,
-    beforeTokens: result.beforeTokens,
-    afterTokens: result.afterTokens,
-  });
-
-  const compactedMessages: ConversationMessage[] = result.compactedEntries.map((e) => ({
-    role: e.role,
-    content: e.content,
-  }));
-  return sliceHistoryRespectingToolPairs(compactedMessages, compactedMessages.length);
 }
 
 /**

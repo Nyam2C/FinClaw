@@ -14,6 +14,7 @@ export type { FileReadConfig } from './file-read.js';
 export { registerScheduleTool } from './schedule-tool.js';
 export { registerWebFetchTool } from './web-fetch.js';
 export type { WebFetchConfig } from './web-fetch.js';
+export { registerRouteTaskTool } from './route-task.js';
 
 export interface GeneralSkillConfig {
   readonly fileRoot?: string;
@@ -52,10 +53,10 @@ export const GENERAL_SKILL_METADATA: SkillMetadata = {
     optionalEnv: ['FINCLAW_FILE_ROOT'],
   },
   tools: [
-    { name: 'get_current_datetime', minModel: 'haiku', reason: '순수 함수' },
-    { name: 'web_fetch', minModel: 'haiku', reason: '단순 fetch' },
-    { name: 'read_local_file', minModel: 'haiku', reason: '단순 fetch' },
-    { name: 'schedule_manage', minModel: 'sonnet', reason: 'cron 의도 해석 필요' },
+    { name: 'get_current_datetime', reason: '순수 함수' },
+    { name: 'web_fetch', reason: '단순 fetch' },
+    { name: 'read_local_file', reason: '단순 fetch' },
+    { name: 'schedule_manage', reason: 'cron 의도 해석 필요' },
   ],
 };
 

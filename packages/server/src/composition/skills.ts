@@ -27,17 +27,16 @@ import {
   type MarketSkillHandle,
   type NewsSkillHandle,
 } from '@finclaw/skills-finance';
-import { registerGeneralTools } from '@finclaw/skills-general';
+import { registerGeneralTools, registerRouteTaskTool } from '@finclaw/skills-general';
 import { addSchedule, getSchedule, type createStorage } from '@finclaw/storage';
 import type { FinClawConfig, ModelRef, ScheduleRpc, Timestamp } from '@finclaw/types';
 import { createAgentId } from '@finclaw/types';
-import type { makeRouterHelper } from '../auto-reply/router-helper.js';
 import { loadPlugins } from '../plugins/loader.js';
 import type { ProcessLifecycle } from '../process/lifecycle.js';
+import { buildRouteDispatcher } from '../router/dispatch.js';
 import { BrokerageSyncService } from '../services/brokerage-sync-service.js';
 
 type Storage = ReturnType<typeof createStorage>;
-type RouterHelper = ReturnType<typeof makeRouterHelper> | undefined;
 
 export interface RegisterSkillsDeps {
   readonly toolRegistry: InMemoryToolRegistry;
@@ -45,7 +44,6 @@ export interface RegisterSkillsDeps {
   readonly logger: FinClawLogger;
   readonly finclawConfig: FinClawConfig;
   readonly discordAdapter: DiscordAdapter;
-  readonly routerHelper: RouterHelper;
   readonly profileHealth: ProfileHealthMonitor;
   readonly modelCatalog: InMemoryModelCatalog;
   readonly defaultModel: ModelRef;
@@ -68,7 +66,6 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
     logger,
     finclawConfig,
     discordAdapter,
-    routerHelper,
     profileHealth,
     modelCatalog,
     defaultModel,
@@ -121,9 +118,7 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
       newsdataRotator,
       finnhubRotator, // 시세 KeyRotator 와 동일 인스턴스 공유
       quoteService: marketHandle.quoteService,
-      router: routerHelper,
       defaultModel,
-      // Phase 24 E: 스킬 내부 analyze_market LLM 호출도 status 분포에 포함.
       profileHealth,
       profileId: 'default',
       modelCatalog,
@@ -137,6 +132,17 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
     });
   } else if (marketHandle) {
     logger.info('No news keys set — skipping news tools');
+  }
+
+  // 결정 5 PoC: route_task 도구 등록 + analyze_market 메인 노출 제거.
+  // dispatcher 가 market_analysis intent 를 sub-agent (좁은 컨텍스트 CLI) 로 위임.
+  if (newsHandle) {
+    const dispatcher = buildRouteDispatcher({ newsAggregator: newsHandle.aggregator });
+    registerRouteTaskTool(toolRegistry, dispatcher);
+    toolRegistry.unregister('analyze_market');
+    logger.info('route_task tool registered (analyze_market hidden from main agent)', {
+      event: 'route_task.registered',
+    });
   }
 
   let alertHandle: AlertSkillHandle | undefined;

@@ -3,11 +3,9 @@ import type {
   ModelCatalog,
   ProfileHealthMonitor,
   RegisteredToolDefinition,
-  RouterHelper,
   ToolExecutor,
   ToolRegistry,
 } from '@finclaw/agent';
-import { ModelFloorExhaustedError } from '@finclaw/agent';
 import type { ModelRef, TickerSymbol } from '@finclaw/types';
 import { z } from 'zod/v4';
 import { analyzeMarket, type AnalyzeRunner } from './analysis/market-analysis.js';
@@ -29,12 +27,10 @@ export const AnalyzeMarketOutputSchema = z.object({
   summary: z.string().optional(),
 });
 
-/** analyze_market 등록 시 modelRef 결정 fallback (router 미주입 시). minModel=opus 보호. */
+/** analyze_market 의 기본 modelRef (opus). */
 const ANALYZE_MARKET_FALLBACK_MODEL: ModelRef = {
   provider: 'anthropic',
   model: 'claude-opus-4-7',
-  contextWindow: 200_000,
-  maxOutputTokens: 8192,
 };
 
 // ─── get_financial_news ───
@@ -109,9 +105,8 @@ export function registerAnalyzeMarketTool(
   deps: {
     newsAggregator: NewsAggregator;
     runAnalysis: AnalyzeRunner;
-    router?: RouterHelper;
     defaultModel?: ModelRef;
-    /** Phase 24 E: 스킬 내부 LLM 비용·건강 기록용 (선택) */
+    /** 스킬 내부 LLM 비용·건강 기록용 (선택) */
     profileHealth?: ProfileHealthMonitor;
     profileId?: string;
     modelCatalog?: ModelCatalog;
@@ -167,18 +162,7 @@ export function registerAnalyzeMarketTool(
         return { content: '분석할 뉴스가 없습니다.', isError: false };
       }
 
-      // Phase 24: 도구 실행 시점에 라우터 호출 — analyze_market 의 minModel=opus 가
-      // floor 로 작용해 hint 와 무관하게 opus 이상 보장. router 미주입 시 fallback.
-      const baseModel = deps.defaultModel ?? ANALYZE_MARKET_FALLBACK_MODEL;
-      let modelRef = baseModel;
-      if (deps.router) {
-        const { modelId } = deps.router({
-          role: 'analysis',
-          toolNames: ['analyze_market'],
-        });
-        modelRef = { ...baseModel, model: modelId };
-      }
-
+      const modelRef = deps.defaultModel ?? ANALYZE_MARKET_FALLBACK_MODEL;
       const analysis = await analyzeMarket(deps.runAnalysis, news, options, modelRef, {
         profileHealth: deps.profileHealth,
         profileId: deps.profileId,
@@ -186,14 +170,6 @@ export function registerAnalyzeMarketTool(
       });
       return { content: JSON.stringify(analysis), isError: false };
     } catch (error) {
-      // Phase 24 D: floor 차단은 도구 실패가 아니라 인프라 일시 불가 — 외부 LLM 이
-      // 자연어로 사용자 안내 가능하도록 구조화된 한국어 메시지로 반환.
-      if (error instanceof ModelFloorExhaustedError) {
-        return {
-          content: `analyze_market 사용 불가: ${error.floor} 이상 모델이 일시적으로 응답하지 않습니다. 약 60초 후 재시도하면 분석을 다시 시도할 수 있습니다.`,
-          isError: true,
-        };
-      }
       return { content: error instanceof Error ? error.message : String(error), isError: true };
     }
   };

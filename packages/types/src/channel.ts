@@ -1,7 +1,7 @@
 import type { ChannelId, CleanupFn } from './common.js';
 import type { InboundMessage, OutboundMessage } from './message.js';
 
-/** 채널 플러그인 -- OpenClaw ChannelPlugin<ResolvedAccount> 대응 */
+/** 채널 플러그인  */
 export interface ChannelPlugin<TAccount = unknown> {
   id: ChannelId;
   meta: ChannelMeta;

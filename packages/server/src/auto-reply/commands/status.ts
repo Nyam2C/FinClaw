@@ -1,6 +1,5 @@
 // packages/server/src/auto-reply/commands/status.ts
 import type { ModelStats, ProfileHealthMonitor, ToolRegistry } from '@finclaw/agent';
-import { modelIdToTier } from '@finclaw/agent';
 import type { MarketSkillHandle, NewsSkillHandle } from '@finclaw/skills-finance';
 import type { ModelRef, StorageAdapter } from '@finclaw/types';
 import { getAllChannelDocks } from '../../channels/index.js';
@@ -62,16 +61,12 @@ function formatBreakdown(breakdown: Map<string, ModelStats> | undefined): string
   }
   const lines: string[] = ['', '**최근 1시간 모델 분포**'];
   let totalFallbacks = 0;
-  // tier 순서대로 (haiku → sonnet → opus) 정렬.
-  const tierRank: Record<string, number> = { haiku: 0, sonnet: 1, opus: 2 };
-  const sorted = [...breakdown.entries()].toSorted(
-    ([a], [b]) => tierRank[modelIdToTier(a)] - tierRank[modelIdToTier(b)],
-  );
+  // model id 알파벳 순.
+  const sorted = [...breakdown.entries()].toSorted(([a], [b]) => a.localeCompare(b));
   for (const [modelId, stats] of sorted) {
-    const tier = modelIdToTier(modelId);
     const bar = '▓'.repeat(Math.min(10, Math.max(1, Math.round(stats.calls / 5))));
     lines.push(
-      `- ${tier.padEnd(7)} ${bar.padEnd(10)} ${stats.calls}회 ($${stats.totalCostUsd.toFixed(4)})`,
+      `- ${modelId.padEnd(28)} ${bar.padEnd(10)} ${stats.calls}회 ($${stats.totalCostUsd.toFixed(4)})`,
     );
     totalFallbacks += stats.fallbacks;
   }

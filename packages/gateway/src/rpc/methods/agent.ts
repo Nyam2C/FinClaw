@@ -5,7 +5,6 @@ import type {
   AliasIndex,
   ModelCatalog,
   ProfileHealthMonitor,
-  RouterHelper,
   RunnerFactory,
   ToolRegistry,
 } from '@finclaw/agent';
@@ -15,7 +14,6 @@ import {
   collectToolCalls,
   DEFAULT_FALLBACK_TRIGGERS,
   extractAssistantText,
-  ModelFloorExhaustedError,
   resolveModel,
   runWithModelFallback,
 } from '@finclaw/agent';
@@ -37,7 +35,7 @@ import type { RpcMethodHandler } from '../types.js';
 /** agent.* RPC 메서드 의존성 (main.ts 에서 주입) */
 export interface AgentRpcDeps {
   readonly toolRegistry: ToolRegistry;
-  /** Phase 39: main.ts 가 finclaw.identity.md frontmatter 로부터 로드해 주입 (이전 loadAgents() 대체). */
+  /** main.ts 가 finclaw.system.ko.md frontmatter (id/name/description) 로부터 로드해 주입. */
   readonly agents: readonly AgentInfo[];
   readonly runnerFactory: RunnerFactory;
   /** agent.run 전용 큐잉 lane (main.ts 에서 maxConcurrent:1 로 주입) */
@@ -47,12 +45,7 @@ export interface AgentRpcDeps {
   readonly defaultModel: ModelRef;
   readonly logger: FinClawLogger;
   readonly profileId?: string;
-  /**
-   * Phase 24: 모델 라우터. 주입 시 매 agent.run 마다 role 기반 모델 결정,
-   * 미주입 시 defaultModel 그대로 사용.
-   */
-  readonly router?: RouterHelper;
-  /** Phase 24 D: router 활성 시 runWithModelFallback 가 사용 (catalog + aliasIndex + chain) */
+  /** runWithModelFallback 가 사용 (catalog + aliasIndex + chain) */
   readonly modelCatalog?: ModelCatalog;
   readonly modelAliasIndex?: AliasIndex;
   readonly fallbackChain?: readonly string[];
@@ -195,7 +188,6 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
       prompt: string;
       timeoutMs?: number;
       stream?: boolean;
-      role?: 'fetch' | 'chat' | 'analysis' | 'summarize';
     },
     unknown
   > = {
@@ -207,8 +199,6 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
       prompt: z.string().min(1).max(10_000),
       timeoutMs: z.number().int().min(1_000).max(120_000).optional(),
       stream: z.boolean().optional(),
-      // Phase 24: agent.run 은 보통 분석 성격이라 default 'analysis'.
-      role: z.enum(['fetch', 'chat', 'analysis', 'summarize']).default('analysis'),
     }),
     async execute(params) {
       if (!deps.agents.find((a) => a.id === params.agentId)) {
@@ -222,7 +212,6 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
       deps.logger.info('agent.run.started', {
         agentId: params.agentId,
         promptLength: params.prompt.length,
-        role: params.role ?? 'analysis',
       });
 
       // Phase 30 hotfix P0-1: tracer 주입 시 agent.run RPC 진입을 span 으로 감싸 active
@@ -234,10 +223,8 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
         if (!deps.tracer) {
           return fn(undefined);
         }
-        return deps.tracer.withSpan(
-          'rpc.agent.run',
-          { agentId: params.agentId, role: params.role ?? 'analysis' },
-          async (ctx) => fn({ traceId: ctx.traceId, parentSpanId: ctx.spanId }),
+        return deps.tracer.withSpan('rpc.agent.run', { agentId: params.agentId }, async (ctx) =>
+          fn({ traceId: ctx.traceId, parentSpanId: ctx.spanId }),
         );
       };
 
@@ -250,7 +237,7 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
         try {
           const agentIdBrand = createAgentId(params.agentId);
 
-          const { dispatcher, toolDefinitions } = buildDispatcher(deps.toolRegistry, {
+          const { dispatcher } = buildDispatcher(deps.toolRegistry, {
             sessionId: sessionKey as string,
             userId: 'agent-run',
             channelId: 'agent-run',
@@ -262,29 +249,6 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
           const timeoutMs = params.timeoutMs ?? 60_000;
           const timer = setTimeout(() => abortController.abort(), timeoutMs);
 
-          // Phase 24: 라우터 주입 시 role 기반 모델 결정.
-          // Zod schema 의 default('analysis') 가 채우지만 generic 타입상 optional 이므로 ?? 로 보강.
-          const role = params.role ?? 'analysis';
-          const decision = deps.router
-            ? deps.router({ role, toolNames: toolDefinitions.map((t) => t.name) })
-            : undefined;
-          if (decision) {
-            deps.logger.info('agent.run.routed', {
-              event: 'agent.run.routed',
-              agentId: params.agentId,
-              role,
-              chosenModel: decision.modelId,
-              floor: decision.decision.floor,
-              reason: decision.decision.reason,
-              filteredCount: toolDefinitions.length - decision.allowedToolNames.length,
-            });
-          }
-
-          // Phase 24 보정: 라우터 결정 allowedToolNames 만 LLM 노출.
-          const exposedTools = decision
-            ? toolDefinitions.filter((t) => decision.allowedToolNames.includes(t.name))
-            : toolDefinitions;
-
           try {
             const buildRunParams = (model: ModelRef): AgentRunParams => ({
               agentId: agentIdBrand,
@@ -292,22 +256,17 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
               model,
               systemPrompt: deps.systemPrompt,
               messages: [userMessage],
-              tools: exposedTools.length > 0 ? [...exposedTools] : undefined,
               abortSignal: abortController.signal,
             });
 
-            // 라우터 + catalog 모두 활성: runWithModelFallback 으로 floor 보호.
-            // 그 외: defaultModel 단일 실행 (밀스톤 D 이전 동작).
-            let result;
             const catalog = deps.modelCatalog;
             const aliasIndex = deps.modelAliasIndex;
-            // Phase 24 E: byModel 집계용 — fallback path 에서만 정확한 modelId/pricing.
+            let result;
             let usedModelId: string | undefined;
             let usedPricing: import('@finclaw/agent').ModelPricing | undefined;
             let usedIsFallback = false;
-            if (decision && catalog && aliasIndex) {
-              const others = (deps.fallbackChain ?? []).filter((m) => m !== decision.modelId);
-              const chain = [decision.modelId, ...others];
+            if (catalog && aliasIndex && (deps.fallbackChain?.length ?? 0) > 0) {
+              const chain = [deps.defaultModel.model, ...(deps.fallbackChain ?? [])];
               const fallback = await runWithModelFallback(
                 {
                   models: chain.map((raw) => ({ raw })),
@@ -315,18 +274,12 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
                   retryBaseDelayMs: 500,
                   fallbackOn: DEFAULT_FALLBACK_TRIGGERS,
                   abortSignal: abortController.signal,
-                  floor: decision.decision.floor,
                 },
                 async (resolved) => {
                   const model: ModelRef = {
                     ...deps.defaultModel,
                     provider: resolved.provider,
                     model: resolved.modelId,
-                    contextWindow: resolved.entry.contextWindow,
-                    maxOutputTokens: Math.min(
-                      resolved.entry.maxOutputTokens,
-                      deps.defaultModel.maxOutputTokens,
-                    ),
                   };
                   return runner.execute(buildRunParams(model));
                 },
@@ -337,10 +290,7 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
               usedPricing = fallback.modelUsed.entry.pricing;
               usedIsFallback = fallback.modelUsed.modelId !== chain[0];
             } else {
-              const modelRef: ModelRef = decision
-                ? { ...deps.defaultModel, model: decision.modelId }
-                : deps.defaultModel;
-              result = await runner.execute(buildRunParams(modelRef));
+              result = await runner.execute(buildRunParams(deps.defaultModel));
             }
 
             const output = extractAssistantText(result.messages);
@@ -387,7 +337,6 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
               tokensOutput: result.usage.outputTokens,
               durationMs,
               modelUsed: usedModelId ?? deps.defaultModel.model,
-              role,
               sessionKey,
               traceId: traceCtx?.traceId,
               parentSpanId: traceCtx?.parentSpanId,
@@ -426,24 +375,10 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
             output: '',
             durationMs: Date.now() - startedAt,
             modelUsed: deps.defaultModel.model,
-            role: params.role ?? 'analysis',
             error: msg,
             traceId: traceCtx?.traceId,
             parentSpanId: traceCtx?.parentSpanId,
           });
-          // Phase 24 D: floor 차단은 사용자에게 한국어 안내 (chat.send 와 동일 정책).
-          if (err instanceof ModelFloorExhaustedError) {
-            deps.logger.warn('agent.run.floor_exhausted', {
-              event: 'agent.run.floor_exhausted',
-              agentId: params.agentId,
-              floor: err.floor,
-              attempted: err.chainAttempted,
-            });
-            throw new Error(
-              `요청에 필요한 모델(${err.floor} 이상)이 일시적으로 사용 불가합니다. 약 60초 후 다시 시도해 주세요.`,
-              { cause: err },
-            );
-          }
           throw err;
         } finally {
           activeRuns.set(params.agentId, Math.max(0, (activeRuns.get(params.agentId) ?? 1) - 1));

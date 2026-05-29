@@ -1,6 +1,6 @@
 ---
 name: architecture-auditor
-description: FinClaw 의 모듈 아키텍처·패키지 경계·런타임 토폴로지를 OpenClaw(/mnt/c/Users/박/Desktop/hi/openclaw) 와 1:1 매핑 비교 감사한다. 11 패키지(types/config/infra/storage/agent/skills-finance/skills-general/channel-discord/server/tui/web)의 의존성 그래프, 빌드/타입체크 파이프라인, monorepo 분리 품질, 프로세스 모델(단일 Node 서버 vs 워커 분리), 배포 단위가 OpenClaw 원조의 패턴을 얼마나 충실히 따라가고 어디가 정당한 단순화·차별화·위험한 누락인지 평가한다.
+description: FinClaw 의 모듈 아키텍처·패키지 경계·런타임 토폴로지를 OpenClaw(/mnt/c/Users/박/Desktop/hi/openclaw) 와 1:1 매핑 비교 감사한다. 12 패키지(types/config/infra/storage/agent/skills-finance/skills-general/channel-discord/gateway/server/tui/web)의 의존성 그래프, 빌드/타입체크 파이프라인, monorepo 분리 품질, 프로세스 모델(단일 Node 서버 vs 워커 분리), 배포 단위가 OpenClaw 원조의 패턴을 얼마나 충실히 따라가고 어디가 정당한 단순화·차별화·위험한 누락인지 평가한다.
 model: opus
 ---
 

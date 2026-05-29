@@ -59,12 +59,12 @@ phase 가 다음 영역을 건드렸다면 해당 경계 검증:
 
 | 경계                     | 두 면                                                                                                                   | 확인                                                                 |
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| RPC ↔ UI                 | `packages/server/src/gateway/rpc/methods/*.ts` ↔ `packages/web/src/*/use-*.ts`                                          | Zod 스키마 응답 필드 = UI 가 destructure 하는 필드. 누락/오타.       |
+| RPC ↔ UI                 | `packages/gateway/src/rpc/methods/*.ts` ↔ `packages/web/src/*/use-*.ts`                                                 | Zod 스키마 응답 필드 = UI 가 destructure 하는 필드. 누락/오타.       |
 | RPC ↔ TUI                | RPC method ↔ `packages/tui/src/*`                                                                                       | 동일                                                                 |
 | storage ↔ RPC            | `packages/storage/src/tables/*.ts` row shape ↔ RPC method 응답 변환                                                     | 필드 누락, snake_case ↔ camelCase 변환                               |
 | pipeline ↔ prompt        | `packages/server/src/auto-reply/stages/*.ts` 가 만든 컨텍스트 객체 ↔ `packages/*/prompts/*.ts` 의 placeholder           | 주입되지만 prompt 가 안 읽음, 또는 prompt 가 읽지만 stage 가 안 채움 |
 | migration ↔ tables       | `packages/storage/src/database.ts` SCHEMA_VERSION + migrations ↔ `packages/storage/src/tables/*.ts` 가 SELECT 하는 컬럼 | 마이그레이션 누락 컬럼을 코드가 읽음                                 |
-| broadcaster ↔ subscriber | `packages/server/src/gateway/broadcaster.ts` 가 broadcast 하는 토픽 ↔ web/tui 의 ws subscribe                           | 발신만 있고 수신 없음                                                |
+| broadcaster ↔ subscriber | `packages/gateway/src/broadcaster.ts` 가 broadcast 하는 토픽 ↔ web/tui 의 ws subscribe                                  | 발신만 있고 수신 없음                                                |
 
 **mock-only 격리 검증**: 새 테스트가 외부 API 키 없이도 통과하는가? `process.env.{ANTHROPIC_API_KEY,KIS_*,DISCORD_TOKEN}` 미설정 상태에서 `pnpm test --run` 통과 확인.
 

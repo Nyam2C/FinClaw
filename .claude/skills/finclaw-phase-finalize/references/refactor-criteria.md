@@ -38,23 +38,28 @@ phase 의 코드 변경분만 대상. 리팩토링 적용 X, 후보만 보고. �
 
 ## 4. 경계 위반
 
-FinClaw 패키지 의존 그래프 (CLAUDE.md / pnpm-workspace.yaml 참조):
+FinClaw 패키지 의존 그래프 (12 패키지, 각 package.json 실측):
 
 ```
-types ← config / infra / storage / agent / channel-discord / skills-general
-       ← skills-finance (uses types + storage)
-       ← server (aggregates)
-       ← tui / web (depend on server surfaces)
+types ← infra / storage / tui / web        (types 만 의존)
+      ← config / agent / channel-discord    (types + infra)
+      ← skills-general                       (types + infra + agent)
+      ← skills-finance                       (types + infra + storage + agent)
+      ← gateway                              (types + infra + storage + agent + skills-finance)  ← phase39 신규
+      ← server                               (집約: gateway + channel-discord + config + tui + skills-* + agent + storage)
 ```
 
-| 위반                                                                             | 우선순위 |
-| -------------------------------------------------------------------------------- | -------- |
-| 역방향 의존 (types 가 storage import)                                            | P0       |
-| 순환 의존                                                                        | P0       |
-| skills-\* 가 server import                                                       | P0       |
-| storage 가 agent 의 도메인 타입 import (반대로 가야 함)                          | P0       |
-| web/tui 가 channel-discord 직접 import                                           | P0       |
-| package 안에서 `../../other-pkg/src/...` 직접 경로 import (workspace alias 우회) | P0       |
+server → gateway 단방향. gateway 는 server 를 import 하지 않는다 (phase39 순환 해소 종료 기준). tui/web 은 런타임에 gateway 와 RPC/WS 로만 통신.
+
+| 위반                                                                                     | 우선순위 |
+| ---------------------------------------------------------------------------------------- | -------- |
+| 역방향 의존 (types 가 storage import)                                                    | P0       |
+| 순환 의존                                                                                | P0       |
+| skills-\* 가 server import                                                               | P0       |
+| gateway 가 server (또는 server-only 서브패스) import — phase39 가 제거한 순환, 재발 방지 | P0       |
+| storage 가 agent 의 도메인 타입 import (반대로 가야 함)                                  | P0       |
+| web/tui 가 channel-discord 직접 import                                                   | P0       |
+| package 안에서 `../../other-pkg/src/...` 직접 경로 import (workspace alias 우회)         | P0       |
 
 ## 5. CLAUDE.md §3 위반 (외과적 변경)
 

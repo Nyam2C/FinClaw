@@ -33,8 +33,8 @@ describe('parsePrompt', () => {
 });
 
 describe('loadPrompt', () => {
-  it('loads finclaw.identity.md from disk', async () => {
-    const doc = await loadPrompt('finclaw.identity.md', 'unit-test');
+  it('loads finclaw.system.ko.md from disk', async () => {
+    const doc = await loadPrompt('finclaw.system.ko.md', 'unit-test');
     expect(doc.frontmatter.id).toBe('finclaw-partner');
     expect(doc.body).toContain('FinClaw');
   });

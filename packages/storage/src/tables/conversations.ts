@@ -48,12 +48,6 @@ function messageRowToMessage(row: MessageRow): ConversationMessage {
     role: row.role as ConversationMessage['role'],
     content: tryParseContent(row.content),
   };
-  if (row.tool_calls) {
-    const parsed = JSON.parse(row.tool_calls) as Array<{ id: string }>;
-    if (parsed.length > 0) {
-      msg.toolCallId = parsed[0].id;
-    }
-  }
   return msg;
 }
 
