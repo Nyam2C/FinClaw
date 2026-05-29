@@ -12,10 +12,10 @@ import { runSubAgent } from './sub-agent.js';
 
 /**
  * route_task 디스패치 — intent 별 분기.
- * - 함수/OSS 직접 호출 (LLM 0) 또는
- * - sub-agent CLI 재호출 (좁은 컨텍스트)
+ * - 함수 직접 호출 (LLM 0): price_lookup·chart_data·news_summary·portfolio_calc → service 직접.
+ * - sub-agent CLI 재호출 (좁은 컨텍스트): market_analysis.
  *
- * 마일스톤 B 범위: market_analysis 한 intent 만 구현. 나머지는 not-implemented 반환.
+ * intent enum 의 파일 기반 동적 구성(prompts/sub-agents/*.md)은 phase43 M4.
  */
 
 export interface DispatcherDeps {
