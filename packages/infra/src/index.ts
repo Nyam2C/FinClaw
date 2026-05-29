@@ -92,13 +92,6 @@ export { writeFileAtomic, readFileSafe, ensureDir, unlinkSafe } from './fs-safe.
 export { readJsonFile, writeJsonFile, readJsonFileSync } from './json-file.js';
 
 // 프로세스
-export {
-  acquireGatewayLock,
-  readLockInfo,
-  GatewayLockError,
-  type GatewayLockHandle,
-  type GatewayLockOptions,
-} from './gateway-lock.js';
 export { assertPortAvailable, findAvailablePort, isValidPort } from './ports.js';
 export { inspectPortOccupant, formatPortOccupant, type PortOccupant } from './ports-inspect.js';
 export {
