@@ -52,15 +52,11 @@ export {
 } from './embeddings/registry.js';
 export {
   mergeHybridResults,
-  rerankResults,
   type ChunkSearchResult,
   type HybridSearchOptions,
-  type RerankMeta,
-  type RerankOptions,
 } from './search/hybrid.js';
 export { searchFts } from './search/fts.js';
 export { searchVector } from './search/vector.js';
-export { atomicReindex } from './reindex.js';
 export {
   createConversation,
   getConversation,
@@ -74,16 +70,6 @@ export {
   getStaleCachedData,
   purgeExpiredCache,
 } from './tables/market-cache.js';
-export { updateAlertTrigger } from './tables/alerts.js';
-export {
-  addMessage,
-  getMessages,
-  getMessageCount,
-  getToolCallHistory,
-  type Message,
-  type ToolCallRecord,
-  type GetToolCallHistoryOptions,
-} from './tables/messages.js';
 export {
   addTransaction,
   getTransaction,
