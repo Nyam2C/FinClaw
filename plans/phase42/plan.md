@@ -177,28 +177,28 @@ export type Dispatcher = (req: RouteRequest) => Promise<RouteResult>;
 
 ### 제거 대상
 
-| 파일 | 변경 |
-| ---- | ---- |
-| `packages/agent/src/models/routing.ts` | 전체 삭제 (ModelRole · RouteRequest · RouteDecision · resolveModelForRequest · RouterHelper · tierToModelId · maxTier · computeFloor · modelIdToTier) |
-| `packages/server/src/auto-reply/router-helper.ts` | 전체 삭제 (makeRouterHelper · buildToolMetaIndex) |
-| `packages/types/src/config.ts` | `RoutingConfig`, `RoleProfile`, `ModelTier` 제거 (cross-ref 검증 필요) |
-| `packages/config/src/defaults.ts` | `DEFAULTS.routing` 블록 제거 |
-| `packages/config/src/zod-schema.ts` | routing 스키마 제거 |
-| `packages/server/src/main.ts:107-138` | routing 로드/로그 + `routerHelper` 생성 제거 |
-| `packages/server/src/main.ts:206,296,335` | `routerHelper` 주입 3 곳 제거 |
-| `packages/server/src/composition/{runtime,skills}.ts` | `routerHelper` deps 필드 제거 |
-| `packages/skills-finance/src/news/tools.ts:172-178` | router 분기 → sub-agent dispatch 로 대체 |
+| 파일                                                  | 변경                                                                                                                                                  |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/agent/src/models/routing.ts`                | 전체 삭제 (ModelRole · RouteRequest · RouteDecision · resolveModelForRequest · RouterHelper · tierToModelId · maxTier · computeFloor · modelIdToTier) |
+| `packages/server/src/auto-reply/router-helper.ts`     | 전체 삭제 (makeRouterHelper · buildToolMetaIndex)                                                                                                     |
+| `packages/types/src/config.ts`                        | `RoutingConfig`, `RoleProfile`, `ModelTier` 제거 (cross-ref 검증 필요)                                                                                |
+| `packages/config/src/defaults.ts`                     | `DEFAULTS.routing` 블록 제거                                                                                                                          |
+| `packages/config/src/zod-schema.ts`                   | routing 스키마 제거                                                                                                                                   |
+| `packages/server/src/main.ts:107-138`                 | routing 로드/로그 + `routerHelper` 생성 제거                                                                                                          |
+| `packages/server/src/main.ts:206,296,335`             | `routerHelper` 주입 3 곳 제거                                                                                                                         |
+| `packages/server/src/composition/{runtime,skills}.ts` | `routerHelper` deps 필드 제거                                                                                                                         |
+| `packages/skills-finance/src/news/tools.ts:172-178`   | router 분기 → sub-agent dispatch 로 대체                                                                                                              |
 
 ### 신규 구조
 
 > 새 패키지 만들지 않음 — 타입은 기존 `@finclaw/types`, runtime 은 server 내부. router 가 TUI/Web 에서 import 될 일 없으므로 server-only 가 자연스러움.
 
-| 파일 | 책임 |
-| ---- | ---- |
-| `packages/types/src/router.ts` | RouteIntent · RouteRequest · RouteResult · Dispatcher (types barrel 에 추가) |
-| `packages/server/src/router/dispatch.ts` | `dispatchRoute(req)` — intent 별 분기. 함수/OSS 직접 호출 + sub-agent 위임 |
-| `packages/server/src/router/sub-agent.ts` | 좁은 컨텍스트 spawn 유틸 (claude CLI 재호출, 좁은 system + 좁은 도구) |
-| `packages/skills-general/src/route-task.ts` | `route_task` 도구 정의 (Zod 입력 + dispatch 호출) |
+| 파일                                        | 책임                                                                         |
+| ------------------------------------------- | ---------------------------------------------------------------------------- |
+| `packages/types/src/router.ts`              | RouteIntent · RouteRequest · RouteResult · Dispatcher (types barrel 에 추가) |
+| `packages/server/src/router/dispatch.ts`    | `dispatchRoute(req)` — intent 별 분기. 함수/OSS 직접 호출 + sub-agent 위임   |
+| `packages/server/src/router/sub-agent.ts`   | 좁은 컨텍스트 spawn 유틸 (claude CLI 재호출, 좁은 system + 좁은 도구)        |
+| `packages/skills-general/src/route-task.ts` | `route_task` 도구 정의 (Zod 입력 + dispatch 호출)                            |
 
 ### 마일스톤 (모두 phase42 안)
 

@@ -56,5 +56,4 @@ describe('applyDefaults', () => {
     const result = applyDefaults(user);
     expect(result.finance?.portfolios?.main).toBeDefined();
   });
-
 });

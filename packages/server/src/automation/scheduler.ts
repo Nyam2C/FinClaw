@@ -5,11 +5,7 @@
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import type { AliasIndex, ModelCatalog, ProfileHealthMonitor, ToolRegistry } from '@finclaw/agent';
-import {
-  DEFAULT_FALLBACK_TRIGGERS,
-  resolveModel,
-  runWithModelFallback,
-} from '@finclaw/agent';
+import { DEFAULT_FALLBACK_TRIGGERS, resolveModel, runWithModelFallback } from '@finclaw/agent';
 import { buildDispatcher, collectToolCalls, extractAssistantText } from '@finclaw/agent';
 import type { ConcurrencyLane, FinClawLogger } from '@finclaw/infra';
 import { nextRunAt as computeNextRunAt, parseCron } from '@finclaw/infra';

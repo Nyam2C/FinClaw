@@ -223,10 +223,8 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
         if (!deps.tracer) {
           return fn(undefined);
         }
-        return deps.tracer.withSpan(
-          'rpc.agent.run',
-          { agentId: params.agentId },
-          async (ctx) => fn({ traceId: ctx.traceId, parentSpanId: ctx.spanId }),
+        return deps.tracer.withSpan('rpc.agent.run', { agentId: params.agentId }, async (ctx) =>
+          fn({ traceId: ctx.traceId, parentSpanId: ctx.spanId }),
         );
       };
 

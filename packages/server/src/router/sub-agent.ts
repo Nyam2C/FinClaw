@@ -34,8 +34,6 @@ export async function runSubAgent(req: SubAgentRequest): Promise<SubAgentRespons
   });
   return {
     text: res.text,
-    usage: res.usage
-      ? { input: res.usage.input ?? 0, output: res.usage.output ?? 0 }
-      : undefined,
+    usage: res.usage ? { input: res.usage.input ?? 0, output: res.usage.output ?? 0 } : undefined,
   };
 }

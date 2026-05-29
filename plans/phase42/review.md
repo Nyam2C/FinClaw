@@ -8,16 +8,16 @@
 
 phase42 = 재설계 그라운드워크. 결정 1~5 중:
 
-| 결정 | 내용 | 상태 |
-| ---- | ---- | ---- |
-| 1 | `AgentProfile` 재설계 (orchestrator-worker 워커 타입, type-first) | 적용 (이전 커밋) |
-| 2 | `ModelRef` 슬림 (`contextWindow`/`maxOutputTokens` 제거) | 적용 (이전 커밋) |
-| 3 | `AuthProfile` 제거 (죽은 LLM 키-로테이션 클러스터) | 적용 (이전 커밋) |
-| 4 | `AgentRunParams`/`ProviderRequestParams` 슬림 (CLI 무시 SDK-era 필드) | 적용 (이전 커밋) |
-| 5-A | `route_task` 타입 골격 (`types/router.ts`) | ✅ `91046f0` |
-| 5-B | route_task PoC — `market_analysis` sub-agent dispatch, `analyze_market` 메인 노출 제거 | ✅ `91046f0` |
-| 5-C | 구 routing 전체 cascade 삭제 (routerHelper/ModelTier/RoutingConfig…) | ✅ `f74b67b` |
-| 5-D | intent 확장 (price_lookup/chart_data) | ⏭️ **phase43 이연** |
+| 결정 | 내용                                                                                   | 상태                |
+| ---- | -------------------------------------------------------------------------------------- | ------------------- |
+| 1    | `AgentProfile` 재설계 (orchestrator-worker 워커 타입, type-first)                      | 적용 (이전 커밋)    |
+| 2    | `ModelRef` 슬림 (`contextWindow`/`maxOutputTokens` 제거)                               | 적용 (이전 커밋)    |
+| 3    | `AuthProfile` 제거 (죽은 LLM 키-로테이션 클러스터)                                     | 적용 (이전 커밋)    |
+| 4    | `AgentRunParams`/`ProviderRequestParams` 슬림 (CLI 무시 SDK-era 필드)                  | 적용 (이전 커밋)    |
+| 5-A  | `route_task` 타입 골격 (`types/router.ts`)                                             | ✅ `91046f0`        |
+| 5-B  | route_task PoC — `market_analysis` sub-agent dispatch, `analyze_market` 메인 노출 제거 | ✅ `91046f0`        |
+| 5-C  | 구 routing 전체 cascade 삭제 (routerHelper/ModelTier/RoutingConfig…)                   | ✅ `f74b67b`        |
+| 5-D  | intent 확장 (price_lookup/chart_data)                                                  | ⏭️ **phase43 이연** |
 
 **route_task 아키텍처 (현 상태):** 메인 에이전트가 `route_task({intent, query, symbol?})` 호출 → `buildRouteDispatcher`(server/router/dispatch.ts) 가 intent 분기 → `market_analysis` 는 `runSubAgent`(claude CLI 재호출, 좁은 컨텍스트)로 위임. `analyze_market` 직접 도구는 메인에서 unregister. = 사용자 목표 아키텍처(Discord → 메인 → 분류 → 함수/서브에이전트)의 토대.
 
@@ -37,15 +37,15 @@ phase42 = 재설계 그라운드워크. 결정 1~5 중:
 
 7 후보. **merge-blocker 0.** P0 만 적용, 나머지 phase43 이연.
 
-| # | 위치 | 내용 | 처리 |
-| - | ---- | ---- | ---- |
-| P0 | router/dispatch.ts·skills.ts | `buildDispatcher` 이름이 agent(tool-dispatcher) 와 충돌 | ✅ **`buildRouteDispatcher` 로 rename** (적용) |
-| P1-2 | router/dispatch.ts:28-35 | not-implemented 4 intent 가 `source:'function'` 오용 + `isError:true` | ⏭️ phase43 (intent 모델 재설계 시) |
-| P1-3 | news/index.ts·tools.ts·skills.ts | `defaultModel` dead plumbing — register→즉시 unregister 로 도달 불가 | ⏭️ phase43 dead-code sweep |
-| P1-4 | dispatch.ts·sub-agent.ts | `claude-opus-4-7` 모델 ID 상수 중복 | ⏭️ phase43 |
-| P2-5 | route-task.ts:59 | `ROUTE_INTENTS.includes` 도달 불가 분기 (zod enum 이 이미 검증) | ⏭️ phase43 |
-| P2-6 | news/tools.ts:32 | `ANALYZE_MARKET_FALLBACK_MODEL.provider:'anthropic'` stale (실 경로는 claude-cli) | ⏭️ phase43 |
-| P2-7 | route-task.ts:56 | `(input.query as string) ?? ''` 불필요 nullish | ⏭️ phase43 |
+| #    | 위치                             | 내용                                                                              | 처리                                           |
+| ---- | -------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------- |
+| P0   | router/dispatch.ts·skills.ts     | `buildDispatcher` 이름이 agent(tool-dispatcher) 와 충돌                           | ✅ **`buildRouteDispatcher` 로 rename** (적용) |
+| P1-2 | router/dispatch.ts:28-35         | not-implemented 4 intent 가 `source:'function'` 오용 + `isError:true`             | ⏭️ phase43 (intent 모델 재설계 시)             |
+| P1-3 | news/index.ts·tools.ts·skills.ts | `defaultModel` dead plumbing — register→즉시 unregister 로 도달 불가              | ⏭️ phase43 dead-code sweep                     |
+| P1-4 | dispatch.ts·sub-agent.ts         | `claude-opus-4-7` 모델 ID 상수 중복                                               | ⏭️ phase43                                     |
+| P2-5 | route-task.ts:59                 | `ROUTE_INTENTS.includes` 도달 불가 분기 (zod enum 이 이미 검증)                   | ⏭️ phase43                                     |
+| P2-6 | news/tools.ts:32                 | `ANALYZE_MARKET_FALLBACK_MODEL.provider:'anthropic'` stale (실 경로는 claude-cli) | ⏭️ phase43                                     |
+| P2-7 | route-task.ts:56                 | `(input.query as string) ?? ''` 불필요 nullish                                    | ⏭️ phase43                                     |
 
 **이연 사유:** phase43 이 이 dispatch 계층을 재설계하므로(사용자 목표), 곧 사라질/바뀔 코드 리팩토링은 §2 낭비. refactor-expert 도 P1~P2 전부 "phase43 자연해소"로 동의.
 

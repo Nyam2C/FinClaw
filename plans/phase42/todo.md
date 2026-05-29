@@ -66,12 +66,14 @@
 > 사용자 스탠스: 다 삭제하고 typecheck 깨지는 곳마다 그때그때 가장 단순한 방식으로 정리. compatibility seam 두지 않음.
 
 **routing 코어:**
+
 - [x] `packages/agent/src/models/routing.ts` 전체 삭제 (tierToModelId/modelIdToTier 포함)
 - [x] `packages/server/src/auto-reply/router-helper.ts` 전체 삭제
 - [x] `packages/agent/src/index.ts` — routing/tierToModelId/modelIdToTier re-export 제거
 - [x] `packages/agent/test/routing.test.ts` 삭제
 
 **types/config:**
+
 - [x] `packages/types/src/config.ts` — `RoutingConfig`/`RoleProfile`/`ModelTier` 제거
 - [x] `packages/types/src/skill.ts` — `ModelTier` import 및 사용 필드(minModel) 제거
 - [x] `packages/config/src/defaults.ts` — `DEFAULTS.routing` 블록 제거
@@ -79,11 +81,13 @@
 - [x] `packages/config/test/zod-schema.test.ts` — routing 관련 케이스 제거 (+ defaults.test.ts)
 
 **main.ts/composition:**
+
 - [x] `packages/server/src/main.ts` — routing 로드/로그 블록 + `routerHelper` 생성·주입 3 곳 제거
 - [x] `packages/server/src/composition/{runtime,skills}.ts` — `routerHelper` deps 필드·생성자 인자 제거
 - [x] `packages/skills-finance/src/news/tools.ts` — router 분기 제거 (analyze_market 본문 이미 sub-agent 로 이동) + `news/index.ts` router 주입 제거
 
 **ModelTier downstream (typecheck 따라가며 정리):**
+
 - [x] `packages/agent/src/models/fallback.ts` — `floor: ModelTier` 제거. fallback chain 을 단순 model id 리스트로. `modelIdToTier`·`TIER_RANK` 제거.
 - [x] `packages/agent/test/fallback.test.ts` — floor 관련 케이스 정리
 - [x] `packages/agent/src/execution/chat-execution-port.ts` — `userHint?: ModelTier` 필드 제거
@@ -93,9 +97,11 @@
 - [x] 스킬 메타데이터 `minModel` 필드 제거 (alerts/market/news/general index.ts)
 
 **RPC:**
+
 - [x] `packages/gateway/src/rpc/methods/agent.ts` — `role` 파라미터 제거 (TUI/Web 미사용) + 미사용 `toolDefinitions` destructure 정리 (gateway/agent.ts·automation/scheduler.ts)
 
 **검증:**
+
 - [x] typecheck 통과 (exit 0)
 - [x] 기존 unit test 통과 (188 files / 1582 tests green, −46 = 삭제 테스트) + lint 0
 
@@ -104,9 +110,10 @@
 > **결정 (2026-05-29, 사용자 재설계 목표):** D 의 intent 확장은 phase42 에서 구현하지 않고 phase43 재설계로 흡수한다.
 >
 > **사유:**
+>
 > 1. **중복 위험.** C 는 `analyze_market`(무거운 분석)만 route_task 뒤로 옮겼고 `get_stock_price`·`get_market_chart` 는 여전히 메인 에이전트 직접 도구다. 지금 `price_lookup`/`chart_data` 를 route_task 에 구현하면 기존 직접 도구와 dispatch 경로가 중복된다 — "단순 조회를 route_task 로 보낼지 vs 직접 도구로 둘지" 는 phase43 아키텍처 결정.
 > 2. **스코프.** `chart_data` 의 원안 pykrx = 한국 주식 라이브러리. 프로젝트 의도 스코프(국내주식 미대상) 밖 + 신규 Python 의존 = §2 위반.
-> 3. **임박한 재설계.** route-task.ts 자체가 "intent enum 을 prompts/sub-agents/*.md frontmatter 로 동적 구성" TODO 를 명시 — intent 모델이 phase43 재설계 대상.
+> 3. **임박한 재설계.** route-task.ts 자체가 "intent enum 을 prompts/sub-agents/\*.md frontmatter 로 동적 구성" TODO 를 명시 — intent 모델이 phase43 재설계 대상.
 >
 > phase42 = groundwork (route_task 토대 A+B + routing 정리 C) 로 종결. 함수/sub-agent intent 모델·cron 분리·dead-code 정리는 phase43 에서 홀리스틱하게 설계.
 
