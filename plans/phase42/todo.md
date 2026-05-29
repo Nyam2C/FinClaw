@@ -99,12 +99,21 @@
 - [x] typecheck 통과 (exit 0)
 - [x] 기존 unit test 통과 (188 files / 1582 tests green, −46 = 삭제 테스트) + lint 0
 
-### 마일스톤 D — 확장
+### 마일스톤 D — 확장 → **phase43 으로 이연 (deferred)**
 
-- [ ] `dispatchRoute('price_lookup')` — 함수 디스패치 (`get_stock_price` 직접 호출)
-- [ ] `dispatchRoute('chart_data')` — OSS 디스패치 (pykrx 라이브러리)
-- [ ] 메인 에이전트 system prompt 가이드 갱신 — intent 별 사용 시점 명시
-- [ ] typecheck + smoke 호출 (price + chart 각각)
+> **결정 (2026-05-29, 사용자 재설계 목표):** D 의 intent 확장은 phase42 에서 구현하지 않고 phase43 재설계로 흡수한다.
+>
+> **사유:**
+> 1. **중복 위험.** C 는 `analyze_market`(무거운 분석)만 route_task 뒤로 옮겼고 `get_stock_price`·`get_market_chart` 는 여전히 메인 에이전트 직접 도구다. 지금 `price_lookup`/`chart_data` 를 route_task 에 구현하면 기존 직접 도구와 dispatch 경로가 중복된다 — "단순 조회를 route_task 로 보낼지 vs 직접 도구로 둘지" 는 phase43 아키텍처 결정.
+> 2. **스코프.** `chart_data` 의 원안 pykrx = 한국 주식 라이브러리. 프로젝트 의도 스코프(국내주식 미대상) 밖 + 신규 Python 의존 = §2 위반.
+> 3. **임박한 재설계.** route-task.ts 자체가 "intent enum 을 prompts/sub-agents/*.md frontmatter 로 동적 구성" TODO 를 명시 — intent 모델이 phase43 재설계 대상.
+>
+> phase42 = groundwork (route_task 토대 A+B + routing 정리 C) 로 종결. 함수/sub-agent intent 모델·cron 분리·dead-code 정리는 phase43 에서 홀리스틱하게 설계.
+
+- [~] `dispatchRoute('price_lookup')` — **phase43** (함수 vs 직접도구 중복 해소와 함께 결정)
+- [~] `dispatchRoute('chart_data')` — **phase43** (pykrx 는 스코프 밖; 기존 get_market_chart 재사용 여부 포함 재설계)
+- [~] 메인 에이전트 system prompt 가이드 갱신 — **phase43** (intent 모델 확정 후)
+- [~] route_task enum 정리 (현재 5 intent 중 market_analysis 만 구현, 4 개는 not-implemented 반환) — **phase43**
 
 ## dead-code 백로그
 

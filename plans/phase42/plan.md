@@ -205,7 +205,7 @@ export type Dispatcher = (req: RouteRequest) => Promise<RouteResult>;
 - **A. 골격** — `packages/router/` 패키지 (types only). typecheck 통과. 소비자 0 검증.
 - **B. PoC (intent=market_analysis)** — sub-agent (opus + 좁은 system + `analyze_market` 도구만) 로 디스패치. 기존 `analyze_market` 본문이 sub-agent 내부로 이동. 메인 도구 목록에서 `analyze_market` 제거 → `route_task` 노출.
 - **C. routerHelper 제거** — 위 "제거 대상" 표 전체 cascade. typecheck + 기존 unit test 가 인터페이스 의존 0 검증.
-- **D. 확장** — `price_lookup` (함수 디스패치) + `chart_data` (pykrx OSS). 분류 = 메인 에이전트 (정규식 분류기 미도입).
+- **D. 확장 → phase43 이연 (deferred).** `price_lookup`/`chart_data` 를 phase42 에서 구현하지 않음. 사유: (1) `get_stock_price`·`get_market_chart` 가 여전히 직접 도구라 route_task 구현 시 dispatch 경로 중복 — "단순조회 라우팅 vs 직접도구" 는 phase43 아키텍처 결정, (2) pykrx = KR 종목(스코프 밖)+신규 Python 의존(§2), (3) intent 모델 자체가 phase43 재설계 대상(route-task.ts TODO). phase42 = A+B+C(groundwork)로 종결. (상세 = `todo.md` 마일스톤 D.)
 
 ### 결정 (사용자 확정)
 
