@@ -80,15 +80,6 @@ export function buildAlertEmbed(alert: Alert): EmbedBuilder {
     .setFooter({ text: `ID: ${alert.id}` });
 }
 
-/** 에러 임베드 */
-export function buildErrorEmbed(message: string): EmbedBuilder {
-  return new EmbedBuilder()
-    .setTitle('오류 발생')
-    .setDescription(truncate(message, 4096))
-    .setColor(0xff1744)
-    .setTimestamp();
-}
-
 // --- 유틸리티 ---
 
 function truncate(text: string, max: number): string {

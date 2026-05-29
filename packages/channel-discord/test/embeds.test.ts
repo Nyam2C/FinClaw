@@ -1,11 +1,6 @@
 import type { MarketQuote, NewsItem, Alert, Timestamp, TickerSymbol } from '@finclaw/types';
 import { describe, it, expect } from 'vitest';
-import {
-  buildMarketEmbed,
-  buildNewsEmbed,
-  buildAlertEmbed,
-  buildErrorEmbed,
-} from '../src/embeds.js';
+import { buildMarketEmbed, buildNewsEmbed, buildAlertEmbed } from '../src/embeds.js';
 
 function makeQuote(overrides: Partial<MarketQuote> = {}): MarketQuote {
   return {
@@ -196,28 +191,5 @@ describe('buildAlertEmbed', () => {
     );
     const condField = embed.data.fields?.find((f) => f.name === '조건');
     expect(condField?.value).toContain('price');
-  });
-});
-
-describe('buildErrorEmbed', () => {
-  it('빨간색(0xff1744) 색상을 사용한다', () => {
-    const embed = buildErrorEmbed('테스트 에러');
-    expect(embed.data.color).toBe(0xff1744);
-  });
-
-  it('제목이 "오류 발생"이다', () => {
-    const embed = buildErrorEmbed('테스트 에러');
-    expect(embed.data.title).toBe('오류 발생');
-  });
-
-  it('메시지를 description에 설정한다', () => {
-    const embed = buildErrorEmbed('상세 오류 메시지');
-    expect(embed.data.description).toBe('상세 오류 메시지');
-  });
-
-  it('4096자 초과 메시지를 잘라낸다', () => {
-    const longMsg = 'E'.repeat(5000);
-    const embed = buildErrorEmbed(longMsg);
-    expect((embed.data.description ?? '').length).toBeLessThanOrEqual(4096);
   });
 });
