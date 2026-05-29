@@ -1,3 +1,4 @@
+import { InMemoryToolRegistry } from '@finclaw/agent';
 import type {
   ChartService,
   NewsAggregator,
@@ -105,5 +106,34 @@ describe('route_task dispatcher — function intents', () => {
     const d = buildRouteDispatcher({ ...deps, portfolioStore: emptyStore });
     const r = await d({ intent: 'portfolio_calc', query: 'pnl' });
     expect(r.isError).toBe(true);
+  });
+});
+
+describe('M3 main tool surface — direct domain tools hidden', () => {
+  it('unregister removes direct domain tools, route_task remains', () => {
+    const registry = new InMemoryToolRegistry();
+    // 직접 도구 등록 흉내 (이름만 검증 — executor 는 no-op)
+    const noop = async () => ({ content: '', isError: false });
+    for (const name of ['get_stock_price', 'route_task']) {
+      registry.register(
+        {
+          name,
+          description: name,
+          inputSchema: { type: 'object', properties: {}, required: [] },
+          group: 'finance',
+          requiresApproval: false,
+          isTransactional: false,
+          accessesSensitiveData: false,
+          isExternal: true,
+          timeoutMs: 1000,
+        },
+        noop,
+        'skill',
+      );
+    }
+    registry.unregister('get_stock_price');
+    const names = registry.list().map((t) => t.definition.name);
+    expect(names).not.toContain('get_stock_price');
+    expect(names).toContain('route_task');
   });
 });
