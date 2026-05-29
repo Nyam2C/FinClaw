@@ -60,8 +60,6 @@ export interface FinClawEventMap {
   'model:fallback': (from: string, to: string, reason: string) => void;
   /** 모든 모델 소진 */
   'model:exhausted': (models: string[], lastError: string) => void;
-  /** API 키 해석 완료 */
-  'auth:resolve': (provider: string, source: string) => void;
   /** 프로필 쿨다운 진입 */
   'auth:cooldown': (profileId: string, reason: string, ms: number) => void;
   /** 프로필 건강 상태 변경 */
