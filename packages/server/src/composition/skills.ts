@@ -134,14 +134,34 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
     logger.info('No news keys set — skipping news tools');
   }
 
-  // 결정 5 PoC: route_task 도구 등록 + analyze_market 메인 노출 제거.
-  // dispatcher 가 market_analysis intent 를 sub-agent (좁은 컨텍스트 CLI) 로 위임.
-  if (newsHandle) {
-    const dispatcher = buildRouteDispatcher({ newsAggregator: newsHandle.aggregator });
+  // Phase 43 M3: route_task 함수 dispatch + 직접 도메인 도구 메인 노출 제거.
+  // 메인은 thin orchestrator — 조회/분석은 route_task 로 위임. analyze_market 은 이미 sub-agent.
+  if (newsHandle && marketHandle) {
+    const dispatcher = buildRouteDispatcher({
+      newsAggregator: newsHandle.aggregator,
+      quoteService: marketHandle.quoteService,
+      chartService: marketHandle.chartService,
+      portfolioStore: newsHandle.portfolioStore,
+    });
     registerRouteTaskTool(toolRegistry, dispatcher);
-    toolRegistry.unregister('analyze_market');
-    logger.info('route_task tool registered (analyze_market hidden from main agent)', {
+
+    // 직접 도메인 도구를 메인 노출에서 제거(route_task 가 service 직접 호출로 흡수).
+    // alerts 모니터는 ToolRegistry 의 도구를 쓰지 않고 marketHandle.cache/providers 를
+    // 직접 받으므로(아래 registerAlertTools) 이 unregister 가 alerts 에 영향 없음.
+    for (const name of [
+      'analyze_market',
+      'get_stock_price',
+      'get_crypto_price',
+      'get_forex_rate',
+      'get_market_chart',
+      'get_financial_news',
+      'get_portfolio_summary',
+    ]) {
+      toolRegistry.unregister(name);
+    }
+    logger.info('route_task registered; direct domain tools hidden from main agent', {
       event: 'route_task.registered',
+      hidden: 7,
     });
   }
 

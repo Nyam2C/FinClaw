@@ -12,6 +12,11 @@ import { normalizeQuote, normalizeHistorical } from './normalizer.js';
 import { ProviderRegistry, createDefaultRegistry } from './provider-registry.js';
 import type { ProviderMarketQuote, HistoricalPeriod } from './types.js';
 
+/** Phase 43: 차트(스파크라인) 조회 어댑터 — route_task chart_data 가 소비. */
+export interface ChartService {
+  getChart(symbol: string, period: string): Promise<string>;
+}
+
 /** 스킬 초기화에 필요한 설정 */
 export interface MarketSkillConfig {
   readonly db: DatabaseSync;
@@ -34,6 +39,8 @@ export interface MarketSkillHandle {
   readonly providers: ProviderRegistry;
   readonly cache: MarketCache;
   readonly quoteService: QuoteService;
+  /** Phase 43: route_task chart_data intent 가 직접 호출하는 차트 서비스(스파크라인 텍스트). */
+  readonly chartService: ChartService;
   readonly keyRotators: {
     readonly finnhub?: KeyRotator;
     readonly twelveData?: KeyRotator;
@@ -71,10 +78,17 @@ export async function registerMarketTools(
     },
   };
 
+  const chartService: ChartService = {
+    getChart(symbol: string, period: string) {
+      return getChartFromState(state, symbol, period);
+    },
+  };
+
   return {
     providers,
     cache,
     quoteService,
+    chartService,
     keyRotators: {
       finnhub: config.finnhubRotator,
       twelveData: config.twelveDataRotator,

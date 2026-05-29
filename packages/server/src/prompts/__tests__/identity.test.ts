@@ -19,9 +19,9 @@ describe('finclaw.system.ko.md (golden)', () => {
       '출처 명시',
       '불확실성 수치화',
       '간결한 한국어',
-      '## 사용 가능한 도구',
+      '## 작업 위임 — `route_task`',
       '## 도구 결과 처리',
-      'analyze_market',
+      'market_analysis',
     ]) {
       expect(body).toContain(kw);
     }
