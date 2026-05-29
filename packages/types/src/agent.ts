@@ -1,4 +1,4 @@
-import type { AgentId, Timestamp } from './common.js';
+import type { AgentId, SessionKey, Timestamp } from './common.js';
 
 /**
  * 에이전트(워커) 프로필 — orchestrator-worker 워커 정의 (phase42).
@@ -21,13 +21,19 @@ export interface ModelRef {
 }
 
 /**
- * 워커 1회 spawn 입력 — "이 워커(profile)에게 이 task 를 시킨다".
- * 일회성·무상태: 대화 세션 없음(부모 연결은 trace), 입력은 task 프롬프트 하나.
- * model·systemPrompt 는 runner 가 profile.model / profile.agentDir 에서 해석.
+ * 에이전트 1회 실행 입력 — runner.execute 가 소비하는 실사용 형태.
+ * temperature·maxTokens·tools 는 결정4(CLI 무시 SDK-era 필드)에서 제거됨.
+ *
+ * NOTE(phase43): orchestrator-worker 워커-spawn 형태 `{ profile, prompt }` 로의 전환은
+ * consumer(gateway/scheduler/execution-adapter) + runner 마이그레이션과 함께 phase43 에서.
+ * 현재는 아래 필드를 직접 소비하므로 type-first 선반영하지 않는다 (선반영 시 build 깨짐).
  */
 export interface AgentRunParams {
-  profile: AgentProfile;
-  prompt: string;
+  agentId: AgentId;
+  sessionKey: SessionKey;
+  model: ModelRef;
+  systemPrompt: string;
+  messages: ConversationMessage[];
   abortSignal?: AbortSignal;
 }
 
@@ -58,6 +64,14 @@ export interface ToolCall {
   input: unknown;
 }
 
+/** 토큰 사용량 — provider 응답에서 누적, 비용 계산·관찰성에 사용 */
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+}
+
 /**
  * 에이전트 실행 1회의 영속화 레코드 (감사 + RAG 소스).
  * DB 컬럼은 snake_case, 본 인터페이스는 camelCase 변환.
@@ -69,6 +83,8 @@ export interface AgentRunLog {
   output: string;
   /** tool_calls_json — 호출자가 JSON.stringify 한 raw 문자열 */
   toolCalls?: string;
+  tokensInput?: number;
+  tokensOutput?: number;
   durationMs?: number;
   /** Phase 24 routing 결과 모델명 */
   modelUsed?: string;
