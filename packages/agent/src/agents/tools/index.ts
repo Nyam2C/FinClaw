@@ -1,6 +1,5 @@
 // ── groups ──
 export type { ToolGroupId, ToolGroup } from './groups.js';
-export { BUILT_IN_GROUPS } from './groups.js';
 
 // ── registry ──
 export type {

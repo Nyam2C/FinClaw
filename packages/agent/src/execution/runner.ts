@@ -112,8 +112,6 @@ export class Runner {
       let turns = 0;
       // Phase 30 B6: structured output retry 추적 (도구 이름별 violation 횟수).
       const violationCount = new Map<string, number>();
-      // 다음 turn 에 강제할 도구 이름 (직전 turn 의 violation 결과 reaction).
-      let nextForceToolName: string | undefined;
 
       while (turns < this.maxTurns) {
         if (params.abortSignal?.aborted) {
@@ -124,8 +122,6 @@ export class Runner {
 
         // Phase 30 A7: turn 단위 span — provider.stream + tool.execute 가 자식 span.
         const turnIdx = turns;
-        const forceToolName = nextForceToolName;
-        nextForceToolName = undefined;
         const turnRun = async (): Promise<{
           continueLoop: boolean;
           abortReturn?: ExecutionResult;
@@ -134,7 +130,7 @@ export class Runner {
             'provider.stream',
             { provider: this.provider.providerId, model: params.model.model, turn: turnIdx },
             () =>
-              retry(() => this.streamLLMCall(params, messages, listener, forceToolName), {
+              retry(() => this.streamLLMCall(params, messages, listener), {
                 ...this.retryOptions,
                 shouldRetry: (error) => {
                   const reason = classifyFallbackError(error as Error);
@@ -175,7 +171,6 @@ export class Runner {
                 );
               }
               violationCount.set(call.name, prev + 1);
-              nextForceToolName = call.name;
             }
           }
 
@@ -241,7 +236,6 @@ export class Runner {
     params: AgentRunParams,
     messages: ConversationMessage[],
     listener?: StreamEventListener,
-    forceToolName?: string,
   ): Promise<LLMCallResult> {
     // TODO(L4): FSM이 LLM 호출마다 새로 생성되어 실행 루프 전체의 상태를 추적하지 않음.
     //  현재 동작 문제 없으나, 루프 전체 상태 추적이 필요하면 execute() 레벨로 승격 필요.
@@ -262,7 +256,6 @@ export class Runner {
       messages,
       systemPrompt: params.systemPrompt,
       abortSignal: params.abortSignal,
-      ...(forceToolName ? { forceToolChoice: { name: forceToolName } } : {}),
     };
 
     for await (const chunk of this.provider.streamCompletion(requestParams)) {

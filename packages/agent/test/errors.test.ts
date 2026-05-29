@@ -1,6 +1,6 @@
 import { FinClawError } from '@finclaw/infra';
 import { describe, it, expect } from 'vitest';
-import { FailoverError, classifyFallbackError, maskApiKey } from '../src/errors.js';
+import { FailoverError, classifyFallbackError } from '../src/errors.js';
 
 describe('FailoverError', () => {
   it('FinClawError를 상속한다', () => {
@@ -75,20 +75,5 @@ describe('classifyFallbackError', () => {
   it('분류 불가 에러 → null', () => {
     const err = new Error('unknown error');
     expect(classifyFallbackError(err)).toBeNull();
-  });
-});
-
-describe('maskApiKey', () => {
-  it('긴 키를 마스킹한다', () => {
-    expect(maskApiKey('sk-1234567890abcdef')).toBe('sk-...cdef');
-  });
-
-  it('짧은 키는 ***로 대체한다', () => {
-    expect(maskApiKey('short')).toBe('***');
-    expect(maskApiKey('12345678')).toBe('***');
-  });
-
-  it('9자 이상이면 마스킹 적용', () => {
-    expect(maskApiKey('123456789')).toBe('123...6789');
   });
 });

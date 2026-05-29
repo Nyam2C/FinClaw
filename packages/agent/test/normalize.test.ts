@@ -1,70 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import type { ModelPricing } from '../src/models/catalog.js';
-import {
-  normalizeAnthropicResponse,
-  calculateEstimatedCost,
-} from '../src/models/provider-normalize.js';
+import { calculateEstimatedCost } from '../src/models/provider-normalize.js';
 
 const pricing: ModelPricing = { inputPerMillion: 15, outputPerMillion: 75 };
-
-describe('normalizeAnthropicResponse', () => {
-  const mockResponse = {
-    id: 'msg_123',
-    model: 'claude-opus-4-7',
-    content: [{ type: 'text', text: 'Hello world' }],
-    stop_reason: 'end_turn',
-    usage: {
-      input_tokens: 100,
-      output_tokens: 50,
-      cache_read_input_tokens: 10,
-      cache_creation_input_tokens: 5,
-    },
-  };
-
-  it('필드를 정확히 매핑한다', () => {
-    const result = normalizeAnthropicResponse(mockResponse, pricing);
-    expect(result.content).toBe('Hello world');
-    expect(result.stopReason).toBe('end_turn');
-    expect(result.modelId).toBe('claude-opus-4-7');
-    expect(result.provider).toBe('anthropic');
-    expect(result.usage.inputTokens).toBe(100);
-    expect(result.usage.outputTokens).toBe(50);
-    expect(result.usage.cacheReadTokens).toBe(10);
-    expect(result.usage.cacheWriteTokens).toBe(5);
-    expect(result.usage.totalTokens).toBe(150);
-  });
-
-  it('비용을 계산한다', () => {
-    const result = normalizeAnthropicResponse(mockResponse, pricing);
-    // (100/1M)*15 + (50/1M)*75 = 0.0015 + 0.00375 = 0.00525
-    expect(result.usage.estimatedCostUsd).toBeCloseTo(0.00525, 5);
-  });
-
-  it('content가 여러 블록이면 text만 연결한다', () => {
-    const multi = {
-      ...mockResponse,
-      content: [
-        { type: 'text', text: 'Hello' },
-        { type: 'tool_use', id: 'tool_1' },
-        { type: 'text', text: ' World' },
-      ],
-    };
-    const result = normalizeAnthropicResponse(multi, pricing);
-    expect(result.content).toBe('Hello World');
-  });
-
-  it('usage가 없으면 0으로 기본값', () => {
-    const noUsage = { ...mockResponse, usage: undefined };
-    const result = normalizeAnthropicResponse(noUsage, pricing);
-    expect(result.usage.inputTokens).toBe(0);
-    expect(result.usage.outputTokens).toBe(0);
-  });
-
-  it('raw를 보존한다', () => {
-    const result = normalizeAnthropicResponse(mockResponse, pricing);
-    expect(result.raw).toBe(mockResponse);
-  });
-});
 
 describe('calculateEstimatedCost', () => {
   it('정확한 비용을 계산한다', () => {

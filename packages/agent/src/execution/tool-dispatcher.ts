@@ -1,10 +1,5 @@
 // packages/agent/src/execution/tool-dispatcher.ts
-import type { ToolDefinition } from '@finclaw/types';
-import {
-  toApiToolDefinition,
-  type ToolExecutionContext,
-  type ToolRegistry,
-} from '../agents/tools/registry.js';
+import { type ToolExecutionContext, type ToolRegistry } from '../agents/tools/registry.js';
 import { ExecutionToolDispatcher } from './tool-executor.js';
 
 export interface DispatcherContextBase {
@@ -15,7 +10,6 @@ export interface DispatcherContextBase {
 
 export interface BuiltDispatcher {
   readonly dispatcher: ExecutionToolDispatcher;
-  readonly toolDefinitions: readonly ToolDefinition[];
 }
 
 /**
@@ -55,8 +49,5 @@ export function buildDispatcher(
     });
   }
 
-  return {
-    dispatcher,
-    toolDefinitions: registered.map((t) => toApiToolDefinition(t.definition)),
-  };
+  return { dispatcher };
 }
