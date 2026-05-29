@@ -27,13 +27,14 @@ import {
   type MarketSkillHandle,
   type NewsSkillHandle,
 } from '@finclaw/skills-finance';
-import { registerGeneralTools } from '@finclaw/skills-general';
+import { registerGeneralTools, registerRouteTaskTool } from '@finclaw/skills-general';
 import { addSchedule, getSchedule, type createStorage } from '@finclaw/storage';
 import type { FinClawConfig, ModelRef, ScheduleRpc, Timestamp } from '@finclaw/types';
 import { createAgentId } from '@finclaw/types';
 import type { makeRouterHelper } from '../auto-reply/router-helper.js';
 import { loadPlugins } from '../plugins/loader.js';
 import type { ProcessLifecycle } from '../process/lifecycle.js';
+import { buildDispatcher } from '../router/dispatch.js';
 import { BrokerageSyncService } from '../services/brokerage-sync-service.js';
 
 type Storage = ReturnType<typeof createStorage>;
@@ -137,6 +138,17 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
     });
   } else if (marketHandle) {
     logger.info('No news keys set — skipping news tools');
+  }
+
+  // 결정 5 PoC: route_task 도구 등록 + analyze_market 메인 노출 제거.
+  // dispatcher 가 market_analysis intent 를 sub-agent (좁은 컨텍스트 CLI) 로 위임.
+  if (newsHandle) {
+    const dispatcher = buildDispatcher({ newsAggregator: newsHandle.aggregator });
+    registerRouteTaskTool(toolRegistry, dispatcher);
+    toolRegistry.unregister('analyze_market');
+    logger.info('route_task tool registered (analyze_market hidden from main agent)', {
+      event: 'route_task.registered',
+    });
   }
 
   let alertHandle: AlertSkillHandle | undefined;

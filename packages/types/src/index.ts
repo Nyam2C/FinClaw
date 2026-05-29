@@ -14,6 +14,7 @@ export type * from './automation.js';
 export type * from './schedule-rpc.js';
 export type * from './trace.js';
 export type * from './gateway-ports.js';
+export type * from './router.js';
 
 // 런타임 값 (const enum 대체)
 export { RPC_ERROR_CODES } from './gateway.js';

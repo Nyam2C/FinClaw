@@ -14,6 +14,7 @@ export type { FileReadConfig } from './file-read.js';
 export { registerScheduleTool } from './schedule-tool.js';
 export { registerWebFetchTool } from './web-fetch.js';
 export type { WebFetchConfig } from './web-fetch.js';
+export { registerRouteTaskTool } from './route-task.js';
 
 export interface GeneralSkillConfig {
   readonly fileRoot?: string;

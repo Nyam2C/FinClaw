@@ -191,11 +191,13 @@ export type Dispatcher = (req: RouteRequest) => Promise<RouteResult>;
 
 ### 신규 구조
 
+> 새 패키지 만들지 않음 — 타입은 기존 `@finclaw/types`, runtime 은 server 내부. router 가 TUI/Web 에서 import 될 일 없으므로 server-only 가 자연스러움.
+
 | 파일 | 책임 |
 | ---- | ---- |
-| `packages/router/src/types.ts` | RouteIntent · RouteRequest · RouteResult · Dispatcher (workspace 의존 0) |
-| `packages/router/src/dispatch.ts` | `dispatchRoute(req)` — intent 별 분기. 함수/OSS 직접 호출 + sub-agent 위임 |
-| `packages/router/src/sub-agent.ts` | 좁은 컨텍스트 spawn 유틸 (좁은 system + 좁은 도구 → runner) |
+| `packages/types/src/router.ts` | RouteIntent · RouteRequest · RouteResult · Dispatcher (types barrel 에 추가) |
+| `packages/server/src/router/dispatch.ts` | `dispatchRoute(req)` — intent 별 분기. 함수/OSS 직접 호출 + sub-agent 위임 |
+| `packages/server/src/router/sub-agent.ts` | 좁은 컨텍스트 spawn 유틸 (claude CLI 재호출, 좁은 system + 좁은 도구) |
 | `packages/skills-general/src/route-task.ts` | `route_task` 도구 정의 (Zod 입력 + dispatch 호출) |
 
 ### 마일스톤 (모두 phase42 안)

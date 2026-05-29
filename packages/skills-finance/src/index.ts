@@ -9,6 +9,13 @@ export type {
   QuoteService,
 } from './news/index.js';
 export { PortfolioStore } from './news/portfolio/store.js';
+export { analyzeMarket } from './news/analysis/market-analysis.js';
+export type {
+  AnalyzeRunner,
+  AnalyzeRunnerRequest,
+  AnalyzeRunnerResult,
+} from './news/analysis/market-analysis.js';
+export type { AnalysisOptions, MarketAnalysis } from './news/types.js';
 export { registerAlertTools, ALERT_SKILL_METADATA } from './alerts/index.js';
 export type {
   AlertSkillConfig,
