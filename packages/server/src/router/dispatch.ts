@@ -17,7 +17,7 @@ export interface DispatcherDeps {
 const ANALYSIS_MODEL_ID = 'claude-opus-4-7';
 const ANALYSIS_QUEUE_KEY = 'claude-sub-agent-analysis';
 
-export function buildDispatcher(deps: DispatcherDeps): Dispatcher {
+export function buildRouteDispatcher(deps: DispatcherDeps): Dispatcher {
   return async (req: RouteRequest): Promise<RouteResult> => {
     switch (req.intent) {
       case 'market_analysis':
