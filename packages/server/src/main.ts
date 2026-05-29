@@ -177,7 +177,6 @@ async function main(): Promise<void> {
       discordAdapter,
       profileHealth,
       modelCatalog,
-      defaultModel: DEFAULT_MODEL,
       scheduleRpc,
       lifecycle,
     });

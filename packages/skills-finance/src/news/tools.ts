@@ -6,7 +6,7 @@ import type {
   ToolExecutor,
   ToolRegistry,
 } from '@finclaw/agent';
-import type { ModelRef, TickerSymbol } from '@finclaw/types';
+import type { TickerSymbol } from '@finclaw/types';
 import { z } from 'zod/v4';
 import { analyzeMarket, type AnalyzeRunner } from './analysis/market-analysis.js';
 import type { PortfolioStore } from './portfolio/store.js';
@@ -26,12 +26,6 @@ export const AnalyzeMarketOutputSchema = z.object({
   /** 1차 — 추가 자유 텍스트 요약 (필수 아님). */
   summary: z.string().optional(),
 });
-
-/** analyze_market 의 기본 modelRef (opus). */
-const ANALYZE_MARKET_FALLBACK_MODEL: ModelRef = {
-  provider: 'anthropic',
-  model: 'claude-opus-4-7',
-};
 
 // ─── get_financial_news ───
 
@@ -105,7 +99,6 @@ export function registerAnalyzeMarketTool(
   deps: {
     newsAggregator: NewsAggregator;
     runAnalysis: AnalyzeRunner;
-    defaultModel?: ModelRef;
     /** 스킬 내부 LLM 비용·건강 기록용 (선택) */
     profileHealth?: ProfileHealthMonitor;
     profileId?: string;
@@ -162,7 +155,7 @@ export function registerAnalyzeMarketTool(
         return { content: '분석할 뉴스가 없습니다.', isError: false };
       }
 
-      const modelRef = deps.defaultModel ?? ANALYZE_MARKET_FALLBACK_MODEL;
+      const modelRef = { provider: 'anthropic', model: 'claude-opus-4-7' } as const;
       const analysis = await analyzeMarket(deps.runAnalysis, news, options, modelRef, {
         profileHealth: deps.profileHealth,
         profileId: deps.profileId,
