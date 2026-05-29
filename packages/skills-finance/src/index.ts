@@ -1,6 +1,6 @@
 // packages/skills-finance/src/index.ts
 export { registerMarketTools, MARKET_SKILL_METADATA } from './market/index.js';
-export type { MarketSkillConfig, MarketSkillHandle } from './market/index.js';
+export type { MarketSkillConfig, MarketSkillHandle, ChartService } from './market/index.js';
 export { registerNewsTools, NEWS_SKILL_METADATA } from './news/index.js';
 export type {
   NewsSkillConfig,
@@ -9,6 +9,7 @@ export type {
   QuoteService,
 } from './news/index.js';
 export { PortfolioStore } from './news/portfolio/store.js';
+export { createPortfolioTracker } from './news/portfolio/tracker.js';
 export { analyzeMarket } from './news/analysis/market-analysis.js';
 export type {
   AnalyzeRunner,
