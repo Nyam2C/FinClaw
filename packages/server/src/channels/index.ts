@@ -12,7 +12,5 @@ export {
   resetChannelRegistry,
 } from './registry.js';
 
-export { normalizeChatType, isDirect, isMultiUser } from './chat-type.js';
-
 export { startTyping } from './typing.js';
 export type { TypingHandle } from './typing.js';

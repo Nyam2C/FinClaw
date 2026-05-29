@@ -1,7 +1,5 @@
 // packages/agent/src/models/provider-normalize.ts
-import type { ProviderId, ModelPricing } from './catalog.js';
-
-export type StopReason = 'end_turn' | 'max_tokens' | 'stop_sequence' | 'tool_use';
+import type { ModelPricing } from './catalog.js';
 
 /** 정규화된 토큰 사용량 */
 export interface NormalizedUsage {
@@ -12,16 +10,6 @@ export interface NormalizedUsage {
   readonly totalTokens: number;
   /** 금융 특화: 예상 비용 (USD) */
   readonly estimatedCostUsd: number;
-}
-
-/** 정규화된 AI 응답 */
-export interface NormalizedResponse {
-  readonly content: string;
-  readonly stopReason: StopReason;
-  readonly usage: NormalizedUsage;
-  readonly modelId: string;
-  readonly provider: ProviderId;
-  readonly raw: unknown;
 }
 
 /** 스트리밍 청크 — discriminated union (6 variant) */
@@ -53,67 +41,4 @@ export function calculateEstimatedCost(
     (cacheReadTokens / 1_000_000) * (pricing.cacheReadPerMillion ?? 0) +
     (cacheWriteTokens / 1_000_000) * (pricing.cacheWritePerMillion ?? 0)
   );
-}
-
-/**
- * Anthropic SDK 응답 정규화
- *
- * 필드 매핑:
- * - usage.input_tokens → inputTokens
- * - usage.output_tokens → outputTokens
- * - usage.cache_read_input_tokens → cacheReadTokens
- * - usage.cache_creation_input_tokens → cacheWriteTokens
- * - stop_reason: 'end_turn' | 'max_tokens' | 'stop_sequence' | 'tool_use'
- */
-// TODO(M5): raw를 as 캐스트 대신 런타임 검증(zod 등)으로 교체 권장.
-// TODO(L5): stop_reason을 직접 캐스트 대신 mapAnthropicStopReason() 헬퍼로 변환 권장.
-export function normalizeAnthropicResponse(
-  raw: unknown,
-  pricing: ModelPricing,
-): NormalizedResponse {
-  const r = raw as {
-    id?: string;
-    model?: string;
-    content?: Array<{ type: string; text?: string }>;
-    stop_reason?: string;
-    usage?: {
-      input_tokens?: number;
-      output_tokens?: number;
-      cache_read_input_tokens?: number;
-      cache_creation_input_tokens?: number;
-    };
-  };
-
-  const inputTokens = r.usage?.input_tokens ?? 0;
-  const outputTokens = r.usage?.output_tokens ?? 0;
-  const cacheReadTokens = r.usage?.cache_read_input_tokens ?? 0;
-  const cacheWriteTokens = r.usage?.cache_creation_input_tokens ?? 0;
-
-  const content =
-    r.content
-      ?.filter((b) => b.type === 'text')
-      .map((b) => b.text ?? '')
-      .join('') ?? '';
-
-  return {
-    content,
-    stopReason: (r.stop_reason as StopReason) ?? 'end_turn',
-    usage: {
-      inputTokens,
-      outputTokens,
-      cacheReadTokens,
-      cacheWriteTokens,
-      totalTokens: inputTokens + outputTokens,
-      estimatedCostUsd: calculateEstimatedCost(
-        inputTokens,
-        outputTokens,
-        pricing,
-        cacheReadTokens,
-        cacheWriteTokens,
-      ),
-    },
-    modelId: r.model ?? '',
-    provider: 'anthropic',
-    raw,
-  };
 }

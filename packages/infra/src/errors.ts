@@ -53,7 +53,6 @@ export class PortInUseError extends FinClawError {
 //   ConfigError    → packages/config/src/errors.ts    (Phase 3)
 //   AuthError      → packages/channel-discord/src/    (Phase 5)
 //   RateLimitError → packages/skills-finance/src/     (Phase 4)
-//   GatewayLockError → packages/infra/src/gateway-lock.ts (co-located)
 // ──────────────────────────────────────────────
 
 /** 타입 가드 */

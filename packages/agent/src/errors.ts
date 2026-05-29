@@ -91,11 +91,3 @@ function getStatusCode(error: Error): number | undefined {
   const status = (error as { status?: unknown }).status;
   return typeof status === 'number' ? status : undefined;
 }
-
-/** API 키 마스킹 유틸리티 */
-export function maskApiKey(key: string): string {
-  if (key.length <= 8) {
-    return '***';
-  }
-  return `${key.slice(0, 3)}...${key.slice(-4)}`;
-}

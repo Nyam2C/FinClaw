@@ -1,7 +1,7 @@
 // @finclaw/agent — complete barrel export
 
 // ─── errors ───
-export { FailoverError, classifyFallbackError, maskApiKey } from './errors.js';
+export { FailoverError, classifyFallbackError } from './errors.js';
 export type { FallbackReason } from './errors.js';
 
 // ─── models: catalog ───
@@ -26,13 +26,8 @@ export { resolveModel } from './models/selection.js';
 export type { UnresolvedModelRef, ResolvedModel } from './models/selection.js';
 
 // ─── models: provider normalize ───
-export { normalizeAnthropicResponse, calculateEstimatedCost } from './models/provider-normalize.js';
-export type {
-  NormalizedResponse,
-  NormalizedUsage,
-  StopReason,
-  StreamChunk,
-} from './models/provider-normalize.js';
+export { calculateEstimatedCost } from './models/provider-normalize.js';
+export type { NormalizedUsage, StreamChunk } from './models/provider-normalize.js';
 
 // ─── models: fallback ───
 export { DEFAULT_FALLBACK_TRIGGERS, runWithModelFallback } from './models/fallback.js';
@@ -104,7 +99,6 @@ export type {
   ResultGuardOptions,
 } from './agents/tools/index.js';
 export {
-  BUILT_IN_GROUPS,
   toApiToolDefinition,
   InMemoryToolRegistry,
   jsonSchemaToZod,
@@ -114,33 +108,7 @@ export {
   FINANCIAL_REDACT_PATTERNS,
 } from './agents/tools/index.js';
 
-// ── Phase 7: Session ──
-export type {
-  LockResult,
-  LockOptions,
-  TranscriptEntry,
-  CorruptionType,
-  DetectedCorruption,
-  CorruptionReport,
-} from './agents/session/index.js';
-export {
-  acquireWriteLock,
-  resetHeldLocks,
-  detectCorruption,
-  repairTranscript,
-} from './agents/session/index.js';
-
-// ── Phase 7: Context ──
-export type {
-  TokenBreakdown,
-  ContextWindowState,
-  WindowGuardConfig,
-  CompactionStrategy,
-  CompactionOptions,
-  CompactionResult,
-} from './agents/context/index.js';
-export { evaluateContextWindow, compactContext } from './agents/context/index.js';
-// Phase 31 C — compaction wiring 어댑터.
+// Phase 31 C — token counter 어댑터.
 export { approxTokenCount } from './execution/token-fn.js';
 
 // ── Phase 9: Execution ──

@@ -52,46 +52,6 @@ export interface OHLCVCandle {
 /** 시계열 간격 */
 export type TimeInterval = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d' | '1w' | '1M';
 
-/** 시장 데이터 요청 */
-export interface MarketDataRequest {
-  symbols: TickerSymbol[];
-  interval?: TimeInterval;
-  from?: Timestamp;
-  to?: Timestamp;
-  limit?: number;
-}
-
-/** 시장 데이터 응답 */
-export interface MarketDataResponse {
-  symbol: TickerSymbol;
-  candles: OHLCVCandle[];
-  quote?: MarketQuote;
-  fetchedAt: Timestamp;
-}
-
-// ─── 기술 분석 ───
-
-/** 기술 지표 유형 */
-export type TechnicalIndicator = 'sma' | 'ema' | 'rsi' | 'macd' | 'bollinger' | 'atr' | 'vwap';
-
-/** 기술 분석 결과 */
-export interface TechnicalAnalysisResult {
-  indicator: TechnicalIndicator;
-  symbol: TickerSymbol;
-  values: IndicatorValue[];
-  signal?: 'buy' | 'sell' | 'neutral';
-  summary?: string;
-}
-
-export interface IndicatorValue {
-  timestamp: Timestamp;
-  value: number;
-  upperBand?: number;
-  lowerBand?: number;
-  signal?: number;
-  histogram?: number;
-}
-
 // ─── 뉴스 ───
 
 /** 뉴스 아이템 */
@@ -145,17 +105,6 @@ export type AlertConditionType =
   | 'crosses_above'
   | 'crosses_below'
   | 'change_percent';
-
-/** 알림 트리거 이벤트 */
-export interface AlertTrigger {
-  alertId: string;
-  symbol: TickerSymbol;
-  condition: AlertCondition;
-  currentValue: number;
-  previousValue?: number;
-  triggeredAt: Timestamp;
-  message: string;
-}
 
 // ─── 포트폴리오 ───
 

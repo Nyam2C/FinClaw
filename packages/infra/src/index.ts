@@ -74,14 +74,6 @@ export {
   resetForTest,
   type SystemEvent,
 } from './system-events.js';
-export {
-  emitAgentRunStart,
-  emitAgentRunEnd,
-  emitAgentRunError,
-  onAgentRunStart,
-  onAgentRunEnd,
-  onAgentRunError,
-} from './agent-events.js';
 
 // 네트워크
 export { validateUrlSafety, isPrivateIp, type SsrfPolicy } from './ssrf.js';
@@ -92,13 +84,6 @@ export { writeFileAtomic, readFileSafe, ensureDir, unlinkSafe } from './fs-safe.
 export { readJsonFile, writeJsonFile, readJsonFileSync } from './json-file.js';
 
 // 프로세스
-export {
-  acquireGatewayLock,
-  readLockInfo,
-  GatewayLockError,
-  type GatewayLockHandle,
-  type GatewayLockOptions,
-} from './gateway-lock.js';
 export { assertPortAvailable, findAvailablePort, isValidPort } from './ports.js';
 export { inspectPortOccupant, formatPortOccupant, type PortOccupant } from './ports-inspect.js';
 export {

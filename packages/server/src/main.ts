@@ -13,12 +13,15 @@ import { ConfigValidationError, loadConfig, validateConfigStrict } from '@fincla
 import { createGatewayServer, type GatewayServerConfig } from '@finclaw/gateway';
 import {
   assertPortAvailable,
+  assertSupportedRuntime,
   ConcurrencyLane,
   createLogger,
   formatPortOccupant,
   getEventBus,
   inspectPortOccupant,
+  loadDotenv,
   PortInUseError,
+  setupUnhandledRejectionHandler,
 } from '@finclaw/infra';
 import {
   assertEmbeddingDimension,
@@ -59,6 +62,10 @@ export function requireEnv(name: string, env: NodeJS.ProcessEnv = process.env): 
 }
 
 async function main(): Promise<void> {
+  // 0a. 부팅 안전장치 — .env 자동 로드 후 Node 런타임 가드(config 로드 전 조기 실패).
+  loadDotenv();
+  assertSupportedRuntime();
+
   // 0. 시스템 프롬프트 외부 .md 로드 — 본문은 system prompt, frontmatter 는 agent 메타.
   const systemPromptDoc = await loadPrompt('finclaw.system.ko.md', 'main:systemPrompt');
   requireFrontmatterKeys(
@@ -89,6 +96,7 @@ async function main(): Promise<void> {
 
   // 2. 기반 (로거, 라이프사이클, 스토리지)
   const logger = createLogger({ name: 'finclaw', level: 'info' });
+  setupUnhandledRejectionHandler(logger);
   const lifecycle = new ProcessLifecycle({ logger });
 
   // 2a. 전체 config 로드 + strict 재검증
@@ -169,7 +177,6 @@ async function main(): Promise<void> {
       discordAdapter,
       profileHealth,
       modelCatalog,
-      defaultModel: DEFAULT_MODEL,
       scheduleRpc,
       lifecycle,
     });

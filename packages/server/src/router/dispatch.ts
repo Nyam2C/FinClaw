@@ -7,7 +7,15 @@ import {
   type QuoteService,
   type AnalysisOptions,
 } from '@finclaw/skills-finance';
-import type { Dispatcher, RouteRequest, RouteResult, TickerSymbol } from '@finclaw/types';
+import {
+  createAgentId,
+  type AgentProfile,
+  type Dispatcher,
+  type RouteRequest,
+  type RouteResult,
+  type TickerSymbol,
+} from '@finclaw/types';
+import { loadSubAgents } from './agent-loader.js';
 import { runSubAgent } from './sub-agent.js';
 
 /**
@@ -15,7 +23,7 @@ import { runSubAgent } from './sub-agent.js';
  * - 함수 직접 호출 (LLM 0): price_lookup·chart_data·news_summary·portfolio_calc → service 직접.
  * - sub-agent CLI 재호출 (좁은 컨텍스트): market_analysis.
  *
- * intent enum 의 파일 기반 동적 구성(prompts/sub-agents/*.md)은 phase43 M4.
+ * sub-agent 모델 정의는 prompts/sub-agents/*.md frontmatter 가 단일 출처(M4 로더).
  */
 
 export interface DispatcherDeps {
@@ -25,14 +33,26 @@ export interface DispatcherDeps {
   readonly portfolioStore: PortfolioStore;
 }
 
-const ANALYSIS_MODEL_ID = 'claude-opus-4-7';
 const ANALYSIS_QUEUE_KEY = 'claude-sub-agent-analysis';
 
 export function buildRouteDispatcher(deps: DispatcherDeps): Dispatcher {
+  // 파일 정의(prompts/sub-agents/*.md)에서 sub-agent 프로필 1회 로드.
+  const subAgents = loadSubAgents();
+  const def = subAgents.get('market_analysis');
+  if (!def) {
+    throw new Error('sub-agent definition missing: market_analysis');
+  }
+  const marketAnalysisProfile: AgentProfile = {
+    id: createAgentId(def.id),
+    name: def.name,
+    model: { provider: 'claude-cli', model: def.model },
+    agentDir: 'prompts/sub-agents',
+  };
+
   return async (req: RouteRequest): Promise<RouteResult> => {
     switch (req.intent) {
       case 'market_analysis':
-        return dispatchMarketAnalysis(req, deps);
+        return dispatchMarketAnalysis(req, deps, marketAnalysisProfile);
       case 'price_lookup':
         return dispatchPriceLookup(req, deps);
       case 'chart_data':
@@ -48,14 +68,16 @@ export function buildRouteDispatcher(deps: DispatcherDeps): Dispatcher {
 async function dispatchMarketAnalysis(
   req: RouteRequest,
   deps: DispatcherDeps,
+  profile: AgentProfile,
 ): Promise<RouteResult> {
+  const modelId = profile.model.model;
   const symbols = req.symbol ? ([req.symbol] as TickerSymbol[]) : undefined;
   const news = await deps.newsAggregator.fetchNews({ symbols, limit: 30 });
   if (news.length === 0) {
     return {
       content: '분석할 뉴스가 없습니다.',
       source: 'sub-agent',
-      modelUsed: ANALYSIS_MODEL_ID,
+      modelUsed: modelId,
       isError: false,
     };
   }
@@ -76,19 +98,19 @@ async function dispatchMarketAnalysis(
       },
       news,
       options,
-      { provider: 'claude-cli', model: ANALYSIS_MODEL_ID },
+      profile.model,
     );
     return {
       content: JSON.stringify(analysis),
       source: 'sub-agent',
-      modelUsed: ANALYSIS_MODEL_ID,
+      modelUsed: modelId,
       isError: false,
     };
   } catch (err) {
     return {
       content: err instanceof Error ? err.message : String(err),
       source: 'sub-agent',
-      modelUsed: ANALYSIS_MODEL_ID,
+      modelUsed: modelId,
       isError: true,
     };
   }

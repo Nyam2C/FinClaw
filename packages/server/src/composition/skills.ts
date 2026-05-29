@@ -29,7 +29,7 @@ import {
 } from '@finclaw/skills-finance';
 import { registerGeneralTools, registerRouteTaskTool } from '@finclaw/skills-general';
 import { addSchedule, getSchedule, type createStorage } from '@finclaw/storage';
-import type { FinClawConfig, ModelRef, ScheduleRpc, Timestamp } from '@finclaw/types';
+import type { FinClawConfig, ScheduleRpc, Timestamp } from '@finclaw/types';
 import { createAgentId } from '@finclaw/types';
 import { loadPlugins } from '../plugins/loader.js';
 import type { ProcessLifecycle } from '../process/lifecycle.js';
@@ -46,7 +46,6 @@ export interface RegisterSkillsDeps {
   readonly discordAdapter: DiscordAdapter;
   readonly profileHealth: ProfileHealthMonitor;
   readonly modelCatalog: InMemoryModelCatalog;
-  readonly defaultModel: ModelRef;
   readonly scheduleRpc: ScheduleRpc;
   readonly lifecycle: ProcessLifecycle;
 }
@@ -68,7 +67,6 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
     discordAdapter,
     profileHealth,
     modelCatalog,
-    defaultModel,
     scheduleRpc,
     lifecycle,
   } = deps;
@@ -118,7 +116,6 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
       newsdataRotator,
       finnhubRotator, // 시세 KeyRotator 와 동일 인스턴스 공유
       quoteService: marketHandle.quoteService,
-      defaultModel,
       profileHealth,
       profileId: 'default',
       modelCatalog,

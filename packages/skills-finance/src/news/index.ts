@@ -2,7 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 // packages/skills-finance/src/news/index.ts
 import type { ModelCatalog, ProfileHealthMonitor, ToolRegistry } from '@finclaw/agent';
 import { runCliAgent } from '@finclaw/agent';
-import type { ModelRef, SkillMetadata } from '@finclaw/types';
+import type { SkillMetadata } from '@finclaw/types';
 import type { KeyRotator } from '../shared/key-rotator.js';
 import { createNewsAggregator } from './aggregator.js';
 import { PortfolioStore } from './portfolio/store.js';
@@ -33,8 +33,6 @@ export interface NewsSkillConfig {
   readonly finnhubRotator?: KeyRotator;
   readonly rssFeedUrls?: string[];
   readonly quoteService: QuoteService;
-  /** analyze_market 의 LLM modelRef 출처 (sub-agent dispatcher 가 흡수해 직접 사용하지 않으나, 도구 등록 호환용으로 유지). */
-  readonly defaultModel?: ModelRef;
   /** 스킬 내부 LLM 호출 비용·건강을 status 분포에 포함하기 위한 모니터. */
   readonly profileHealth?: ProfileHealthMonitor;
   readonly profileId?: string;
@@ -105,7 +103,6 @@ export async function registerNewsTools(
           : undefined,
       };
     },
-    defaultModel: config.defaultModel,
     profileHealth: config.profileHealth,
     profileId: config.profileId,
     modelCatalog: config.modelCatalog,

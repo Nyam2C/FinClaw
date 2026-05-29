@@ -29,19 +29,6 @@ function registerEcho(registry: InMemoryToolRegistry, executor?: ToolExecutor): 
 }
 
 describe('buildDispatcher', () => {
-  it('toolDefinitions는 registered 도구 목록을 반영한다', () => {
-    const registry = new InMemoryToolRegistry();
-    registerEcho(registry);
-
-    const { toolDefinitions } = buildDispatcher(registry, {
-      sessionId: 's1',
-      userId: 'u1',
-      channelId: 'c1',
-    });
-
-    expect(toolDefinitions.map((t) => t.name)).toEqual(['echo']);
-  });
-
   it('dispatcher.executeAll은 registry.execute로 라우팅한다', async () => {
     const registry = new InMemoryToolRegistry();
     registerEcho(registry);
