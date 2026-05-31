@@ -12,7 +12,7 @@ export {
 
 // 백오프/재시도
 export { computeBackoff, sleepWithAbort, type BackoffOptions } from './backoff.js';
-export { retry, resolveRetryConfig, type RetryOptions } from './retry.js';
+export { retry, type RetryOptions } from './retry.js';
 export { Dedupe, type DedupeOptions } from './dedupe.js';
 export {
   CircuitBreaker,
@@ -32,7 +32,6 @@ export { runWithContext, getContext, getRequestId, type RequestContext } from '.
 // 환경/설정
 export { assertSupportedRuntime, getNodeMajorVersion } from './runtime-guard.js';
 export { loadDotenv } from './dotenv.js';
-export { normalizeEnv, getEnv, requireEnv, isTruthyEnvValue, logAcceptedEnvOption } from './env.js';
 export { isMain } from './is-main.js';
 
 // 로깅
@@ -53,7 +52,6 @@ export { safeFetch, safeFetchJson, type SafeFetchOptions } from './fetch.js';
 
 // 파일시스템
 export { writeFileAtomic, readFileSafe, ensureDir, unlinkSafe } from './fs-safe.js';
-export { readJsonFile, writeJsonFile, readJsonFileSync } from './json-file.js';
 
 // 프로세스
 export { assertPortAvailable, findAvailablePort, isValidPort } from './ports.js';
