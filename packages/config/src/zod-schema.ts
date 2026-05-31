@@ -178,5 +178,3 @@ export const FinClawConfigSchema = z.strictObject({
     })
     .optional(),
 });
-
-export type ValidatedFinClawConfig = z.infer<typeof FinClawConfigSchema>;

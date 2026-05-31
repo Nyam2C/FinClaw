@@ -17,7 +17,6 @@ export {
 
 // 스키마
 export { FinClawConfigSchema } from './zod-schema.js';
-export type { ValidatedFinClawConfig } from './zod-schema.js';
 
 // 검증
 export { validateConfig, validateConfigStrict } from './validation.js';
@@ -46,4 +45,4 @@ export { createConfigIO, loadConfig, clearConfigCache } from './io.js';
 // 세션
 export { mergeSessionEntry } from './sessions/types.js';
 export { deriveSessionKey } from './sessions/session-key.js';
-export { createSessionStore, now } from './sessions/store.js';
+export { createSessionStore } from './sessions/store.js';

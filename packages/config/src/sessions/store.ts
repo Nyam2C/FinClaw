@@ -2,7 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { ensureDir, writeFileAtomic } from '@finclaw/infra';
 // packages/config/src/sessions/store.ts
-import { createTimestamp, type SessionKey } from '@finclaw/types';
+import type { SessionKey } from '@finclaw/types';
 import type { SessionEntry } from './types.js';
 
 /**
@@ -113,9 +113,4 @@ export function createSessionStore(sessionDir: string): SessionStore {
       }
     },
   };
-}
-
-/** 현재 타임스탬프 생성 헬퍼 */
-export function now(): ReturnType<typeof createTimestamp> {
-  return createTimestamp(Date.now());
 }
