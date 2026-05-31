@@ -86,9 +86,6 @@ export interface WsConnection {
   readonly subscriptions: Set<string>;
 }
 
-/** WebSocket 아웃바운드 메시지 */
-export type WsOutboundMessage = RpcResponse | JsonRpcNotification;
-
 // === 서버 설정 ===
 
 /** 게이트웨이 서버 상세 설정 */
