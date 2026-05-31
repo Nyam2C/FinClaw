@@ -82,39 +82,3 @@ export const RPC_ERROR_CODES = {
   SESSION_NOT_FOUND: -32003,
   AGENT_BUSY: -32004,
 } as const;
-
-export interface WsMessageEvent {
-  type: 'message';
-  channelId: string;
-  senderId: string;
-  text: string;
-  timestamp: number;
-}
-
-export interface WsTypingEvent {
-  type: 'typing';
-  channelId: string;
-  agentId: string;
-  isTyping: boolean;
-}
-
-export interface WsAgentStatusEvent {
-  type: 'agent.status';
-  agentId: string;
-  status: 'idle' | 'running' | 'error';
-}
-
-export interface WsAlertEvent {
-  type: 'alert';
-  alertId: string;
-  symbol: string;
-  condition: string;
-  currentValue: number;
-  triggeredAt: number;
-}
-
-export interface WsErrorEvent {
-  type: 'error';
-  code: number;
-  message: string;
-}

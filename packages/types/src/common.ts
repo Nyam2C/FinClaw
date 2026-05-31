@@ -25,26 +25,6 @@ export type CleanupFn = () => Promise<void>;
 /** 로그 레벨 */
 export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
 
-// ─── 에러 타입 ───
-
-/** 에러 분류 -- FinClaw 시스템 전역에서 사용 */
-export type ErrorReason =
-  | 'CONFIG_INVALID' // 설정 파싱/검증 실패
-  | 'CHANNEL_OFFLINE' // 채널 연결 불가
-  | 'AGENT_TIMEOUT' // 에이전트 응답 초과
-  | 'STORAGE_FAILURE' // 스토리지 읽기/쓰기 실패
-  | 'RATE_LIMITED' // 외부 API 속도 제한
-  | 'AUTH_FAILURE' // 인증/인가 실패
-  | 'INTERNAL'; // 분류 불가 내부 에러
-
-/** 구조화된 에러 인터페이스 */
-export interface FinClawError {
-  reason: ErrorReason;
-  message: string;
-  cause?: unknown;
-  timestamp: Timestamp;
-}
-
 /** 브랜드 타입 팩토리 */
 export function createTimestamp(ms: number): Timestamp {
   return ms as Timestamp;
