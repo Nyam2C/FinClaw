@@ -3,7 +3,6 @@ import type {
   RpcRequest,
   RpcResponse,
   JsonRpcNotification,
-  BroadcastChannel,
   SessionKey,
 } from '@finclaw/types';
 // packages/server/src/gateway/rpc/types.ts
@@ -15,10 +14,7 @@ export type {
   RpcResponse,
   RpcError,
   RpcMethod,
-  WsEvent,
-  GatewayStatus,
   JsonRpcNotification,
-  BroadcastChannel,
 } from '@finclaw/types';
 export { RPC_ERROR_CODES } from '@finclaw/types';
 

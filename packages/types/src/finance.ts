@@ -49,9 +49,6 @@ export interface OHLCVCandle {
   volume: number;
 }
 
-/** 시계열 간격 */
-export type TimeInterval = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d' | '1w' | '1M';
-
 // ─── 뉴스 ───
 
 /** 뉴스 아이템 */

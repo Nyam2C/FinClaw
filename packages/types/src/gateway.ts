@@ -83,14 +83,6 @@ export const RPC_ERROR_CODES = {
   AGENT_BUSY: -32004,
 } as const;
 
-/** WebSocket 이벤트 */
-export type WsEvent =
-  | WsMessageEvent
-  | WsTypingEvent
-  | WsAgentStatusEvent
-  | WsAlertEvent
-  | WsErrorEvent;
-
 export interface WsMessageEvent {
   type: 'message';
   channelId: string;
@@ -125,13 +117,4 @@ export interface WsErrorEvent {
   type: 'error';
   code: number;
   message: string;
-}
-
-/** 게이트웨이 상태 */
-export interface GatewayStatus {
-  uptime: number;
-  connections: number;
-  activeAgents: number;
-  activeSessions: number;
-  version: string;
 }
