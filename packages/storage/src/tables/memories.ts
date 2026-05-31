@@ -25,15 +25,6 @@ interface MemoryRow {
   metadata: string;
 }
 
-interface ChunkRow {
-  id: string;
-  memory_id: string;
-  text: string;
-  start_line: number;
-  end_line: number;
-  model: string;
-}
-
 // ─── chunkMarkdown ───
 
 export function chunkMarkdown(
@@ -210,21 +201,6 @@ export function deleteMemory(db: DatabaseSync, id: string): boolean {
     db.exec('ROLLBACK');
     throw err;
   }
-}
-
-export function getMemoryChunks(db: DatabaseSync, memoryId: string): MemoryChunk[] {
-  const rows = db
-    .prepare('SELECT * FROM memory_chunks WHERE memory_id = ? ORDER BY start_line ASC')
-    .all(memoryId) as unknown as ChunkRow[];
-
-  return rows.map((row) => ({
-    id: row.id,
-    memoryId: row.memory_id,
-    text: row.text,
-    startLine: row.start_line,
-    endLine: row.end_line,
-    model: row.model,
-  }));
 }
 
 // ─── Embedding-aware insert ───

@@ -37,7 +37,6 @@ export {
   getMemory,
   getMemoriesBySession,
   deleteMemory,
-  getMemoryChunks,
 } from './tables/memories.js';
 export { CACHE_TTL, type MarketCacheEntry };
 export { type EmbeddingProvider } from './embeddings/provider.js';
