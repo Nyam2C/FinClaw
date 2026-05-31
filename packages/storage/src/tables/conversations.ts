@@ -143,27 +143,6 @@ export function getConversation(
   return rowToRecord(row, messages);
 }
 
-export function updateConversation(
-  db: DatabaseSync,
-  sessionKey: SessionKey,
-  updates: { title?: string; metadata?: Record<string, unknown> },
-): void {
-  const parts: string[] = ['updated_at = ?'];
-  const params: (string | number)[] = [Date.now()];
-
-  if (updates.title !== undefined) {
-    parts.push('title = ?');
-    params.push(updates.title);
-  }
-  if (updates.metadata !== undefined) {
-    parts.push('metadata = ?');
-    params.push(JSON.stringify(updates.metadata));
-  }
-
-  params.push(sessionKey as string);
-  db.prepare(`UPDATE conversations SET ${parts.join(', ')} WHERE id = ?`).run(...params);
-}
-
 export function deleteConversation(db: DatabaseSync, sessionKey: SessionKey): boolean {
   const result = db.prepare('DELETE FROM conversations WHERE id = ?').run(sessionKey as string);
   return Number(result.changes) > 0;
@@ -244,32 +223,4 @@ export function upsertConversation(
     db.exec('ROLLBACK');
     throw err;
   }
-}
-
-export function listConversations(
-  db: DatabaseSync,
-  options?: { agentId?: AgentId; limit?: number; offset?: number },
-): ConversationRecord[] {
-  let sql = 'SELECT * FROM conversations';
-  const params: (string | number)[] = [];
-
-  if (options?.agentId) {
-    sql += ' WHERE agent_id = ?';
-    params.push(options.agentId as string);
-  }
-
-  sql += ' ORDER BY updated_at DESC';
-
-  if (options?.limit) {
-    sql += ' LIMIT ?';
-    params.push(options.limit);
-  }
-  if (options?.offset) {
-    sql += ' OFFSET ?';
-    params.push(options.offset);
-  }
-
-  const rows = db.prepare(sql).all(...params) as unknown as ConversationRow[];
-
-  return rows.map((row) => rowToRecord(row, []));
 }

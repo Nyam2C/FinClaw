@@ -62,7 +62,6 @@ export {
   getConversation,
   deleteConversation,
   upsertConversation,
-  listConversations,
 } from './tables/conversations.js';
 export {
   getCachedData,
