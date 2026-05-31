@@ -41,11 +41,6 @@ export interface RegisteredToolDefinition extends ToolDefinition {
   readonly enforceStructuredOutput?: boolean;
 }
 
-/** RegisteredToolDefinition → ToolDefinition 변환 (LLM API 전송용) */
-export function toApiToolDefinition(reg: RegisteredToolDefinition): ToolDefinition {
-  return { name: reg.name, description: reg.description, inputSchema: reg.inputSchema };
-}
-
 /** 도구 실행 함수 */
 export type ToolExecutor = (
   input: Record<string, unknown>,

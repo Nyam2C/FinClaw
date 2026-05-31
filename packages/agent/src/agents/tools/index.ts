@@ -13,7 +13,7 @@ export type {
   AfterToolExecutePayload,
   ToolRegistryHooks,
 } from './registry.js';
-export { toApiToolDefinition, InMemoryToolRegistry, jsonSchemaToZod } from './registry.js';
+export { InMemoryToolRegistry, jsonSchemaToZod } from './registry.js';
 
 // ── policy ──
 export type {

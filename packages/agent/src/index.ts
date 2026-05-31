@@ -92,7 +92,6 @@ export type {
   ResultGuardOptions,
 } from './agents/tools/index.js';
 export {
-  toApiToolDefinition,
   InMemoryToolRegistry,
   jsonSchemaToZod,
   evaluateToolPolicy,
