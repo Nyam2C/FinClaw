@@ -77,8 +77,6 @@ export type {
 // ── Phase 7: Tools ──
 export type {
   ToolGroupId,
-  ToolGroup,
-  ToolInputSchema,
   ToolPropertySchema,
   RegisteredToolDefinition,
   ToolExecutor,

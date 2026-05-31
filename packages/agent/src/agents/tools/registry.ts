@@ -19,13 +19,6 @@ import {
 
 // ── 타입 ──
 
-/** 도구 입력 파라미터 스키마 (JSON Schema 서브셋, 문서/검증용) */
-export interface ToolInputSchema {
-  readonly type: 'object';
-  readonly properties: Record<string, ToolPropertySchema>;
-  readonly required?: readonly string[];
-}
-
 export interface ToolPropertySchema {
   readonly type: 'string' | 'number' | 'boolean' | 'array' | 'object';
   readonly description: string;

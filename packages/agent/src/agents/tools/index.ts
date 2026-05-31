@@ -1,9 +1,8 @@
 // ── groups ──
-export type { ToolGroupId, ToolGroup } from './groups.js';
+export type { ToolGroupId } from './groups.js';
 
 // ── registry ──
 export type {
-  ToolInputSchema,
   ToolPropertySchema,
   RegisteredToolDefinition,
   ToolExecutor,
