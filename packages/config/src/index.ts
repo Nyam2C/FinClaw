@@ -4,8 +4,6 @@
 export type { ConfigDeps, ConfigCache } from './types.js';
 export type { ValidationResult } from './validation.js';
 export type { ConfigIO } from './io.js';
-export type { SessionEntry, SessionScope } from './sessions/types.js';
-export type { SessionStore } from './sessions/store.js';
 
 // 에러
 export {
@@ -41,8 +39,3 @@ export { createConfigCache } from './cache-utils.js';
 
 // IO (파이프라인 통합)
 export { createConfigIO, loadConfig, clearConfigCache } from './io.js';
-
-// 세션
-export { mergeSessionEntry } from './sessions/types.js';
-export { deriveSessionKey } from './sessions/session-key.js';
-export { createSessionStore } from './sessions/store.js';
