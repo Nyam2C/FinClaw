@@ -3,7 +3,6 @@ export type { ToolGroupId } from './groups.js';
 
 // ── registry ──
 export type {
-  ToolPropertySchema,
   RegisteredToolDefinition,
   ToolExecutor,
   ToolExecutionContext,

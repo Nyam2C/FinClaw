@@ -19,14 +19,6 @@ import {
 
 // ── 타입 ──
 
-export interface ToolPropertySchema {
-  readonly type: 'string' | 'number' | 'boolean' | 'array' | 'object';
-  readonly description: string;
-  readonly enum?: readonly string[];
-  readonly items?: ToolPropertySchema;
-  readonly default?: unknown;
-}
-
 /** Phase 7 확장 도구 정의 — 기존 ToolDefinition 3필드를 상속 */
 export interface RegisteredToolDefinition extends ToolDefinition {
   readonly group: ToolGroupId;
