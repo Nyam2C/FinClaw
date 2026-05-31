@@ -1,12 +1,7 @@
 // packages/server/src/auto-reply/stages/command.ts
 import type { MsgContext } from '@finclaw/types';
-import type { CommandRegistry, CommandResult } from '../commands/registry.js';
+import type { CommandRegistry } from '../commands/registry.js';
 import type { StageResult } from '../pipeline.js';
-
-export interface CommandStageResult {
-  readonly handled: boolean;
-  readonly commandResult?: CommandResult;
-}
 
 /**
  * 명령어 단계

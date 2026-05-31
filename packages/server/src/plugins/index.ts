@@ -1,5 +1,5 @@
 // packages/server/src/plugins — barrel export
-export { PluginLoadError, PluginSecurityError, RegistryFrozenError } from './errors.js';
+export { PluginSecurityError, RegistryFrozenError } from './errors.js';
 
 export type { HookPayloadMap, HookModeMap } from './hook-types.js';
 
@@ -29,6 +29,4 @@ export { discoverPlugins, validatePluginPath, isAllowedExtension } from './disco
 export type { DiscoveredPlugin } from './discovery.js';
 
 export { loadPlugins } from './loader.js';
-export type { PluginExports, PluginBuildApi, LoadResult } from './loader.js';
-
-export { bridgeHooksToEventBus } from './event-bridge.js';
+export type { PluginBuildApi, LoadResult } from './loader.js';

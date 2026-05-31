@@ -39,17 +39,4 @@ export class ProcessLifecycle {
     setupGracefulShutdown(this.logger, () => [...this.cleanupFns].toReversed());
     this.logger.info('Process lifecycle initialized');
   }
-
-  /** 수동 종료 (테스트 등에서 사용) */
-  async shutdown(): Promise<void> {
-    this.logger.info('Manual shutdown initiated');
-    const reversed = [...this.cleanupFns].toReversed();
-    for (const cleanup of reversed) {
-      try {
-        await cleanup();
-      } catch (err) {
-        this.logger.error(`Cleanup error: ${String(err)}`);
-      }
-    }
-  }
 }

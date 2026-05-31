@@ -1,8 +1,5 @@
 // packages/server/src/process — barrel export
 
-// 에러
-export { SpawnError, SpawnTimeoutError, LaneClearedError, QueueFullError } from './errors.js';
-
 // 프로세스 실행
 export { safeSpawn, type SpawnOptions, type SpawnResult } from './spawn.js';
 
