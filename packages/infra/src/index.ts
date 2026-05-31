@@ -49,7 +49,6 @@ export { isMain } from './is-main.js';
 // 로깅
 export {
   createLogger,
-  defaultLoggerFactory,
   type LoggerConfig,
   type LoggerFactory,
   type FinClawLogger,
@@ -61,7 +60,6 @@ export {
   createTypedEmitter,
   getEventBus,
   resetEventBus,
-  type EventMap,
   type TypedEmitter,
   type FinClawEventMap,
 } from './events.js';

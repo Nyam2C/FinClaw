@@ -82,18 +82,3 @@ function rotateFiles(basePath: string, maxFiles: number): void {
     }
   }
 }
-
-/**
- * 모든 트랜스포트의 버퍼 플러시
- *
- * graceful shutdown 시 호출.
- * 반환된 Promise는 모든 스트림이 flush되면 resolve.
- */
-export function createFlushFn(streams: fs.WriteStream[]): () => Promise<void> {
-  return () =>
-    Promise.all(
-      streams.map(
-        (s) => new Promise<void>((resolve) => (s.writableFinished ? resolve() : s.end(resolve))),
-      ),
-    ).then(() => {});
-}

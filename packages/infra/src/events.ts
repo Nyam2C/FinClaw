@@ -1,20 +1,6 @@
 // packages/infra/src/events.ts
 import { EventEmitter } from 'node:events';
 
-/**
- * 이벤트 맵 타입 — 이벤트명 → 핸들러 시그니처 매핑
- *
- * 사용 예:
- * ```typescript
- * interface MyEvents {
- *   'user:login': (userId: string) => void;
- *   'error': (err: Error) => void;
- * }
- * const emitter = createTypedEmitter<MyEvents>();
- * ```
- */
-export type EventMap = Record<string, (...args: never[]) => void>;
-
 /** 타입 안전 EventEmitter 래퍼 */
 export interface TypedEmitter<T extends { [K in keyof T]: (...args: never[]) => void }> {
   on<K extends keyof T & string>(event: K, listener: T[K]): this;

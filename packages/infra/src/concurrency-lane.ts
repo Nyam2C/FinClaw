@@ -172,10 +172,6 @@ export class ConcurrencyLaneManager {
     return this.getLane(laneId).acquire(key);
   }
 
-  resetGeneration(laneId: LaneId): void {
-    this.getLane(laneId).resetGeneration();
-  }
-
   dispose(): void {
     for (const lane of this.lanes.values()) {
       lane.dispose();

@@ -107,8 +107,3 @@ function wrapLogger(
     },
   };
 }
-
-/** 기본 LoggerFactory 구현 */
-export const defaultLoggerFactory: LoggerFactory = {
-  create: createLogger,
-};
