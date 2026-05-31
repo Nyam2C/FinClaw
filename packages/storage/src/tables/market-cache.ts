@@ -66,8 +66,3 @@ export function getStaleCachedData<T>(db: DatabaseSync, key: string): T | null {
   }
   return JSON.parse(row.data) as T;
 }
-
-export function purgeExpiredCache(db: DatabaseSync): number {
-  const result = db.prepare('DELETE FROM market_cache WHERE expires_at <= ?').run(Date.now());
-  return Number(result.changes);
-}

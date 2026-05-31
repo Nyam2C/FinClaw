@@ -150,30 +150,6 @@ export function getMemory(db: DatabaseSync, id: string): MemoryEntry | null {
   return row ? rowToEntry(row) : null;
 }
 
-export function getMemoriesBySession(
-  db: DatabaseSync,
-  sessionKey: SessionKey,
-  options?: { type?: MemoryEntry['type']; limit?: number },
-): MemoryEntry[] {
-  let sql = 'SELECT * FROM memories WHERE session_key = ?';
-  const params: (string | number)[] = [sessionKey as string];
-
-  if (options?.type) {
-    sql += ' AND type = ?';
-    params.push(options.type);
-  }
-
-  sql += ' ORDER BY created_at DESC';
-
-  if (options?.limit) {
-    sql += ' LIMIT ?';
-    params.push(options.limit);
-  }
-
-  const rows = db.prepare(sql).all(...params) as unknown as MemoryRow[];
-  return rows.map(rowToEntry);
-}
-
 export function deleteMemory(db: DatabaseSync, id: string): boolean {
   db.exec('BEGIN');
   try {

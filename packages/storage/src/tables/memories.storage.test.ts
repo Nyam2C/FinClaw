@@ -6,7 +6,6 @@ import { searchVector } from '../search/vector.js';
 import {
   addMemory,
   getMemory,
-  getMemoriesBySession,
   deleteMemory,
   chunkMarkdown,
   addMemoryWithEmbedding,
@@ -70,21 +69,6 @@ describe('memories CRUD (storage)', () => {
 
   it('getMemory — null for nonexistent', () => {
     expect(getMemory(database.db, 'nonexistent')).toBeNull();
-  });
-
-  it('getMemoriesBySession', () => {
-    addMemory(database.db, mem('m1', 'content a'));
-    addMemory(database.db, mem('m2', 'content b'));
-    const results = getMemoriesBySession(database.db, sessionKey);
-    expect(results).toHaveLength(2);
-  });
-
-  it('getMemoriesBySession — type filter', () => {
-    addMemory(database.db, mem('m1', 'fact content', 'fact'));
-    addMemory(database.db, mem('m2', 'pref content', 'preference'));
-    const results = getMemoriesBySession(database.db, sessionKey, { type: 'fact' });
-    expect(results).toHaveLength(1);
-    expect(results[0].type).toBe('fact');
   });
 
   it('deleteMemory — removes vec0 + FTS entries', () => {

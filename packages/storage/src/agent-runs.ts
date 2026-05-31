@@ -199,18 +199,3 @@ export function linkMemoryToAgentRun(
     .run(memoryId, agentRunId);
   return result.changes > 0;
 }
-
-/**
- * Phase 32 G1: agent_runs.cli_session_id 를 갱신 (CLI 응답의 session_id audit 기록).
- * @returns 갱신 성공 여부 (해당 id 행 존재 여부)
- */
-export function updateAgentRunCliSession(
-  db: DatabaseSync,
-  agentRunId: string,
-  cliSessionId: string,
-): boolean {
-  const result = db
-    .prepare('UPDATE agent_runs SET cli_session_id = ? WHERE id = ?')
-    .run(cliSessionId, agentRunId);
-  return result.changes > 0;
-}
