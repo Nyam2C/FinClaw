@@ -65,9 +65,6 @@ describe('Dedupe', () => {
     expect(dedupe.check('none')).toBe(false);
     await expect(dedupe.peek('key')).resolves.toBe('val');
     expect(dedupe.peek('none')).toBeUndefined();
-
-    dedupe.clear();
-    expect(dedupe.size).toBe(0);
   });
 
   it('fn 에러 시 동일 키 재실행이 가능하다', async () => {

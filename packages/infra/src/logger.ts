@@ -16,11 +16,6 @@ export interface LoggerConfig {
   autoInjectContext?: boolean; // 기본: true
 }
 
-/** 로거 팩토리 인터페이스 — DI/테스트 교체 지점 */
-export interface LoggerFactory {
-  create(config: LoggerConfig): FinClawLogger;
-}
-
 export interface FinClawLogger {
   trace(msg: string, ...args: unknown[]): void;
   debug(msg: string, ...args: unknown[]): void;

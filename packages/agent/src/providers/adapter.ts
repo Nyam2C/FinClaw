@@ -32,10 +32,7 @@ export function getBreakerForProvider(provider: ProviderId): CircuitBreaker {
   return cb;
 }
 
-/** 테스트용 초기화 */
+/** 테스트 격리용 — module-singleton breakers Map 초기화. */
 export function resetBreakers(): void {
-  for (const cb of breakers.values()) {
-    cb.reset();
-  }
   breakers.clear();
 }

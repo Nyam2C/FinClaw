@@ -23,7 +23,6 @@ export {
 
 // 유틸
 export { formatDuration } from './format-duration.js';
-export { warnOnce, resetWarnings } from './warnings.js';
 // cron (Phase 39: server/automation/cron 에서 이동 — 순수 파서)
 export { parseCron, matches, nextRunAt, CronParseError, type CronExpression } from './cron.js';
 
@@ -34,25 +33,10 @@ export { runWithContext, getContext, getRequestId, type RequestContext } from '.
 export { assertSupportedRuntime, getNodeMajorVersion } from './runtime-guard.js';
 export { loadDotenv } from './dotenv.js';
 export { normalizeEnv, getEnv, requireEnv, isTruthyEnvValue, logAcceptedEnvOption } from './env.js';
-export {
-  getStateDir,
-  getDataDir,
-  getConfigDir,
-  getLogDir,
-  getSessionDir,
-  getLockDir,
-  getConfigFilePath,
-  getAllPaths,
-} from './paths.js';
 export { isMain } from './is-main.js';
 
 // 로깅
-export {
-  createLogger,
-  type LoggerConfig,
-  type LoggerFactory,
-  type FinClawLogger,
-} from './logger.js';
+export { createLogger, type LoggerConfig, type FinClawLogger } from './logger.js';
 export { attachFileTransport, type FileTransportConfig } from './logger-transports.js';
 
 // 이벤트
@@ -63,16 +47,6 @@ export {
   type TypedEmitter,
   type FinClawEventMap,
 } from './events.js';
-export {
-  pushSystemEvent,
-  drainSystemEvents,
-  peekSystemEvents,
-  clearSystemEvents,
-  onContextKeyChange,
-  resetForTest,
-  type SystemEvent,
-} from './system-events.js';
-
 // 네트워크
 export { validateUrlSafety, isPrivateIp, type SsrfPolicy } from './ssrf.js';
 export { safeFetch, safeFetchJson, type SafeFetchOptions } from './fetch.js';

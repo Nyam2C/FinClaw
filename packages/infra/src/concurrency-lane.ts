@@ -112,14 +112,11 @@ export class ConcurrencyLane {
     }
   }
 
-  /** Generation 리셋 — 진행 중인 모든 작업의 release를 무효화 */
-  resetGeneration(): void {
-    this.generation++;
-    this.clearWaiters();
-  }
-
-  /** 모든 대기열 정리 (LANE_CLEARED 에러로 reject) */
-  clearWaiters(): void {
+  /**
+   * 리소스 정리 — 대기열의 모든 waiter 를 reject 하고 active 카운트 초기화.
+   * 테스트 격리에서만 호출됨 (production 서버는 데몬으로 무한 동작).
+   */
+  dispose(): void {
     for (const [, queue] of this.waiters) {
       for (const waiter of queue) {
         clearTimeout(waiter.timer);
@@ -127,11 +124,6 @@ export class ConcurrencyLane {
       }
     }
     this.waiters.clear();
-  }
-
-  /** 리소스 정리 */
-  dispose(): void {
-    this.clearWaiters();
     this.active.clear();
   }
 
@@ -172,6 +164,7 @@ export class ConcurrencyLaneManager {
     return this.getLane(laneId).acquire(key);
   }
 
+  /** 테스트 격리용 — 모든 레인 정리. */
   dispose(): void {
     for (const lane of this.lanes.values()) {
       lane.dispose();

@@ -55,8 +55,6 @@ describe('MessageRouter', () => {
     expect(ctx.body).toBe('hello');
     expect(match.matchTier).toBe('default'); // extractBindingRules creates rules without channelId
     expect(signal).toBeInstanceOf(AbortSignal);
-
-    router.dispose();
   });
 
   it('동일 id 중복 메시지 필터링 (Dedupe)', async () => {
@@ -72,7 +70,6 @@ describe('MessageRouter', () => {
     await router.route(msg); // 중복
 
     expect(onProcess).toHaveBeenCalledTimes(1);
-    router.dispose();
   });
 
   it('EventBus에 channel:message 이벤트 발행', async () => {
@@ -88,8 +85,6 @@ describe('MessageRouter', () => {
 
     await router.route(makeMsg());
     expect(handler).toHaveBeenCalledTimes(1);
-
-    router.dispose();
   });
 
   it('큐 체인: 처리 중 enqueue된 메시지가 순차 처리됨', async () => {
@@ -116,7 +111,6 @@ describe('MessageRouter', () => {
     await new Promise((r) => setTimeout(r, 50));
 
     expect(calls).toEqual(['first', 'second']);
-    router.dispose();
   });
 
   it('onProcess 에러 시 다음 메시지 계속 처리', async () => {
@@ -142,7 +136,6 @@ describe('MessageRouter', () => {
     await new Promise((r) => setTimeout(r, 50));
 
     expect(onProcess).toHaveBeenCalledTimes(2);
-    router.dispose();
   });
 
   it('dispose 시 활성 AbortController abort', async () => {

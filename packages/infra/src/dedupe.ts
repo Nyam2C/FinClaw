@@ -68,11 +68,6 @@ export class Dedupe<T> {
     return this.inflight.get(key)?.promise;
   }
 
-  /** 전체 캐시 클리어 */
-  clear(): void {
-    this.inflight.clear();
-  }
-
   /** 현재 캐시 크기 */
   get size(): number {
     return this.inflight.size;
