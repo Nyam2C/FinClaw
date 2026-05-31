@@ -1017,6 +1017,248 @@ pnpm format && pnpm lint && pnpm typecheck && pnpm exec tsc --build && pnpm test
 - 커밋 14 개
 - 파일 삭제 10 개
 
+---
+
+# 마일스톤 C — T3 테스트만 21 items + KEEP 1 + ALREADY 19
+
+## 재검증 결과 (M-C 진입 전, M-A + M-B 후속 상태)
+
+| 패키지   | 감사 T3 | REMOVE |  KEEP |                                                    ALREADY_REMOVED |
+| -------- | ------: | -----: | ----: | -----------------------------------------------------------------: |
+| agent    |       6 |      1 |     0 |                                 5 (cooldown methods, M-B B-4 흡수) |
+| config   |       3 |      0 |     0 |                                        3 (sessions/, M-B B-3 흡수) |
+| gateway  |       4 |      4 |     0 |                                                                  0 |
+| infra    |      16 |      8 |     0 | 8 (system-events 5, warnings 2, paths getAllPaths 1, M-B B-5 흡수) |
+| server   |       1 |      0 |     1 |           0 (`MessageRouter.dispose` — TEST_FIXTURE, M-B B-5 결정) |
+| storage  |       4 |      3 |     0 |                                  1 (getMemoryChunks, M-B B-2 흡수) |
+| types    |       7 |      5 |     0 |            2 (FinClawError + normalizeSkillMetadata, M-B B-1 흡수) |
+| **합계** |  **41** | **21** | **1** |                                                             **19** |
+
+**검증 근거:** 워크플로우 `wf_3187b8e6-066` — 7 패키지 병렬 grep + test-only 분석.
+
+## KEEP (INTENTIONAL_CONTRACT)
+
+| 패키지 | 심볼                    | 사유                                                                                                          |
+| ------ | ----------------------- | ------------------------------------------------------------------------------------------------------------- |
+| server | `MessageRouter.dispose` | M-B B-5 가 이미 TEST_FIXTURE 로 결정. 테스트 cleanup 필수 (`'dispose 시 활성 AbortController abort'` 테스트). |
+
+## ALREADY_REMOVED (M-A/M-B 흡수)
+
+19 개 (위 표에 포함). 별 작업 없음.
+
+---
+
+## 마일스톤 C — 바텀업 패키지별 서브밀스톤 (5 sub-milestones)
+
+순서 = types → infra → agent → storage → gateway. server skip (KEEP 1 만).
+
+각 서브밀스톤 종료 게이트:
+
+```
+pnpm format && pnpm lint && pnpm typecheck && pnpm exec tsc --build && pnpm test --run
+```
+
+---
+
+### C-1 types (5 items)
+
+#### Step C-1-1: REMOVE `Result` type
+
+- **파일:** `packages/types/src/common.ts` L4-5
+- **제거 대상:**
+  ```ts
+  /** 성공/실패 결과 타입 */
+  export type Result<T, E = Error> = { ok: true; value: T } | { ok: false; error: E };
+  ```
+- **테스트 동반:** `packages/types/test/type-safety.test.ts` — L1 import 에서 `Result` 토큰 제거 + L30-40 `describe('Result 타입', ...)` 블록 전체 제거.
+- **재검증:** `rg "\bResult\b" packages/*/src --type ts` → 0 hits (Result 라는 흔한 이름이지만 type 임포트만 확인).
+
+#### Step C-1-2: REMOVE 3 config types (`ConfigFileSnapshot` / `ConfigChangeEvent` / `ConfigIoDeps`)
+
+- **파일:** `packages/types/src/config.ts`
+  - `ConfigFileSnapshot` (L155-165)
+  - `ConfigChangeEvent` (L173-178)
+  - `ConfigIoDeps` (L180-192)
+- **테스트 동반:** `packages/types/test/config.test.ts`
+  - L3-5 import 줄에서 토큰 제거
+  - L26-34 (`ConfigFileSnapshot` 검증)
+  - L36-42 (`ConfigChangeEvent` 검증)
+  - L44-52 (`ConfigIoDeps` 검증)
+- **재검증:** `rg "\bConfigFileSnapshot\b|\bConfigChangeEvent\b|\bConfigIoDeps\b" packages/*/src --type ts` → 0 hits.
+
+#### Step C-1-3: REMOVE `GetReplyOptions`
+
+- **파일:** `packages/types/src/message.ts` L84-92
+- **테스트 동반:** `packages/types/test/message.test.ts` — L7 import + L79-83 검증 블록.
+- **재검증:** `rg "\bGetReplyOptions\b" packages/*/src --type ts` → 0 hits.
+
+#### Verification C-1:
+
+```
+pnpm format && pnpm lint && pnpm typecheck && pnpm exec tsc --build && pnpm test --run
+```
+
+**Commit:** `refactor(phase45): remove dead types test-only (5 items)`
+
+---
+
+### C-2 infra (8 items, 2 file deletes)
+
+> **가장 큰 M-C 서브밀스톤.** env.ts + json-file.ts 통째 + retry 의 resolveRetryConfig.
+
+#### Step C-2-1: DELETE `infra/src/env.ts` (whole file + cascade getEnv)
+
+- **파일 삭제:** `packages/infra/src/env.ts` 전체 (`normalizeEnv` / `requireEnv` / `isTruthyEnvValue` / `logAcceptedEnvOption` + 함께 죽는 `getEnv`)
+- **테스트 파일 삭제:** `packages/infra/test/env.test.ts`
+- **배럴 동반:** `packages/infra/src/index.ts` L35 — `normalizeEnv, getEnv, requireEnv, isTruthyEnvValue, logAcceptedEnvOption` 전 줄 제거
+- **주의:** server/main.ts 가 자체 `requireEnv` 정의/사용 (다른 시그니처) — 무관.
+- **재검증:** `rg "\bnormalizeEnv\b|\brequireEnv\b|\bisTruthyEnvValue\b|\blogAcceptedEnvOption\b|\bgetEnv\b" packages/infra/src` → 0 hits. server/main.ts 의 `requireEnv` 는 영향 없음.
+
+#### Step C-2-2: DELETE `infra/src/json-file.ts` (whole file)
+
+- **파일 삭제:** `packages/infra/src/json-file.ts` 전체 (`readJsonFile` / `writeJsonFile` / `readJsonFileSync`)
+- **테스트 동반:** `packages/infra/test/fs-safe.test.ts`
+  - L6 import 줄에서 json-file 토큰 제거
+  - L100-140 4 `it` 블록 제거 (readJsonFile/writeJsonFile/readJsonFileSync 검증)
+- **배럴 동반:** `packages/infra/src/index.ts` L56 — `export { readJsonFile, writeJsonFile, readJsonFileSync } from './json-file.js';` 줄 제거
+- **주의:** M-B B-5 가 `ensureDir` LIVE 로 보존한 이유 = json-file.ts 가 사용. json-file.ts 삭제 시 ensureDir 라이브 소비자 `infra` 내부에 더 없음 → `ensureDir` 도 함께 dead 가능 (M-C 범위 외, 향후 phase46 검토).
+- **재검증:** `rg "\breadJsonFile\b|\bwriteJsonFile\b|\breadJsonFileSync\b" packages/*/src --type ts` → 0 hits.
+
+#### Step C-2-3: REMOVE `resolveRetryConfig`
+
+- **파일:** `packages/infra/src/retry.ts` L23-33
+- **테스트 동반:** `packages/infra/test/retry.test.ts` L4-20 (resolveRetryConfig 테스트 블록)
+- **배럴 동반:** `packages/infra/src/index.ts` L15 — `resolveRetryConfig` 토큰 제거 (`retry, resolveRetryConfig, type RetryOptions` 중간)
+- **재검증:** `rg "\bresolveRetryConfig\b" packages/*/src --type ts` → 0 hits.
+
+#### Verification C-2:
+
+```
+pnpm format && pnpm lint && pnpm typecheck && pnpm exec tsc --build && pnpm test --run
+```
+
+**Commit:** `refactor(phase45): remove dead infra test-only (8 items, 2 files delete)`
+
+---
+
+### C-3 agent (1 item)
+
+#### Step C-3-1: REMOVE `toApiToolDefinition`
+
+- **파일:** `packages/agent/src/agents/tools/registry.ts` L44-47
+- **테스트 동반:** `packages/agent/test/tool-registry.test.ts`
+  - L8 import 줄에서 `toApiToolDefinition` 제거
+  - L90-99 `it('RegisteredToolDefinition을 3필드 ToolDefinition으로 변환한다', ...)` 블록 제거
+- **배럴 동반 (2 곳):**
+  - `packages/agent/src/agents/tools/index.ts` L16 — `toApiToolDefinition` 토큰 제거 (`export { toApiToolDefinition, InMemoryToolRegistry, jsonSchemaToZod }`)
+  - `packages/agent/src/index.ts` L94 — `toApiToolDefinition` 토큰 제거 (전체 export 블록)
+- **재검증:** `rg "\btoApiToolDefinition\b" packages/*/src --type ts` → 0 hits.
+
+#### Verification C-3:
+
+```
+pnpm format && pnpm lint && pnpm typecheck && pnpm exec tsc --build && pnpm test --run
+```
+
+**Commit:** `refactor(phase45): remove dead agent test-only (toApiToolDefinition)`
+
+---
+
+### C-4 storage (3 items)
+
+#### Step C-4-1: REMOVE `updateAgentRunCliSession`
+
+- **파일:** `packages/storage/src/agent-runs.ts` L203-216
+- **테스트 동반:** `packages/storage/src/cli-session.migration.storage.test.ts` — L8 import + L93-113 검증 블록.
+- **배럴 동반:** `packages/storage/src/index.ts` L90 — `updateAgentRunCliSession` 토큰 제거
+- **재검증:** `rg "\bupdateAgentRunCliSession\b" packages/*/src --type ts` → 0 hits.
+
+#### Step C-4-2: REMOVE `purgeExpiredCache`
+
+- **파일:** `packages/storage/src/tables/market-cache.ts` L70-73
+- **테스트 동반:** `packages/storage/src/tables/market-cache.storage.test.ts` — L3 import + L44-71 검증 블록.
+- **배럴 동반:** `packages/storage/src/index.ts` L69 — `purgeExpiredCache` 토큰 제거
+- **재검증:** `rg "\bpurgeExpiredCache\b" packages/*/src --type ts` → 0 hits.
+
+#### Step C-4-3: REMOVE `getMemoriesBySession`
+
+- **파일:** `packages/storage/src/tables/memories.ts` L153-175
+- **테스트 동반:** `packages/storage/src/tables/memories.storage.test.ts` — L9 import + L75-88 검증 블록.
+- **배럴 동반:** `packages/storage/src/index.ts` L38 — `getMemoriesBySession` 토큰 제거
+- **재검증:** `rg "\bgetMemoriesBySession\b" packages/*/src --type ts` → 0 hits.
+
+#### Verification C-4:
+
+```
+pnpm format && pnpm lint && pnpm typecheck && pnpm exec tsc --build && pnpm test --run && pnpm test:storage
+```
+
+(test:storage 필수 — \*.storage.test.ts 가 별도 tier.)
+
+**Commit:** `refactor(phase45): remove dead storage test-only (3 fns)`
+
+---
+
+### C-5 gateway (4 items + ChatRegistry cascade)
+
+> ChatRegistry.on 제거 시 `emit`/`emitter`/`RegistryEvent` 도 동반 dead (워크플로우 식별).
+
+#### Step C-5-1: REMOVE `GatewayBroadcaster.subscribe` + `GatewayBroadcaster.unsubscribe`
+
+- **파일:** `packages/gateway/src/broadcaster.ts`
+  - `subscribe` (L154-166)
+  - `unsubscribe` (L168-180)
+- **테스트 동반:** `packages/gateway/src/broadcaster.test.ts` L216-240 (subscribe/unsubscribe 케이스 블록)
+- **주의:** broadcaster 의 다른 메서드 (`send` / `broadcastToChannel` / `broadcastShutdown` / `flushAll`) 는 라이브 — 보존. WS 연결 시 fixed auto-subscribe 사용 (`ws/connection.ts:48` hardcoded `['portfolio.changed', 'schedule.completed']`).
+- **재검증:** `rg "\.subscribe\(|\.unsubscribe\(" packages/gateway/src --type ts` → broadcaster 메서드 호출 0 hits.
+
+#### Step C-5-2: REMOVE `ChatRegistry.on` + `emit`/`emitter` cascade
+
+- **파일:** `packages/gateway/src/registry.ts`
+  - `on` 메서드 (L128-132)
+  - `emit` private 메서드 (L134-136)
+  - `emitter` 멤버 (L18) + 생성자에서 EventEmitter 인스턴스화
+  - 파일 헤더의 `EventEmitter` import + `RegistryEvent` import (L5)
+- **테스트 동반:** `packages/gateway/src/registry.test.ts` L71-81, L103-114 (event listener 케이스)
+- **type 동반:** `packages/gateway/src/rpc/types.ts` L166 — `RegistryEvent` type 정의 (가능 시 통째 제거)
+- **주의:** cascade 가 크다면 본 step 분리 — `on` 만 제거 후 typecheck → emit/emitter/RegistryEvent 자연 dead 식별 후 별 step.
+- **재검증:** `rg "registry\.on\(|\.emit\(" packages/gateway/src --type ts` → ChatRegistry 호출 0.
+
+#### Step C-5-3: REMOVE `sendNotification`
+
+- **파일:** `packages/gateway/src/ws/connection.ts` L95-112
+- **테스트 동반:** `packages/gateway/src/ws/connection.test.ts` — L10 import + L224-251 검증 블록.
+- **재검증:** `rg "\bsendNotification\b" packages/*/src --type ts` → 0 hits.
+
+#### Verification C-5:
+
+```
+pnpm format && pnpm lint && pnpm typecheck && pnpm exec tsc --build && pnpm test --run
+```
+
+**Commit:** `refactor(phase45): remove dead gateway test-only (4 items + ChatRegistry event cascade)`
+
+---
+
+## M-C 통계
+
+- 서브밀스톤 5 개 (C-1 ~ C-5)
+- step 12 개 (C-1: 3, C-2: 3, C-3: 1, C-4: 3, C-5: 3) → 21 items × cascade
+- KEEP 1 개 (`MessageRouter.dispose` — M-B 결정 유지)
+- ALREADY_REMOVED 19 개 (M-A/M-B 흡수)
+- 게이트 5 회
+- 커밋 5 개
+- 파일 삭제 4 개 (infra: env.ts + env.test.ts + json-file.ts; types/storage: 0)
+- 배럴 정리 8+ 곳
+
+## 통합 통계 (M-A + M-B + M-C)
+
+- 서브밀스톤 19 개 (M-A 9 + M-B 5 + M-C 5)
+- step 64 개
+- 게이트 19 회
+- 커밋 19 개 + docs 3 개
+- 파일 삭제 14 개
+
 ## 검증 요약 (각 step 의 재검증 명령은 step 안에)
 
-전 step 의 재검증 = `rg "\b<SYMBOL>\b" packages/*/src --type ts` 가 0 hits. 게이트 = format/lint/typecheck/build/test 전부.
+전 step 의 재검증 = `rg "\b<SYMBOL>\b" packages/*/src --type ts` 가 0 hits. 게이트 = format/lint/typecheck/build/test 전부. C-4 는 추가로 `pnpm test:storage`.
