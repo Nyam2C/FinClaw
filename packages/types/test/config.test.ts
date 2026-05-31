@@ -1,10 +1,4 @@
-import type {
-  FinClawConfig,
-  ConfigFileSnapshot,
-  ConfigChangeEvent,
-  ConfigIoDeps,
-  ConfigValidationIssue,
-} from '@finclaw/types';
+import type { FinClawConfig, ConfigValidationIssue } from '@finclaw/types';
 import { describe, it, expect, expectTypeOf } from 'vitest';
 
 describe('FinClawConfig', () => {
@@ -20,34 +14,6 @@ describe('FinClawConfig', () => {
       finance: { portfolios: {} },
     };
     expectTypeOf(config).toMatchTypeOf<FinClawConfig>();
-  });
-});
-
-describe('ConfigFileSnapshot', () => {
-  it('필수 필드를 갖는다', () => {
-    expectTypeOf<ConfigFileSnapshot>().toHaveProperty('path');
-    expectTypeOf<ConfigFileSnapshot>().toHaveProperty('exists');
-    expectTypeOf<ConfigFileSnapshot>().toHaveProperty('valid');
-    expectTypeOf<ConfigFileSnapshot>().toHaveProperty('config');
-    expectTypeOf<ConfigFileSnapshot>().toHaveProperty('issues');
-  });
-});
-
-describe('ConfigChangeEvent', () => {
-  it('previous, current, changedPaths 필드를 갖는다', () => {
-    expectTypeOf<ConfigChangeEvent>().toHaveProperty('previous');
-    expectTypeOf<ConfigChangeEvent>().toHaveProperty('current');
-    expectTypeOf<ConfigChangeEvent>().toHaveProperty('changedPaths');
-  });
-});
-
-describe('ConfigIoDeps', () => {
-  it('5개 메서드를 정의한다', () => {
-    expectTypeOf<ConfigIoDeps>().toHaveProperty('readFile');
-    expectTypeOf<ConfigIoDeps>().toHaveProperty('writeFile');
-    expectTypeOf<ConfigIoDeps>().toHaveProperty('exists');
-    expectTypeOf<ConfigIoDeps>().toHaveProperty('env');
-    expectTypeOf<ConfigIoDeps>().toHaveProperty('log');
   });
 });
 

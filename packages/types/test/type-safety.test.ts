@@ -1,4 +1,4 @@
-import type { Timestamp, SessionKey, AgentId, ChannelId, Result } from '@finclaw/types';
+import type { Timestamp, SessionKey, AgentId, ChannelId } from '@finclaw/types';
 import { createTimestamp, createSessionKey, createAgentId, createChannelId } from '@finclaw/types';
 import { describe, it, expectTypeOf } from 'vitest';
 
@@ -24,17 +24,5 @@ describe('Brand 타입 안전성', () => {
     expectTypeOf<SessionKey>().not.toMatchTypeOf<AgentId>();
     expectTypeOf<AgentId>().not.toMatchTypeOf<ChannelId>();
     expectTypeOf<ChannelId>().not.toMatchTypeOf<SessionKey>();
-  });
-});
-
-describe('Result 타입', () => {
-  it('ok: true일 때 value를 갖는다', () => {
-    const success: Result<number> = { ok: true, value: 42 };
-    expectTypeOf(success).toMatchTypeOf<Result<number>>();
-  });
-
-  it('ok: false일 때 error를 갖는다', () => {
-    const failure: Result<number> = { ok: false, error: new Error('fail') };
-    expectTypeOf(failure).toMatchTypeOf<Result<number>>();
   });
 });

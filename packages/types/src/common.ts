@@ -1,9 +1,6 @@
 /** 브랜드 타입 -- 원시 타입에 의미론적 구분 부여 */
 export type Brand<T, B extends string> = T & { readonly __brand: B };
 
-/** 결과 타입 -- 에러 핸들링의 명시적 표현 */
-export type Result<T, E = Error> = { ok: true; value: T } | { ok: false; error: E };
-
 /** 타임스탬프 (밀리초 Unix epoch) */
 export type Timestamp = Brand<number, 'Timestamp'>;
 
