@@ -43,55 +43,6 @@ export class PortfolioStore {
     }));
   }
 
-  /** 포트폴리오 생성/갱신 */
-  upsertPortfolio(portfolio: Pick<Portfolio, 'id' | 'name' | 'currency'>): void {
-    this.db
-      .prepare(
-        `INSERT INTO portfolios (id, name, currency, updated_at)
-         VALUES (?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET
-           name = excluded.name,
-           currency = excluded.currency,
-           updated_at = excluded.updated_at`,
-      )
-      .run(portfolio.id, portfolio.name, portfolio.currency as string, Date.now());
-  }
-
-  /** 포트폴리오 삭제 (CASCADE로 holdings도 삭제) */
-  deletePortfolio(id: string): boolean {
-    const result = this.db.prepare('DELETE FROM portfolios WHERE id = ?').run(id);
-    return Number(result.changes) > 0;
-  }
-
-  /** 보유 종목 추가/갱신 */
-  upsertHolding(
-    portfolioId: string,
-    holding: Pick<PortfolioHolding, 'symbol' | 'quantity' | 'averageCost'>,
-  ): void {
-    this.db
-      .prepare(
-        `INSERT INTO portfolio_holdings (portfolio_id, symbol, quantity, average_cost)
-         VALUES (?, ?, ?, ?)
-         ON CONFLICT(portfolio_id, symbol) DO UPDATE SET
-           quantity = excluded.quantity,
-           average_cost = excluded.average_cost`,
-      )
-      .run(portfolioId, holding.symbol as string, holding.quantity, holding.averageCost);
-
-    // updated_at 갱신
-    this.db
-      .prepare('UPDATE portfolios SET updated_at = ? WHERE id = ?')
-      .run(Date.now(), portfolioId);
-  }
-
-  /** 보유 종목 제거 */
-  removeHolding(portfolioId: string, symbol: TickerSymbol): boolean {
-    const result = this.db
-      .prepare('DELETE FROM portfolio_holdings WHERE portfolio_id = ? AND symbol = ?')
-      .run(portfolioId, symbol as string);
-    return Number(result.changes) > 0;
-  }
-
   // ─── 내부 헬퍼 ───
 
   private getHoldings(portfolioId: string): PortfolioHolding[] {

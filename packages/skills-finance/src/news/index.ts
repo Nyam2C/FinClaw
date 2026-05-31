@@ -2,7 +2,6 @@ import type { DatabaseSync } from 'node:sqlite';
 // packages/skills-finance/src/news/index.ts
 import type { ModelCatalog, ProfileHealthMonitor, ToolRegistry } from '@finclaw/agent';
 import { runCliAgent } from '@finclaw/agent';
-import type { SkillMetadata } from '@finclaw/types';
 import type { KeyRotator } from '../shared/key-rotator.js';
 import { createNewsAggregator } from './aggregator.js';
 import { PortfolioStore } from './portfolio/store.js';
@@ -122,19 +121,3 @@ export async function registerNewsTools(
     keyRotators: { newsdata: config.newsdataRotator },
   };
 }
-
-/** 스킬 메타데이터 */
-export const NEWS_SKILL_METADATA: SkillMetadata = {
-  name: 'news-analysis',
-  description: '금융 뉴스 수집, AI 시장 분석, 포트폴리오 추적을 제공합니다.',
-  version: '1.0.0',
-  requires: {
-    env: [],
-    optionalEnv: ['NEWSAPI_KEY', 'ALPHA_VANTAGE_KEY', 'FINNHUB_KEY', 'NEWSDATA_API_KEY'],
-  },
-  tools: [
-    { name: 'get_financial_news', reason: '리스트 반환' },
-    { name: 'analyze_market', reason: '금융 판단, 환각 방지' },
-    { name: 'get_portfolio_summary', reason: '포트 요약 (판단 일부 포함)' },
-  ],
-};
