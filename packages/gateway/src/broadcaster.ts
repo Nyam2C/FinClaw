@@ -151,34 +151,6 @@ export class GatewayBroadcaster {
     return sent;
   }
 
-  /** 구독 추가 */
-  subscribe(
-    connectionId: string,
-    channel: string,
-    connections: Map<string, WsConnection>,
-  ): boolean {
-    const conn = connections.get(connectionId);
-    if (!conn) {
-      return false;
-    }
-    conn.subscriptions.add(channel);
-    return true;
-  }
-
-  /** 구독 해제 */
-  unsubscribe(
-    connectionId: string,
-    channel: string,
-    connections: Map<string, WsConnection>,
-  ): boolean {
-    const conn = connections.get(connectionId);
-    if (!conn) {
-      return false;
-    }
-    conn.subscriptions.delete(channel);
-    return true;
-  }
-
   /** 종료 알림 broadcast */
   broadcastShutdown(connections: Map<string, WsConnection>): void {
     for (const conn of connections.values()) {

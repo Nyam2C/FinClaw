@@ -162,12 +162,6 @@ export interface ActiveSession {
   readonly sessionKey: SessionKey;
 }
 
-/** 레지스트리 이벤트 */
-export type RegistryEvent =
-  | { readonly type: 'session_started'; readonly session: ActiveSession }
-  | { readonly type: 'session_completed'; readonly sessionId: string; readonly durationMs: number }
-  | { readonly type: 'session_error'; readonly sessionId: string; readonly error: Error };
-
 // ── Phase 11 타입 ──
 
 /** 설정 변경 이벤트 */

@@ -213,32 +213,6 @@ describe('GatewayBroadcaster', () => {
     });
   });
 
-  describe('subscribe / unsubscribe', () => {
-    it('구독 추가 성공', () => {
-      const connections = new Map<string, WsConnection>();
-      connections.set('c1', createMockConn('c1'));
-
-      expect(broadcaster.subscribe('c1', 'config.updated', connections)).toBe(true);
-      expect(connections.get('c1')?.subscriptions.has('config.updated')).toBe(true);
-    });
-
-    it('존재하지 않는 연결 → false', () => {
-      const connections = new Map<string, WsConnection>();
-
-      expect(broadcaster.subscribe('nope', 'config.updated', connections)).toBe(false);
-    });
-
-    it('구독 해제 성공', () => {
-      const connections = new Map<string, WsConnection>();
-      const c1 = createMockConn('c1');
-      c1.subscriptions.add('config.updated');
-      connections.set('c1', c1);
-
-      expect(broadcaster.unsubscribe('c1', 'config.updated', connections)).toBe(true);
-      expect(connections.get('c1')?.subscriptions.has('config.updated')).toBe(false);
-    });
-  });
-
   describe('broadcastShutdown', () => {
     it('sends system.shutdown to all open connections', () => {
       const connections = new Map<string, WsConnection>();
