@@ -3,7 +3,6 @@ import type {
   RpcRequest,
   RpcResponse,
   JsonRpcNotification,
-  BroadcastChannel,
   SessionKey,
 } from '@finclaw/types';
 // packages/server/src/gateway/rpc/types.ts
@@ -15,10 +14,7 @@ export type {
   RpcResponse,
   RpcError,
   RpcMethod,
-  WsEvent,
-  GatewayStatus,
   JsonRpcNotification,
-  BroadcastChannel,
 } from '@finclaw/types';
 export { RPC_ERROR_CODES } from '@finclaw/types';
 
@@ -89,9 +85,6 @@ export interface WsConnection {
   lastPongAt: number;
   readonly subscriptions: Set<string>;
 }
-
-/** WebSocket 아웃바운드 메시지 */
-export type WsOutboundMessage = RpcResponse | JsonRpcNotification;
 
 // === 서버 설정 ===
 
@@ -168,12 +161,6 @@ export interface ActiveSession {
   /** 대화 이력 저장 키 — storage.upsertConversation/deleteConversation에 사용 */
   readonly sessionKey: SessionKey;
 }
-
-/** 레지스트리 이벤트 */
-export type RegistryEvent =
-  | { readonly type: 'session_started'; readonly session: ActiveSession }
-  | { readonly type: 'session_completed'; readonly sessionId: string; readonly durationMs: number }
-  | { readonly type: 'session_error'; readonly sessionId: string; readonly error: Error };
 
 // ── Phase 11 타입 ──
 

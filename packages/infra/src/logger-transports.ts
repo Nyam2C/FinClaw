@@ -1,7 +1,12 @@
 // packages/infra/src/logger-transports.ts
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
-import { getLogDir } from './paths.js';
+
+/** finclaw 기본 로그 디렉터리 (config.path 미주입 시 fallback). */
+function defaultLogDir(): string {
+  return path.join(os.homedir(), '.finclaw', 'logs');
+}
 
 export interface FileTransportConfig {
   enabled: boolean;
@@ -24,7 +29,7 @@ export function attachFileTransport(
     return undefined;
   }
 
-  const logDir = config.path ?? getLogDir();
+  const logDir = config.path ?? defaultLogDir();
   fs.mkdirSync(logDir, { recursive: true });
 
   const logFile = path.join(logDir, 'finclaw.log');
@@ -81,19 +86,4 @@ function rotateFiles(basePath: string, maxFiles: number): void {
       // 파일이 없으면 무시
     }
   }
-}
-
-/**
- * 모든 트랜스포트의 버퍼 플러시
- *
- * graceful shutdown 시 호출.
- * 반환된 Promise는 모든 스트림이 flush되면 resolve.
- */
-export function createFlushFn(streams: fs.WriteStream[]): () => Promise<void> {
-  return () =>
-    Promise.all(
-      streams.map(
-        (s) => new Promise<void>((resolve) => (s.writableFinished ? resolve() : s.end(resolve))),
-      ),
-    ).then(() => {});
 }

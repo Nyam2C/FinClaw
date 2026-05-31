@@ -1,22 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { retry, resolveRetryConfig } from '../src/retry.js';
-
-describe('resolveRetryConfig', () => {
-  it('기본값을 적용한다', () => {
-    const config = resolveRetryConfig();
-    expect(config.maxAttempts).toBe(3);
-    expect(config.minDelay).toBe(1000);
-    expect(config.maxDelay).toBe(30000);
-    expect(config.jitter).toBe(true);
-  });
-
-  it('부분 설정을 병합한다', () => {
-    const config = resolveRetryConfig({ maxAttempts: 5, jitter: false });
-    expect(config.maxAttempts).toBe(5);
-    expect(config.minDelay).toBe(1000);
-    expect(config.jitter).toBe(false);
-  });
-});
+import { retry } from '../src/retry.js';
 
 describe('retry', () => {
   it('첫 시도 성공 시 즉시 반환한다', async () => {

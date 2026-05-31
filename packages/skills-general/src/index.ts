@@ -2,7 +2,7 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { ToolRegistry } from '@finclaw/agent';
-import type { ScheduleRpc, SkillMetadata } from '@finclaw/types';
+import type { ScheduleRpc } from '@finclaw/types';
 import { registerDatetimeTool } from './datetime.js';
 import { registerFileReadTool } from './file-read.js';
 import { registerScheduleTool } from './schedule-tool.js';
@@ -43,22 +43,6 @@ export function registerGeneralTools(
     registerScheduleTool(registry, config.scheduleRpc);
   }
 }
-
-export const GENERAL_SKILL_METADATA: SkillMetadata = {
-  name: 'general',
-  description: '타임존 시각, 웹 콘텐츠 조회, 로컬 파일 읽기 등 범용 도구 모음.',
-  version: '1.0.0',
-  requires: {
-    env: [],
-    optionalEnv: ['FINCLAW_FILE_ROOT'],
-  },
-  tools: [
-    { name: 'get_current_datetime', reason: '순수 함수' },
-    { name: 'web_fetch', reason: '단순 fetch' },
-    { name: 'read_local_file', reason: '단순 fetch' },
-    { name: 'schedule_manage', reason: 'cron 의도 해석 필요' },
-  ],
-};
 
 function resolveDefaultFileRoot(): string {
   return process.env.FINCLAW_FILE_ROOT ?? join(homedir(), '.finclaw', 'workspace');

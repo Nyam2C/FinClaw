@@ -110,6 +110,15 @@ export class MessageRouter {
     }
   }
 
+  /** 테스트 격리용 cleanup — 활성 AbortController abort + lane manager 정리. */
+  dispose(): void {
+    for (const controller of this.activeControllers.values()) {
+      controller.abort();
+    }
+    this.activeControllers.clear();
+    this.laneManager.dispose();
+  }
+
   private async processNext(sessionKey: SessionKey, match: BindingMatch): Promise<void> {
     const entry = this.queue.dequeue(sessionKey);
     if (!entry) {
@@ -148,16 +157,6 @@ export class MessageRouter {
         void this.processNext(sessionKey, match);
       }
     }
-  }
-
-  /** 리소스 정리 */
-  dispose(): void {
-    for (const controller of this.activeControllers.values()) {
-      controller.abort();
-    }
-    this.activeControllers.clear();
-    this.laneManager.dispose();
-    this.dedupe.clear();
   }
 }
 

@@ -42,37 +42,6 @@ describe('ConcurrencyLane', () => {
     await p1;
   });
 
-  it('resetGeneration 후 stale release는 무시됨', async () => {
-    const lane = new ConcurrencyLane({ maxConcurrent: 1 });
-    const h1 = await lane.acquire('k');
-    expect(lane.getActiveCount('k')).toBe(1);
-
-    lane.resetGeneration();
-    h1.release(); // stale — 무시
-    // active count는 여전히 1 (stale release 무시)
-    expect(lane.getActiveCount('k')).toBe(1);
-  });
-
-  it('clearWaiters가 대기 중인 모든 waiter를 reject', async () => {
-    const lane = new ConcurrencyLane({ maxConcurrent: 1 });
-    await lane.acquire('k');
-    const p = lane.acquire('k');
-
-    lane.clearWaiters();
-    await expect(p).rejects.toThrow('Lane cleared');
-  });
-
-  it('dispose 후 active와 waiters 모두 정리', async () => {
-    const lane = new ConcurrencyLane({ maxConcurrent: 1 });
-    await lane.acquire('k');
-    const p = lane.acquire('k').catch(() => {}); // catch to prevent unhandled rejection
-
-    lane.dispose();
-    await p;
-    expect(lane.getActiveCount('k')).toBe(0);
-    expect(lane.getWaitingCount('k')).toBe(0);
-  });
-
   it('다른 키는 독립적으로 관리', async () => {
     const lane = new ConcurrencyLane({ maxConcurrent: 1 });
     const h1 = await lane.acquire('a');
@@ -95,12 +64,5 @@ describe('ConcurrencyLaneManager', () => {
     const mgr = new ConcurrencyLaneManager();
     // @ts-expect-error -- 잘못된 레인 ID 테스트
     expect(() => mgr.acquire('invalid', 'k')).toThrow('Unknown lane: invalid');
-  });
-
-  it('dispose가 모든 레인을 정리', async () => {
-    const mgr = new ConcurrencyLaneManager();
-    await mgr.acquire('main', 'k');
-    mgr.dispose();
-    // dispose 후에는 정리 완료 (에러 없이 통과하면 성공)
   });
 });

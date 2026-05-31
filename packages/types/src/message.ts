@@ -81,16 +81,6 @@ export interface ReplyPayload {
   channelData?: Record<string, unknown>;
 }
 
-/** 응답 생성 옵션 */
-export interface GetReplyOptions {
-  runId: string;
-  abortSignal?: AbortSignal;
-  onPartialReply?: (text: string) => void;
-  onModelSelected?: (model: string, provider: string) => void;
-  onToolResult?: (toolName: string, result: unknown) => void;
-  blockReplyTimeoutMs?: number;
-}
-
 /** 아웃바운드 메시지 */
 export interface OutboundMessage {
   channelId: ChannelId;

@@ -5,7 +5,7 @@ import type {
   ToolExecutionContext,
   ToolResult,
 } from '../src/agents/tools/registry.js';
-import { InMemoryToolRegistry, toApiToolDefinition } from '../src/agents/tools/registry.js';
+import { InMemoryToolRegistry } from '../src/agents/tools/registry.js';
 
 // ── 헬퍼 ──
 
@@ -85,17 +85,6 @@ describe('InMemoryToolRegistry', () => {
     expect(registry.listByGroup('finance')).toHaveLength(2);
     expect(registry.listByGroup('system')).toHaveLength(1);
     expect(registry.listByGroup('web')).toHaveLength(0);
-  });
-
-  // ── toApiToolDefinition ──
-
-  it('RegisteredToolDefinition을 3필드 ToolDefinition으로 변환한다', () => {
-    const reg = makeDef({ name: 'x', group: 'finance', isTransactional: true });
-    const api = toApiToolDefinition(reg);
-
-    expect(api).toEqual({ name: 'x', description: 'A test tool', inputSchema: {} });
-    expect(api).not.toHaveProperty('group');
-    expect(api).not.toHaveProperty('isTransactional');
   });
 
   // ── execute ──

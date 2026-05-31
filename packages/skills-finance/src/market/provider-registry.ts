@@ -26,16 +26,6 @@ export class ProviderRegistry {
     }
     throw new Error(`No provider found for symbol: ${symbol}`);
   }
-
-  /** fallback chain (기존 forex 사용처 유지) */
-  resolveWithFallback(symbol: TickerSymbol): MarketDataProvider[] {
-    return this.providers.filter((p) => p.supports(symbol));
-  }
-
-  /** Phase 27 D: status 표시용. 등록된 provider 목록 readonly view. */
-  list(): ReadonlyArray<MarketDataProvider> {
-    return this.providers;
-  }
 }
 
 /**

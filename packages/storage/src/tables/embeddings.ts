@@ -48,17 +48,6 @@ export function setCachedEmbedding(
   ).run(provider, model, hash, buf, embedding.length, Date.now());
 }
 
-export function deleteCachedEmbeddings(db: DatabaseSync, provider: string, model?: string): number {
-  if (model) {
-    const result = db
-      .prepare('DELETE FROM embedding_cache WHERE provider = ? AND model = ?')
-      .run(provider, model);
-    return Number(result.changes);
-  }
-  const result = db.prepare('DELETE FROM embedding_cache WHERE provider = ?').run(provider);
-  return Number(result.changes);
-}
-
 // ─── Batch embed with cache ───
 
 function sha256(text: string): string {

@@ -60,11 +60,6 @@ export class CircuitBreaker {
   getFailures(): number {
     return this.failures;
   }
-  reset(): void {
-    this.state = 'closed';
-    this.failures = 0;
-    this.halfOpenAttempts = 0;
-  }
 
   private onSuccess(): void {
     this.failures = 0;

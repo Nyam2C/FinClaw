@@ -91,22 +91,3 @@ export async function handleWsConnection(
     getEventBus().emit('gateway:ws:disconnect', conn.id, code);
   });
 }
-
-/** 특정 연결에 알림 전송 */
-export function sendNotification(
-  ctx: GatewayServerContext,
-  connectionId: string,
-  method: string,
-  params: Record<string, unknown>,
-): void {
-  const conn = ctx.connections.get(connectionId);
-  if (conn && conn.ws.readyState === conn.ws.OPEN) {
-    conn.ws.send(
-      JSON.stringify({
-        jsonrpc: '2.0',
-        method,
-        params,
-      }),
-    );
-  }
-}

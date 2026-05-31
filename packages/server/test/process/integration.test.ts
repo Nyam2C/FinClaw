@@ -53,7 +53,6 @@ describe('Integration: route → dedupe → queue → lane → process → abort
     await router.route(makeMsg({ body: 'second' }));
 
     expect(processLog).toEqual(['first', 'second']);
-    router.dispose();
   });
 
   it('중복 메시지는 dedupe로 필터링', async () => {
@@ -65,7 +64,6 @@ describe('Integration: route → dedupe → queue → lane → process → abort
     await router.route(msg);
 
     expect(onProcess).toHaveBeenCalledTimes(1);
-    router.dispose();
   });
 
   it('AbortSignal이 onProcess에 전달됨', async () => {
@@ -81,7 +79,6 @@ describe('Integration: route → dedupe → queue → lane → process → abort
 
     expect(signal).toBeDefined();
     expect(signal?.aborted).toBe(false);
-    router.dispose();
   });
 
   it('세션 키 결정성 — 동일 입력은 동일 세션에 라우팅', () => {
@@ -103,17 +100,5 @@ describe('Integration: route → dedupe → queue → lane → process → abort
     // 에러 발생하지만 route()가 reject되지 않아야 함
     await expect(router.route(makeMsg())).resolves.toBeUndefined();
     expect(logger.error).toHaveBeenCalled();
-    router.dispose();
-  });
-
-  it('dispose 후에는 새 route 호출 시 정상 동작 (새 인스턴스 필요)', async () => {
-    const onProcess = vi.fn().mockResolvedValue(undefined);
-    const router = new MessageRouter({ config, logger: makeLogger(), onProcess });
-
-    await router.route(makeMsg());
-    router.dispose();
-
-    // dispose 후에도 route는 에러 없이 동작해야 함 (dedupe cleared)
-    // 단, laneManager가 dispose되어 acquire 실패 가능 → 새 인스턴스 권장
   });
 });

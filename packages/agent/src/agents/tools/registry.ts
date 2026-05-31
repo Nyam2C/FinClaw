@@ -19,21 +19,6 @@ import {
 
 // ── 타입 ──
 
-/** 도구 입력 파라미터 스키마 (JSON Schema 서브셋, 문서/검증용) */
-export interface ToolInputSchema {
-  readonly type: 'object';
-  readonly properties: Record<string, ToolPropertySchema>;
-  readonly required?: readonly string[];
-}
-
-export interface ToolPropertySchema {
-  readonly type: 'string' | 'number' | 'boolean' | 'array' | 'object';
-  readonly description: string;
-  readonly enum?: readonly string[];
-  readonly items?: ToolPropertySchema;
-  readonly default?: unknown;
-}
-
 /** Phase 7 확장 도구 정의 — 기존 ToolDefinition 3필드를 상속 */
 export interface RegisteredToolDefinition extends ToolDefinition {
   readonly group: ToolGroupId;
@@ -54,11 +39,6 @@ export interface RegisteredToolDefinition extends ToolDefinition {
   readonly outputSchema?: import('zod/v4').ZodType<unknown>;
   /** Phase 30 B1: outputSchema 가 정의되어도 enforce 여부를 별도 토글 (false → 검증 skip). */
   readonly enforceStructuredOutput?: boolean;
-}
-
-/** RegisteredToolDefinition → ToolDefinition 변환 (LLM API 전송용) */
-export function toApiToolDefinition(reg: RegisteredToolDefinition): ToolDefinition {
-  return { name: reg.name, description: reg.description, inputSchema: reg.inputSchema };
 }
 
 /** 도구 실행 함수 */

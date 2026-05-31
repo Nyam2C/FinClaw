@@ -6,9 +6,7 @@ import { searchVector } from '../search/vector.js';
 import {
   addMemory,
   getMemory,
-  getMemoriesBySession,
   deleteMemory,
-  getMemoryChunks,
   chunkMarkdown,
   addMemoryWithEmbedding,
 } from './memories.js';
@@ -73,31 +71,25 @@ describe('memories CRUD (storage)', () => {
     expect(getMemory(database.db, 'nonexistent')).toBeNull();
   });
 
-  it('getMemoriesBySession', () => {
-    addMemory(database.db, mem('m1', 'content a'));
-    addMemory(database.db, mem('m2', 'content b'));
-    const results = getMemoriesBySession(database.db, sessionKey);
-    expect(results).toHaveLength(2);
-  });
-
-  it('getMemoriesBySession — type filter', () => {
-    addMemory(database.db, mem('m1', 'fact content', 'fact'));
-    addMemory(database.db, mem('m2', 'pref content', 'preference'));
-    const results = getMemoriesBySession(database.db, sessionKey, { type: 'fact' });
-    expect(results).toHaveLength(1);
-    expect(results[0].type).toBe('fact');
-  });
-
   it('deleteMemory — removes vec0 + FTS entries', () => {
     addMemory(database.db, mem('m1', 'to delete content'));
 
-    const chunks = getMemoryChunks(database.db, 'm1');
-    expect(chunks.length).toBeGreaterThan(0);
+    const beforeCount = (
+      database.db
+        .prepare('SELECT COUNT(*) as c FROM memory_chunks WHERE memory_id = ?')
+        .get('m1') as { c: number }
+    ).c;
+    expect(beforeCount).toBeGreaterThan(0);
 
     const deleted = deleteMemory(database.db, 'm1');
     expect(deleted).toBe(true);
     expect(getMemory(database.db, 'm1')).toBeNull();
-    expect(getMemoryChunks(database.db, 'm1')).toHaveLength(0);
+    const afterCount = (
+      database.db
+        .prepare('SELECT COUNT(*) as c FROM memory_chunks WHERE memory_id = ?')
+        .get('m1') as { c: number }
+    ).c;
+    expect(afterCount).toBe(0);
 
     // FTS should be empty
     const ftsCount = database.db
@@ -144,7 +136,9 @@ describe('addMemoryWithEmbedding (storage)', () => {
     const entry = getMemory(database.db, 'm1');
     expect(entry).not.toBeNull();
 
-    const chunks = getMemoryChunks(database.db, 'm1');
+    const chunks = database.db
+      .prepare('SELECT model FROM memory_chunks WHERE memory_id = ?')
+      .all('m1') as Array<{ model: string }>;
     expect(chunks.length).toBeGreaterThan(0);
     expect(chunks[0].model).toBe('mock-1024');
 
@@ -177,7 +171,9 @@ describe('addMemoryWithEmbedding (storage)', () => {
     expect(provider.embedBatchCalls).toBe(1);
 
     // Verify cache is populated
-    const chunks = getMemoryChunks(database.db, 'm1');
+    const chunks = database.db
+      .prepare('SELECT text FROM memory_chunks WHERE memory_id = ?')
+      .all('m1') as Array<{ text: string }>;
     const cacheCount = database.db
       .prepare('SELECT COUNT(*) as c FROM embedding_cache')
       .get() as unknown as { c: number };

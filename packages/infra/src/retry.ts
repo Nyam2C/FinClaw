@@ -20,18 +20,6 @@ export interface RetryOptions {
   onRetry?: (error: unknown, attempt: number, delay: number) => void;
 }
 
-/** Partial config → 완전한 config으로 병합 (기본값 적용) */
-export function resolveRetryConfig(
-  partial?: Partial<RetryOptions>,
-): Required<Pick<RetryOptions, 'maxAttempts' | 'minDelay' | 'maxDelay' | 'jitter'>> {
-  return {
-    maxAttempts: partial?.maxAttempts ?? 3,
-    minDelay: partial?.minDelay ?? 1000,
-    maxDelay: partial?.maxDelay ?? 30000,
-    jitter: partial?.jitter ?? true,
-  };
-}
-
 /**
  * 지수 백오프 재시도
  *

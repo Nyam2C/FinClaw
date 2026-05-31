@@ -61,10 +61,6 @@ export type {
   CliOutputMode,
 } from './providers/claude-cli/types.js';
 
-// ─── auth: cooldown ───
-export { CooldownTracker } from './auth/cooldown.js';
-export type { CooldownEntry } from './auth/cooldown.js';
-
 // ─── auth: health ───
 export { ProfileHealthMonitor } from './auth/health.js';
 export type {
@@ -77,9 +73,6 @@ export type {
 // ── Phase 7: Tools ──
 export type {
   ToolGroupId,
-  ToolGroup,
-  ToolInputSchema,
-  ToolPropertySchema,
   RegisteredToolDefinition,
   ToolExecutor,
   ToolExecutionContext,
@@ -99,7 +92,6 @@ export type {
   ResultGuardOptions,
 } from './agents/tools/index.js';
 export {
-  toApiToolDefinition,
   InMemoryToolRegistry,
   jsonSchemaToZod,
   evaluateToolPolicy,

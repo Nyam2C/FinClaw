@@ -38,7 +38,6 @@ export interface CommandRegistry {
   list(): readonly CommandDefinition[];
   listByCategory(category: CommandCategory): readonly CommandDefinition[];
   parse(content: string, prefix: string): ParsedCommand | null;
-  execute(parsed: ParsedCommand, ctx: MsgContext): Promise<CommandResult>;
 }
 
 interface CommandEntry {
@@ -106,13 +105,5 @@ export class InMemoryCommandRegistry implements CommandRegistry {
       args: parts.slice(1),
       raw: trimmed,
     };
-  }
-
-  async execute(parsed: ParsedCommand, ctx: MsgContext): Promise<CommandResult> {
-    const entry = this.get(parsed.name);
-    if (!entry) {
-      return { content: `알 수 없는 명령어: ${parsed.name}`, ephemeral: true };
-    }
-    return entry.executor(parsed.args, ctx);
   }
 }

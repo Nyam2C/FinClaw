@@ -31,14 +31,7 @@ import { chunkMarkdown } from './tables/memories.js';
 // re-exports
 export { openDatabase, type Database, type DatabaseOptions };
 export { chunkMarkdown, type MemoryChunk };
-export {
-  addMemory,
-  addMemoryWithEmbedding,
-  getMemory,
-  getMemoriesBySession,
-  deleteMemory,
-  getMemoryChunks,
-} from './tables/memories.js';
+export { addMemory, addMemoryWithEmbedding, getMemory, deleteMemory } from './tables/memories.js';
 export { CACHE_TTL, type MarketCacheEntry };
 export { type EmbeddingProvider } from './embeddings/provider.js';
 export {
@@ -62,14 +55,8 @@ export {
   getConversation,
   deleteConversation,
   upsertConversation,
-  listConversations,
 } from './tables/conversations.js';
-export {
-  getCachedData,
-  setCachedData,
-  getStaleCachedData,
-  purgeExpiredCache,
-} from './tables/market-cache.js';
+export { getCachedData, setCachedData, getStaleCachedData } from './tables/market-cache.js';
 export {
   addTransaction,
   getTransaction,
@@ -89,7 +76,6 @@ export {
   getAgentRun,
   listAgentRuns,
   linkMemoryToAgentRun,
-  updateAgentRunCliSession,
   type AgentRunLog,
   type AgentRunRow,
   type AddAgentRunInput,

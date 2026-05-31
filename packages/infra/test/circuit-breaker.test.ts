@@ -78,19 +78,6 @@ describe('CircuitBreaker', () => {
     expect(fastCb.getState()).toBe('open');
   });
 
-  it('reset()으로 초기 상태 복귀', async () => {
-    for (let i = 0; i < 3; i++) {
-      await cb
-        .execute(async () => {
-          throw new Error('fail');
-        })
-        .catch(() => {});
-    }
-    cb.reset();
-    expect(cb.getState()).toBe('closed');
-    expect(cb.getFailures()).toBe(0);
-  });
-
   it('성공하면 실패 카운터가 리셋된다', async () => {
     await cb
       .execute(async () => {

@@ -21,14 +21,6 @@ import { registerToSlot } from './registry.js';
 
 // ─── 타입 ───
 
-// TODO(review): PluginExports 인터페이스가 런타임 타입 검증에 사용되지 않음 — 활용처 확보 또는 제거 검토.
-/** 플러그인 모듈 exports (register || activate) */
-export interface PluginExports {
-  readonly register?: (api: PluginBuildApi) => void;
-  readonly activate?: (api: PluginBuildApi) => void;
-  readonly deactivate?: () => Promise<void>;
-}
-
 /** 플러그인 등록 API — register() 콜백에 주입 */
 export interface PluginBuildApi {
   readonly pluginName: string;
@@ -65,12 +57,6 @@ function getOrCreateJiti(): ReturnType<typeof createJiti> {
     extensions: ['.ts', '.mts', '.js', '.mjs', '.json'],
   });
   return jitiLoader;
-}
-
-// TODO(review): resetJiti() — 현재 테스트에서 미사용. 필요 시 테스트 격리에 활용, 불필요 시 제거.
-/** 테스트용 jiti 리셋 */
-export function resetJiti(): void {
-  jitiLoader = null;
 }
 
 // ─── 3-Tier 모듈 로더 ───

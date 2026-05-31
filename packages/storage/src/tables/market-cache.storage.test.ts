@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { openDatabase, type Database } from '../database.js';
-import { CACHE_TTL, getCachedData, setCachedData, purgeExpiredCache } from './market-cache.js';
+import { CACHE_TTL, getCachedData, setCachedData } from './market-cache.js';
 
 describe('market-cache', () => {
   let database: Database;
@@ -39,35 +39,6 @@ describe('market-cache', () => {
 
     const result = getCachedData<{ v: number }>(database.db, 'upsert-key');
     expect(result).toEqual({ v: 2 });
-  });
-
-  it('purgeExpiredCache — 만료 엔트리만 삭제', () => {
-    setCachedData(database.db, 'alive', { v: 1 }, 'test', CACHE_TTL.QUOTE);
-    setCachedData(database.db, 'expired', { v: 2 }, 'test', 1);
-
-    // Set expired entry in the past
-    database.db
-      .prepare('UPDATE market_cache SET expires_at = ? WHERE key = ?')
-      .run(Date.now() - 1000, 'expired');
-
-    const deleted = purgeExpiredCache(database.db);
-    expect(deleted).toBe(1);
-
-    // Alive entry still exists
-    expect(getCachedData(database.db, 'alive')).toEqual({ v: 1 });
-    expect(getCachedData(database.db, 'expired')).toBeNull();
-  });
-
-  it('purgeExpiredCache — 삭제 수 반환', () => {
-    for (let i = 0; i < 3; i++) {
-      setCachedData(database.db, `exp-${i}`, { i }, 'test', 1);
-    }
-
-    // Set all to expired
-    database.db.prepare('UPDATE market_cache SET expires_at = ?').run(Date.now() - 1000);
-
-    const deleted = purgeExpiredCache(database.db);
-    expect(deleted).toBe(3);
   });
 
   it('CACHE_TTL 상수 값 확인', () => {

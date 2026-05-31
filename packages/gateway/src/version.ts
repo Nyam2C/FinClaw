@@ -24,8 +24,3 @@ export function loadVersion(): string {
 
   return cached;
 }
-
-/** 테스트용: 캐시 초기화 */
-export function resetVersionCache(): void {
-  cached = null;
-}
