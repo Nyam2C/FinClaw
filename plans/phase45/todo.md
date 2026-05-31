@@ -704,20 +704,319 @@ pnpm format && pnpm lint && pnpm typecheck && pnpm exec tsc --build && pnpm test
 
 ---
 
-## M-A 완료 후 후속 (별도 todo 분해)
+## M-A 완료 (커밋 `713a699`~`c962e33`, 9 sub-milestones, 39 + 1 interface trim, 파일 삭제 3, 배럴 정리 16+)
 
-- **M-B T2 죽은 군집 34개** — `_workspace/decl-audit/actionable-unused.json` 의 island 군집 식별 후 새 todo 작성.
-- **M-C T3 테스트만 41개** — 동반 제거 default + KEEP case-by-case, 새 todo 작성. 분량 초과 시 phase46 이월.
+---
 
-## 통계
+# 마일스톤 B — T2 죽은 군집 31 items + 보류 2 + ALREADY_REMOVED 1
 
-- 서브밀스톤 9 개 (A-1 ~ A-9)
-- step 39 개 (감사 T1 39 항목과 1:1 매칭) + 인터페이스 트림 1 step (A-9-9 안에 포함)
-- 게이트 9 회 (서브밀스톤 종료마다)
-- 커밋 9 개
-- 파일 삭제 3 개 (errors.ts / event-bridge.ts / process/errors.ts)
-- 배럴 정리 16+ 곳
+## 재검증 결과 (M-B 진입 전, M-A 후속 상태)
+
+| 패키지   | 감사 T2 | CONFIRMED_DEAD | LIVE (보류) | ALREADY_REMOVED |
+| -------- | ------: | -------------: | ----------: | --------------: |
+| types    |       7 |              7 |           0 |               0 |
+| infra    |      19 |             17 |           2 |               0 |
+| agent    |       3 |              3 |           0 |               0 |
+| config   |       3 |              3 |           0 |               0 |
+| storage  |       1 |              1 |           0 |               0 |
+| server   |       1 |              0 |           0 |               1 |
+| **합계** |  **34** |         **31** |       **2** |           **1** |
+
+**재검증 근거:** 워크플로우 `wf_6f1c22a8-52a` — 6 패키지 병렬 grep + island 분석. 전 항목 evidence 첨부.
+
+## 보류 (LIVE_FALSE_POSITIVE — review.md 기록)
+
+| 패키지 | 심볼           | 위치                                  | 라이브 사유                                                                                                                                              |
+| ------ | -------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| infra  | `readFileSafe` | `packages/infra/src/fs-safe.ts:42-50` | `packages/infra/src/json-file.ts` 의 `readJsonFile` 안에서 호출, json-file 은 config/storage 가 라이브 소비.                                             |
+| infra  | `ensureDir`    | `packages/infra/src/fs-safe.ts:55-57` | `infra/json-file.ts:writeJsonFile` + `config/sessions/store.ts` 가 호출 (단 sessions/store 는 M-B B-3 삭제 대상 → 재평가 필요. json-file 경로는 라이브). |
+
+## ALREADY_REMOVED (M-A 흡수)
+
+| 패키지 | 심볼                | 사유                                          |
+| ------ | ------------------- | --------------------------------------------- |
+| server | `PipelineErrorCode` | A-9 가 `auto-reply/errors.ts` 파일 전체 삭제. |
+
+---
+
+## 마일스톤 B — 바텀업 패키지별 서브밀스톤 (5 sub-milestones)
+
+**각 서브밀스톤 종료 시 게이트:**
+
+```
+pnpm format && pnpm lint && pnpm typecheck && pnpm exec tsc --build && pnpm test --run
+```
+
+순서 = types → storage → config → agent → infra. server 는 skip.
+
+---
+
+### B-1 types (7 items, 1 file delete + 1 test file delete)
+
+#### Step B-1-1: REMOVE `ErrorReason` + `FinClawError` interface (island pair)
+
+- **파일:** `packages/types/src/common.ts` L28-46
+- **제거 대상:**
+  ```ts
+  // ─── 에러 타입 ───
+  export type ErrorReason = ... ;
+  export interface FinClawError {
+    reason: ErrorReason;
+    ...
+  }
+  ```
+- **주의:** **`@finclaw/types` 의 FinClawError interface 는 `@finclaw/infra` 의 live FinClawError class 와 별개**. 모든 소비처 (agent/config/infra/server) 가 infra 쪽에서 import → types 의 interface 는 island.
+- **테스트 동반 제거:** `packages/types/test/type-safety.test.ts`
+  - L7-8 import 줄에서 `FinClawError`, `ErrorReason` 토큰 제거
+  - L49-51 `FinClawError` 타입 어설션 테스트 제거
+  - L54-68 `describe('ErrorReason', ...)` 블록 전체 제거
+- **재검증:** `rg "\bErrorReason\b|\bFinClawError\b" packages/types/src` → 0 hits. infra 의 FinClawError class 는 보존.
+
+#### Step B-1-2: REMOVE 5 Ws* event interfaces (Ws*Event island)
+
+- **파일:** `packages/types/src/gateway.ts` L86-120 (5 인터페이스 연속)
+- **제거 대상:**
+  - `WsMessageEvent` (L86-92)
+  - `WsTypingEvent` (L94-99)
+  - `WsAgentStatusEvent` (L101-105)
+  - `WsAlertEvent` (L107-114)
+  - `WsErrorEvent` (L116-120)
+- **주의:** M-A A-1 가 `WsEvent` union 제거 → 이제 5 변형 모두 zero-ref.
+- **재검증:** `rg "\bWs(Message|Typing|AgentStatus|Alert|Error)Event\b" packages/*/src --type ts` → 0 hits.
+
+#### Step B-1-3: DELETE `types/src/skill.ts` (whole file + barrel + test)
+
+- **파일 삭제:** `packages/types/src/skill.ts` 전체
+  - SkillMetadata interface
+  - ToolMetadata interface
+  - SkillMetadataInput type
+  - normalizeSkillMetadata function
+- **테스트 파일 삭제:** `packages/types/test/skill-metadata.test.ts` 전체
+- **배럴 동반 (2 곳):**
+  - `packages/types/src/index.ts` L6 — `export type * from './skill.js';` 줄 삭제
+  - `packages/types/src/index.ts` L27-28 — `// 스킬 메타 정규화 (Phase 24)\nexport { normalizeSkillMetadata } from './skill.js';` 줄 삭제
+- **주의:** `*_SKILL_METADATA` 객체들이 phase45 M-A A-6/A-7 에서 제거됨 → SkillMetadata 인터페이스 자체가 사용처 없음 → 군집 dead.
+- **재검증:** `rg "\bSkillMetadata\b|\bToolMetadata\b|\bnormalizeSkillMetadata\b|\bSkillMetadataInput\b" packages/*/src --type ts` → 0 hits.
+
+#### Verification B-1:
+
+```
+pnpm format && pnpm lint && pnpm typecheck && pnpm exec tsc --build && pnpm test --run
+```
+
+**Commit:** `refactor(phase45): remove dead types island (7 items, 2 files delete)`
+
+---
+
+### B-2 storage (1 item)
+
+#### Step B-2-1: REMOVE `ChunkRow` interface + `getMemoryChunks` function
+
+- **파일:** `packages/storage/src/tables/memories.ts`
+  - L28-35 — ChunkRow interface 정의
+  - L215-228 — getMemoryChunks function (ChunkRow 의 유일 소비처, test-only)
+- **배럴 동반:** `packages/storage/src/index.ts` L40 — `getMemoryChunks` 토큰 제거
+- **테스트 동반 검토:** `packages/storage/src/tables/memories.storage.test.ts` 의 `getMemoryChunks` 4 호출 — assertion 자체 제거 또는 직접 SQL 로 대체.
+  - 보수적 접근: assertion 제거 (테스트 함수 호출만 삭제). chunk 생성/삭제 검증 자체가 무의미해지면 해당 테스트 케이스 통째 삭제.
+- **재검증:** `rg "\bChunkRow\b|\bgetMemoryChunks\b" packages/*/src --type ts` → 0 hits.
+
+#### Verification B-2:
+
+```
+pnpm format && pnpm lint && pnpm typecheck && pnpm exec tsc --build && pnpm test --run
+```
+
+**Commit:** `refactor(phase45): remove dead storage island (ChunkRow + getMemoryChunks)`
+
+---
+
+### B-3 config (3 items, sessions sub-system 전체)
+
+#### Step B-3-1: DELETE `config/src/sessions/` 디렉터리 전체
+
+- **파일 삭제 (3 개):**
+  - `packages/config/src/sessions/store.ts` (SessionStore interface + createSessionStore — A-4 의 `now` 제거 후 잔존 본체)
+  - `packages/config/src/sessions/types.ts` (SessionScope + SessionEntry + mergeSessionEntry)
+  - `packages/config/src/sessions/session-key.ts` (deriveSessionKey)
+- **테스트 파일 삭제 (2 개):**
+  - `packages/config/test/sessions.test.ts`
+  - `packages/config/test/sessions-key.test.ts` (또는 파일명 변형 — 실제 디렉터리 확인)
+- **배럴 동반:** `packages/config/src/index.ts` — sessions 관련 export 줄 모두 제거 (L7, L46, L47, L48 추정 — 실제 라인 확인 후 정확히)
+  - `export { mergeSessionEntry } from './sessions/types.js';`
+  - `export { deriveSessionKey } from './sessions/session-key.js';`
+  - `export { createSessionStore } from './sessions/store.js';`
+  - 관련 type re-export
+- **주의:** sessions 서브시스템 전체 dead — agent.run sessionKey 등은 별 path (gateway/server) 에서 처리. `ensureDir` (LIVE) 는 sessions/store.ts 가 호출하지만 sessions/store.ts 자체가 삭제되므로 fs-safe 의 `ensureDir` 호출처는 json-file.ts 만 남음.
+- **재검증:** `rg "\bSessionStore\b|\bSessionScope\b|\bSessionEntry\b|\bcreateSessionStore\b|\bmergeSessionEntry\b|\bderiveSessionKey\b" packages/*/src --type ts` → 0 hits.
+
+#### Verification B-3:
+
+```
+pnpm format && pnpm lint && pnpm typecheck && pnpm exec tsc --build && pnpm test --run
+```
+
+**Commit:** `refactor(phase45): remove dead config sessions subsystem (3 items, 3+2 files delete)`
+
+---
+
+### B-4 agent (3 items, cooldown 서브시스템 전체)
+
+#### Step B-4-1: REMOVE `ToolPropertySchema`
+
+- **파일:** `packages/agent/src/agents/tools/registry.ts` L20-29 (JSDoc + interface)
+- **제거 대상:**
+  ```ts
+  export interface ToolPropertySchema {
+    readonly type: 'string' | 'number' | 'boolean' | 'array' | 'object';
+    readonly description: string;
+    readonly enum?: readonly string[];
+    ...
+  }
+  ```
+- **배럴 동반 (2 곳):**
+  - `packages/agent/src/agents/tools/index.ts` L6 — multi-export 에서 `ToolPropertySchema,` 토큰 제거
+  - `packages/agent/src/index.ts` L80 — multi-export 에서 `ToolPropertySchema,` 토큰 제거
+- **주의:** M-A A-5 가 ToolInputSchema 제거 → ToolPropertySchema 의 유일 참조처 사라짐. 이제 zero-ref.
+- **재검증:** `rg "\bToolPropertySchema\b" packages/*/src --type ts` → 0 hits.
+
+#### Step B-4-2: DELETE `agent/src/auth/cooldown.ts` (whole file + test)
+
+- **파일 삭제:** `packages/agent/src/auth/cooldown.ts` 전체
+  - CooldownEntry interface
+  - CooldownTracker class (L13-106)
+- **테스트 파일 삭제:** `packages/agent/test/cooldown.test.ts`
+- **배럴 동반:** `packages/agent/src/index.ts` L64-66 — CooldownTracker / CooldownEntry / 관련 re-export 줄 제거
+- **주의:** 메모리 노트에 "CooldownTracker — gateway/server live 소비" 라고 적혀있으나 워크플로우 재검증에서 zero-ref 확인 (실제 소비처 부재). 메모리 노트 stale.
+- **재검증:** `rg "\bCooldownTracker\b|\bCooldownEntry\b" packages/*/src --type ts` → 0 hits.
+
+#### Verification B-4:
+
+```
+pnpm format && pnpm lint && pnpm typecheck && pnpm exec tsc --build && pnpm test --run
+```
+
+**Commit:** `refactor(phase45): remove dead agent islands (ToolPropertySchema + cooldown subsystem, 1 file delete)`
+
+---
+
+### B-5 infra (17 items, 7 sub-steps — 가장 큰 cascade)
+
+> 패키지 내 다중 컴포넌트 군집. 한 step 한 컴포넌트 단위.
+
+#### Step B-5-1: DELETE `infra/src/paths.ts` (whole file)
+
+- **파일 삭제:** `packages/infra/src/paths.ts` 전체 (`getDataDir`, `getConfigDir`, `getSessionDir`, `getLockDir`, `getConfigFilePath`, `getAllPaths`)
+- **테스트 파일 삭제:** `packages/infra/test/paths.test.ts`
+- **배럴 동반:** `packages/infra/src/index.ts` L39-43 (paths 5 export 줄) — 모두 제거
+- **재검증:** `rg "\bgetDataDir\b|\bgetConfigDir\b|\bgetSessionDir\b|\bgetLockDir\b|\bgetConfigFilePath\b|\bgetAllPaths\b" packages/*/src --type ts` → 0 hits.
+
+#### Step B-5-2: DELETE `infra/src/system-events.ts` (whole file)
+
+- **파일 삭제:** `packages/infra/src/system-events.ts` 전체 (`MAX_EVENTS_PER_SESSION`, `SystemEvent`, `queues`, `clearSystemEvents`, push/get 함수들)
+- **테스트 파일 삭제:** 없으면 skip.
+- **배럴 동반:** `packages/infra/src/index.ts` 의 system-events 관련 export 줄 모두 제거
+- **재검증:** `rg "\bMAX_EVENTS_PER_SESSION\b|\bSystemEvent\b|\bclearSystemEvents\b" packages/*/src --type ts` → 0 hits.
+
+#### Step B-5-3: DELETE `infra/src/warnings.ts` (whole file)
+
+- **파일 삭제:** `packages/infra/src/warnings.ts` 전체 (`emitted` const + 관련 함수)
+- **테스트 파일 삭제:** 있으면 동반.
+- **배럴 동반:** `packages/infra/src/index.ts` 에 warnings export 있으면 제거.
+- **재검증:** 호출 패턴 (`emitted` 는 너무 흔하므로 file 경로로 확인) → `rg "warnings\.js|warnings\.ts" packages/*/src --type ts` → 0 hits.
+
+#### Step B-5-4: REMOVE concurrency-lane methods (4 items)
+
+- **파일:** `packages/infra/src/concurrency-lane.ts`
+  - `ConcurrencyLane.resetGeneration` (L115-119)
+  - `ConcurrencyLane.clearWaiters` (L121-130)
+  - `ConcurrencyLane.dispose` (L132-136)
+  - `ConcurrencyLaneManager.dispose` (L175-179)
+- **주의:** M-A A-2 가 `ConcurrencyLaneManager.resetGeneration` 제거. 본 step 은 이어지는 island cascade. **테스트 동반 제거 (테스트만 호출처):**
+  - `packages/infra/test/concurrency-lane.test.ts` — resetGeneration / clearWaiters / dispose 호출 케이스 제거
+- **간접 cascade:** `packages/server/src/process/message-router.ts:159` 가 `laneManager.dispose()` 호출 + `:160` 가 `dedupe.clear()` 호출. message-router.dispose() 도 test-only consumer. **server message-router.dispose 도 같이 제거 검토** (cross-package).
+  - 보수적: 본 step 은 infra dispose 제거만, message-router.dispose 는 별 step 또는 phase46.
+  - 공격적: message-router.dispose 메서드 자체도 제거 (dead caller chain) → server 변경 동반.
+  - **plan 결정:** 공격적 — chain 전체 제거 (message-router.dispose + 관련 test).
+- **재검증:** `rg "\bresetGeneration\b|\bclearWaiters\b" packages/*/src --type ts` → 0 hits. `\.dispose\(\)` 는 다른 라이브 호출 가능성 있으니 별 검사.
+
+#### Step B-5-5: REMOVE `CircuitBreaker.reset` method
+
+- **파일:** `packages/infra/src/circuit-breaker.ts` L63-67
+- **제거 대상:**
+  ```ts
+  reset(): void {
+    ...
+  }
+  ```
+- **간접 cascade:** `packages/agent/src/providers/adapter.ts:38` `resetBreakers()` 가 호출 → resetBreakers 가 test-only 라 같이 제거 (test fixture).
+  - `packages/agent/src/index.ts` 의 `resetBreakers` re-export 제거
+  - `packages/agent/test/fallback.test.ts` 의 `resetBreakers()` 호출 4 곳 제거
+  - `packages/infra/test/circuit-breaker.test.ts:89` 의 `cb.reset()` 호출 제거
+- **재검증:** `rg "\.reset\(\)" packages/*/src --type ts` → CircuitBreaker 외 호출 잔존 확인 (별 클래스). `\bresetBreakers\b` → 0 hits.
+
+#### Step B-5-6: REMOVE `Dedupe.clear` method
+
+- **파일:** `packages/infra/src/dedupe.ts` L71-74
+- **제거 대상:**
+  ```ts
+  clear(): void {
+    this.cache.clear();
+  }
+  ```
+- **간접 cascade:** B-5-4 의 message-router.dispose 제거에 포함됨 (`this.dedupe.clear()` 호출). 본 step 은 method 정의만.
+- **테스트 동반:** `packages/infra/test/dedupe.test.ts` 의 `dedupe.clear()` 호출 제거.
+- **재검증:** `rg "dedupe\.clear|Dedupe\.clear" packages/*/src --type ts` → 0 hits.
+
+#### Step B-5-7: REMOVE `LoggerFactory` interface
+
+- **파일:** `packages/infra/src/logger.ts` L19-22
+- **제거 대상:**
+  ```ts
+  /** ... */
+  export interface LoggerFactory {
+    create(name?: string): FinClawLogger;
+  }
+  ```
+- **배럴 동반:** `packages/infra/src/index.ts` L53 — `type LoggerFactory,` 토큰 제거
+- **주의:** M-A A-2 가 `defaultLoggerFactory` (유일 구현체) 제거. 이제 interface 도 zero-ref.
+- **재검증:** `rg "\bLoggerFactory\b" packages/*/src --type ts` → 0 hits.
+
+#### Verification B-5 (전 7 step 후):
+
+```
+pnpm format && pnpm lint && pnpm typecheck && pnpm exec tsc --build && pnpm test --run
+```
+
+**Commit:** `refactor(phase45): remove dead infra islands (17 items, 3 files delete, cross-package cascade to server)`
+
+> ⚠️ B-5 는 cross-package cascade 가 가장 큼 (server message-router 동반 변경). 분리 권장 시 B-5a/B-5b 별 커밋 가능.
+
+---
+
+## M-B 완료 후 후속
+
+- **M-C T3 테스트만 41개** — 동반 제거 default + KEEP case-by-case, 새 todo 작성. M-B 완료 후 별도 검증 워크플로우 진행. 분량 초과 시 phase46 이월.
+
+## M-B 통계
+
+- 서브밀스톤 5 개 (B-1 ~ B-5)
+- step 13 개 (B-1: 3, B-2: 1, B-3: 1, B-4: 2, B-5: 7) = 31 actionable item × cascade
+- 보류 2 개 (`readFileSafe` / `ensureDir`, fs-safe.ts 의 라이브 함수)
+- ALREADY_REMOVED 1 개 (`PipelineErrorCode`, M-A A-9 흡수)
+- 게이트 5 회 (서브밀스톤 종료마다)
+- 커밋 5 개
+- 파일 삭제 7 개 (types: 2 / config: 3 + 2 test / agent: 1 + 1 test / infra: 3 + 1 test)
+- 배럴 정리 10+ 곳
+- Cross-package cascade 1 곳 (B-5-4 server message-router.dispose chain)
+
+## 통합 통계 (M-A + M-B)
+
+- 서브밀스톤 14 개
+- step 52 개 (M-A 39 + M-B 13)
+- 게이트 14 회
+- 커밋 14 개
+- 파일 삭제 10 개
 
 ## 검증 요약 (각 step 의 재검증 명령은 step 안에)
 
-전 step 의 재검증 = `rg "\b<SYMBOL>\b" packages/*/src --type ts` 가 0 hits (정의 + 배럴 모두 제거 후). 게이트 = format/lint/typecheck/build/test 전부.
+전 step 의 재검증 = `rg "\b<SYMBOL>\b" packages/*/src --type ts` 가 0 hits. 게이트 = format/lint/typecheck/build/test 전부.
