@@ -1,6 +1,6 @@
 // @finclaw/storage — storage & memory layer
 import type { ConversationRecord, SessionKey, StorageAdapter } from '@finclaw/types';
-import type { Database, DatabaseOptions } from './database.js';
+import type { Database } from './database.js';
 import { openDatabase } from './database.js';
 import {
   deleteConversation as deleteConversationFromDb,
@@ -10,27 +10,16 @@ import {
 import { CACHE_TTL } from './tables/market-cache.js';
 
 // re-exports
-export { openDatabase, type Database, type DatabaseOptions };
+export { openDatabase, type Database };
 export { addMemory, addMemoryWithEmbedding, getMemory, deleteMemory } from './tables/memories.js';
 export { CACHE_TTL };
 export { type EmbeddingProvider } from './embeddings/provider.js';
-export {
-  createEmbeddingProvider,
-  type EmbeddingMode,
-  type EmbeddingConfig,
-} from './embeddings/provider.js';
-export {
-  EmbeddingDimensionMismatchError,
-  assertEmbeddingDimension,
-} from './embeddings/registry.js';
-export {
-  mergeHybridResults,
-  type ChunkSearchResult,
-  type HybridSearchOptions,
-} from './search/hybrid.js';
+export { createEmbeddingProvider } from './embeddings/provider.js';
+export { assertEmbeddingDimension } from './embeddings/registry.js';
+export { mergeHybridResults, type ChunkSearchResult } from './search/hybrid.js';
 export { searchFts } from './search/fts.js';
 export { searchVector } from './search/vector.js';
-export { getConversation, deleteConversation, upsertConversation } from './tables/conversations.js';
+
 export { getCachedData, setCachedData, getStaleCachedData } from './tables/market-cache.js';
 export {
   addTransaction,
@@ -38,23 +27,15 @@ export {
   listTransactions,
   updateTransaction,
   deleteTransaction,
-  recomputeHoldings,
   replaceAllHoldings,
   type Transaction,
-  type AddTransactionInput,
-  type ListTransactionsOptions,
-  type UpdateTransactionInput,
-  type KisHoldingInput,
 } from './transactions.js';
 export {
   addAgentRun,
   getAgentRun,
   listAgentRuns,
   linkMemoryToAgentRun,
-  type AgentRunLog,
-  type AgentRunRow,
   type AddAgentRunInput,
-  type ListAgentRunsOptions,
 } from './agent-runs.js';
 export {
   addSchedule,
@@ -64,17 +45,12 @@ export {
   deleteSchedule,
   findDueSchedules,
   markScheduleRun,
-  type AddScheduleInput,
-  type UpdateScheduleInput,
-  type ListSchedulesOptions,
 } from './schedules.js';
 export { addSpan } from './spans.js';
 export { addAccessLog, purgeAccessLog, type AccessLogEntry } from './access-log.js';
 export { type Reranker } from './rerank/index.js';
 export { LocalReranker, type LocalRerankerOptions } from './rerank/local.js';
 export { MockReranker, createRerankerWithFallback } from './rerank/mock.js';
-
-// ─── StorageAdapter factory ───
 
 export interface StorageOptions {
   dbPath: string;
