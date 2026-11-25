@@ -4,7 +4,6 @@ export const DiscordAccountSchema = z
   .strictObject({
     botToken: z.string(),
     applicationId: z.string(),
-    guildIds: z.array(z.string()).optional(),
     allowDMs: z.boolean().default(true),
     typingIntervalMs: z.number().int().min(1000).default(5000),
     maxChunkLength: z.number().int().min(500).max(2000).default(2000),

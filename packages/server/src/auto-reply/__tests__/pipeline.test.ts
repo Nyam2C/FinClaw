@@ -1,5 +1,5 @@
 import type { FinClawLogger } from '@finclaw/infra';
-import type { MsgContext, ChannelPlugin } from '@finclaw/types';
+import type { MsgContext, ChannelPlugin, StorageAdapter } from '@finclaw/types';
 import { createTimestamp, createSessionKey, createChannelId, createAgentId } from '@finclaw/types';
 import { describe, it, expect, vi } from 'vitest';
 import type { BindingMatch } from '../../process/binding-matcher.js';
@@ -8,7 +8,7 @@ import { InMemoryCommandRegistry } from '../commands/registry.js';
 import { CONTROL_TOKENS } from '../control-tokens.js';
 import { MockExecutionAdapter, type ExecutionAdapter } from '../execution-adapter.js';
 import type { PipelineObserver } from '../observer.js';
-import type { FinanceContextProvider, PipelineMsgContext } from '../pipeline-context.js';
+import type { PipelineMsgContext } from '../pipeline-context.js';
 import { AutoReplyPipeline, type PipelineConfig, type PipelineDependencies } from '../pipeline.js';
 import type { MemoryRetrievalService, RetrievalResult } from '../stages/memory-retrieval.js';
 
@@ -54,32 +54,15 @@ function makeMatch(): BindingMatch {
   };
 }
 
-function makeChannel(): Pick<ChannelPlugin, 'send' | 'addReaction' | 'sendTyping'> {
+function makeChannel(): Pick<ChannelPlugin, 'send' | 'sendTyping'> {
   return {
     send: vi.fn().mockResolvedValue(undefined),
-    addReaction: vi.fn().mockResolvedValue(undefined),
     sendTyping: vi.fn().mockResolvedValue(undefined),
-  };
-}
-
-function makeProvider(): FinanceContextProvider {
-  return {
-    getActiveAlerts: vi.fn().mockResolvedValue([]),
-    getPortfolio: vi.fn().mockResolvedValue(null),
-    getRecentNews: vi.fn().mockResolvedValue([]),
-    getMarketSession: vi.fn().mockReturnValue({
-      isOpen: true,
-      market: 'NYSE',
-      nextOpenAt: null,
-      timezone: 'America/New_York',
-    }),
-    getWatchlist: vi.fn().mockResolvedValue([]),
   };
 }
 
 function makeConfig(overrides: Partial<PipelineConfig> = {}): PipelineConfig {
   return {
-    enableAck: true,
     commandPrefix: '/',
     maxResponseLength: 2000,
     timeoutMs: 30_000,
@@ -91,11 +74,10 @@ function makeConfig(overrides: Partial<PipelineConfig> = {}): PipelineConfig {
 function makeDeps(overrides: Partial<PipelineDependencies> = {}): PipelineDependencies {
   const channel = makeChannel();
   const registry = new InMemoryCommandRegistry();
-  registerBuiltInCommands(registry);
+  registerBuiltInCommands(registry, { storage: {} as StorageAdapter });
 
   return {
     executionAdapter: new MockExecutionAdapter('AI response'),
-    financeContextProvider: makeProvider(),
     commandRegistry: registry,
     logger: makeLogger(),
     getChannel: () => channel,
@@ -188,16 +170,6 @@ describe('AutoReplyPipeline', () => {
 
     // 에러 없이 완료
     await pipeline.process(makeCtx(), makeMatch(), AbortSignal.timeout(10_000));
-  });
-
-  it('ACK 비활성화 시 addReaction을 호출하지 않는다', async () => {
-    const channel = makeChannel();
-    const deps = makeDeps({ getChannel: () => channel });
-    const pipeline = new AutoReplyPipeline(makeConfig({ enableAck: false }), deps);
-
-    await pipeline.process(makeCtx(), makeMatch(), AbortSignal.timeout(10_000));
-
-    expect(channel.addReaction).not.toHaveBeenCalled();
   });
 
   it('이미 abort된 signal로 호출 시 즉시 종료한다', async () => {

@@ -1,4 +1,3 @@
-import type { FinClawLogger } from '@finclaw/infra';
 // packages/server/src/auto-reply/stages/ack.ts
 import type { ChannelPlugin } from '@finclaw/types';
 // startTyping: 외부 모듈 의존성. 타입체크 통과, 런타임 동작은 통합 테스트 범위.
@@ -69,29 +68,13 @@ export interface AckResult {
 }
 
 /**
- * ACK 스테이지
- *
- * 1. addReaction으로 수신 확인 (👀)
- * 2. TypingController 시작
+ * ACK 스테이지 — TypingController 시작
  */
-export async function ackStage(
-  channel: Pick<ChannelPlugin, 'addReaction' | 'sendTyping'>,
-  messageId: string,
+export function ackStage(
+  channel: Pick<ChannelPlugin, 'sendTyping'>,
   channelId: string,
   chatId: string,
-  enableAck: boolean,
-  logger: FinClawLogger,
-): Promise<StageResult<AckResult>> {
-  // ACK 리액션
-  if (enableAck && channel.addReaction) {
-    try {
-      await channel.addReaction(messageId, '👀');
-    } catch (error) {
-      logger.warn('Failed to add ACK reaction', { error });
-    }
-  }
-
-  // 타이핑 시작
+): StageResult<AckResult> {
   const typing = createTypingController(channel, channelId, chatId);
   typing.start();
 

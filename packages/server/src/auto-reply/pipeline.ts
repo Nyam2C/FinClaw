@@ -6,7 +6,6 @@ import type { BindingMatch } from '../process/binding-matcher.js';
 import type { CommandRegistry } from './commands/registry.js';
 import type { ExecutionAdapter } from './execution-adapter.js';
 import type { PipelineObserver } from './observer.js';
-import type { FinanceContextProvider } from './pipeline-context.js';
 import { ackStage, type TypingController } from './stages/ack.js';
 import { commandStage } from './stages/command.js';
 import { contextStage } from './stages/context.js';
@@ -40,7 +39,6 @@ export interface PipelineResult {
 
 /** 파이프라인 설정 */
 export interface PipelineConfig {
-  readonly enableAck: boolean;
   readonly commandPrefix: string;
   readonly maxResponseLength: number;
   readonly timeoutMs: number;
@@ -50,13 +48,12 @@ export interface PipelineConfig {
 /** 파이프라인 의존성 주입 */
 export interface PipelineDependencies {
   readonly executionAdapter: ExecutionAdapter;
-  readonly financeContextProvider: FinanceContextProvider;
   readonly commandRegistry: CommandRegistry;
   readonly logger: FinClawLogger;
   readonly observer?: PipelineObserver;
   readonly getChannel: (
     channelId: string,
-  ) => Pick<ChannelPlugin, 'send' | 'addReaction' | 'sendTyping'> | undefined;
+  ) => Pick<ChannelPlugin, 'send' | 'sendTyping'> | undefined;
   /** Phase 26 B: 명시적 기억 capture (정규식 5종 매칭). 미주입 시 capture 단계 no-op. */
   readonly memoryCaptureService?: MemoryCaptureService;
   /** Phase 26 C: 자동 회상 retrieval (hybrid/FTS). 미주입 시 retrieval 단계 no-op. */
@@ -197,16 +194,9 @@ export class AutoReplyPipeline {
       }
       this.deps.observer?.onStageStart?.('ack', ctx);
       const channel = this.deps.getChannel(ctx.channelId as string);
-      const noopChannel = { send: undefined, addReaction: undefined, sendTyping: undefined };
+      const noopChannel = { send: undefined, sendTyping: undefined };
       const ackResult = await stageSpan('ack', async () =>
-        ackStage(
-          channel ?? noopChannel,
-          '', // messageId — MsgContext에 없으므로 빈 문자열. MsgContext 확장 시 messageId 필드 추가 필요.
-          ctx.channelId as string,
-          ctx.chatId ?? ctx.senderId,
-          this.config.enableAck,
-          this.deps.logger,
-        ),
+        ackStage(channel ?? noopChannel, ctx.channelId as string, ctx.chatId ?? ctx.senderId),
       );
       stagesExecuted.push('ack');
       this.deps.observer?.onStageComplete?.('ack', ackResult);
@@ -247,15 +237,7 @@ export class AutoReplyPipeline {
           };
 
       const ctxResult = await stageSpan('context', async () =>
-        contextStage(
-          ctx,
-          normalized,
-          {
-            financeContextProvider: this.deps.financeContextProvider,
-            channelCapabilities: channelCaps,
-          },
-          combinedSignal,
-        ),
+        contextStage(ctx, normalized, channelCaps),
       );
       stagesExecuted.push('context');
       this.deps.observer?.onStageComplete?.('context', ctxResult);

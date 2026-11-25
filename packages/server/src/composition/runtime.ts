@@ -22,7 +22,6 @@ import { DefaultAttachMemoryService } from '../auto-reply/agent-memory-hook.js';
 import { registerBuiltInCommands } from '../auto-reply/commands/built-in.js';
 import { InMemoryCommandRegistry } from '../auto-reply/commands/registry.js';
 import { RunnerExecutionAdapter } from '../auto-reply/execution-adapter.js';
-import { StubFinanceContextProvider } from '../auto-reply/pipeline-context.js';
 import { AutoReplyPipeline } from '../auto-reply/pipeline.js';
 import { SchedulerService } from '../automation/scheduler.js';
 import { createTracer } from '../observability/tracer.js';
@@ -120,7 +119,6 @@ export function buildPipeline(deps: BuildPipelineDeps): PipelineBundle {
   } = deps;
 
   // 5. 파이프라인
-  const financeCtxProvider = new StubFinanceContextProvider();
   const commandRegistry = new InMemoryCommandRegistry();
   registerBuiltInCommands(commandRegistry, {
     toolRegistry,
@@ -156,7 +154,6 @@ export function buildPipeline(deps: BuildPipelineDeps): PipelineBundle {
 
   const pipeline = new AutoReplyPipeline(
     {
-      enableAck: true,
       commandPrefix: '!finclaw ',
       maxResponseLength: 2000,
       timeoutMs: 60_000,
@@ -164,7 +161,6 @@ export function buildPipeline(deps: BuildPipelineDeps): PipelineBundle {
     },
     {
       executionAdapter: adapter,
-      financeContextProvider: financeCtxProvider,
       commandRegistry,
       logger,
       getChannel: (id) => channelPluginRegistry.get(id),

@@ -1,4 +1,4 @@
-import type { MsgContext } from '@finclaw/types';
+import type { MsgContext, StorageAdapter } from '@finclaw/types';
 import { createTimestamp, createSessionKey, createChannelId } from '@finclaw/types';
 import { describe, it, expect, vi } from 'vitest';
 import { registerBuiltInCommands } from '../commands/built-in.js';
@@ -33,7 +33,7 @@ describe('commandStage', () => {
 
   it('등록된 명령어를 파싱하고 skip을 반환한다', async () => {
     const registry = new InMemoryCommandRegistry();
-    registerBuiltInCommands(registry);
+    registerBuiltInCommands(registry, { storage: {} as StorageAdapter });
 
     const result = await commandStage('/help', registry, '/', makeCtx());
 
@@ -53,7 +53,7 @@ describe('commandStage', () => {
 
   it('코드 펜스 내부의 명령어는 무시한다', async () => {
     const registry = new InMemoryCommandRegistry();
-    registerBuiltInCommands(registry);
+    registerBuiltInCommands(registry, { storage: {} as StorageAdapter });
 
     const body = '```\n/help\n```';
     const result = await commandStage(body, registry, '/', makeCtx());
@@ -63,7 +63,7 @@ describe('commandStage', () => {
 
   it('별칭으로 명령어를 실행한다', async () => {
     const registry = new InMemoryCommandRegistry();
-    registerBuiltInCommands(registry);
+    registerBuiltInCommands(registry, { storage: {} as StorageAdapter });
 
     const result = await commandStage('/h', registry, '/', makeCtx());
 
@@ -155,12 +155,12 @@ describe('InMemoryCommandRegistry', () => {
 
   it('카테고리별로 명령어를 필터링한다', () => {
     const registry = new InMemoryCommandRegistry();
-    registerBuiltInCommands(registry);
+    registerBuiltInCommands(registry, { storage: {} as StorageAdapter });
 
-    const finance = registry.listByCategory('finance');
-    expect(finance.length).toBeGreaterThan(0);
-    for (const cmd of finance) {
-      expect(cmd.category).toBe('finance');
+    const general = registry.listByCategory('general');
+    expect(general.length).toBeGreaterThan(0);
+    for (const cmd of general) {
+      expect(cmd.category).toBe('general');
     }
   });
 

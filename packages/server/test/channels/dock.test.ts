@@ -81,11 +81,8 @@ describe('createChannelDock', () => {
 });
 
 describe('CORE_DOCKS', () => {
-  it('discord와 http-webhook 2개를 포함한다', () => {
-    expect(CORE_DOCKS).toHaveLength(2);
-    const ids = CORE_DOCKS.map((d) => d.id as string);
-    expect(ids).toContain('discord');
-    expect(ids).toContain('http-webhook');
+  it('discord 1개를 포함한다', () => {
+    expect(CORE_DOCKS.map((d) => d.id as string)).toEqual(['discord']);
   });
 
   it('frozen 배열이다', () => {
@@ -99,14 +96,5 @@ describe('CORE_DOCKS', () => {
     expect(discord?.capabilities.supportsThreads).toBe(true);
     expect(discord?.threadingMode).toBe('native');
     expect(discord?.defaultChatType).toBe('group');
-  });
-
-  it('http-webhook 도크는 기본적인 기능만 갖는다', () => {
-    const webhook = CORE_DOCKS.find((d) => (d.id as string) === 'http-webhook');
-    expect(webhook).toBeDefined();
-    expect(webhook?.capabilities.supportsMarkdown).toBe(false);
-    expect(webhook?.capabilities.supportsThreads).toBe(false);
-    expect(webhook?.threadingMode).toBe('none');
-    expect(webhook?.defaultChatType).toBe('direct');
   });
 });

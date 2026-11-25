@@ -11,7 +11,6 @@ import { createChannelId } from '@finclaw/types';
 import type { Client } from 'discord.js';
 import { setupApprovalHandler } from './buttons.js';
 import { createDiscordClient } from './client.js';
-import { registerGuildCommands, setupCommandRouter } from './commands/index.js';
 import { setupMessageHandler } from './handler.js';
 import { sendOutboundMessage } from './sender.js';
 import type { DiscordAccount } from './types.js';
@@ -49,13 +48,7 @@ export class DiscordAdapter implements ChannelPlugin<DiscordAccount> {
 
     await client.login(config.botToken);
 
-    // 슬래시 커맨드 등록 (길드 단위)
-    if (config.guildIds?.length) {
-      await registerGuildCommands(client, config);
-    }
-
-    // 슬래시 커맨드 라우터 + 승인 버튼 핸들러 등록
-    setupCommandRouter(client, {});
+    // 승인 버튼 핸들러 등록
     setupApprovalHandler(client);
 
     log.info('Discord adapter started');
@@ -100,9 +93,5 @@ export class DiscordAdapter implements ChannelPlugin<DiscordAccount> {
     } catch (error) {
       log.warn('sendTyping failed', { chatId, error });
     }
-  }
-
-  async addReaction(_messageId: string, _emoji: string): Promise<void> {
-    // TODO: v0.2 — fetch message by ID, then react
   }
 }

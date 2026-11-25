@@ -60,33 +60,5 @@ const DISCORD_DOCK = createChannelDock({
   },
 });
 
-/** 코어 도크: HTTP Webhook */
-const HTTP_WEBHOOK_DOCK = createChannelDock({
-  id: 'http-webhook',
-  meta: {
-    name: 'http-webhook',
-    displayName: 'HTTP Webhook',
-    icon: 'webhook',
-  },
-  capabilities: {
-    supportsMarkdown: false,
-    supportsImages: false,
-    supportsAudio: false,
-    supportsVideo: false,
-    supportsButtons: false,
-    supportsThreads: false,
-    supportsReactions: false,
-    supportsEditing: false,
-    maxMessageLength: 65536,
-  },
-  defaultChatType: 'direct',
-  threadingMode: 'none',
-  outboundLimits: {
-    maxChunkLength: 65536,
-    maxMediaPerMessage: 0,
-    rateLimitPerMinute: 120,
-  },
-});
-
 /** 내장 코어 도크 목록 */
-export const CORE_DOCKS: readonly ChannelDock[] = Object.freeze([DISCORD_DOCK, HTTP_WEBHOOK_DOCK]);
+export const CORE_DOCKS: readonly ChannelDock[] = Object.freeze([DISCORD_DOCK]);

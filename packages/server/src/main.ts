@@ -127,7 +127,7 @@ async function main(): Promise<void> {
     }
   }
 
-  // 2b. 채널 도크 자동 등록 (discord, http-webhook)
+  // 2b. 채널 도크 자동 등록 (discord)
   initChannels(logger);
 
   // 3. Discord 클라이언트 먼저 로그인 (alerts가 DM 전달 핸들을 필요로 함)

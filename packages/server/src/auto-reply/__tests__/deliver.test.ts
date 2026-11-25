@@ -47,7 +47,6 @@ function makePipelineCtx(overrides: Partial<PipelineMsgContext> = {}): PipelineM
       maxMessageLength: 2000,
     },
     userRoles: [],
-    isAdmin: false,
     ...overrides,
   };
 }

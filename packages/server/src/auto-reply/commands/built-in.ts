@@ -8,7 +8,7 @@ import { createStatusCommand } from './status.js';
 
 export interface BuiltInCommandDeps {
   readonly toolRegistry?: ToolRegistry;
-  readonly storage?: StorageAdapter;
+  readonly storage: StorageAdapter;
   readonly profileHealth?: ProfileHealthMonitor;
   readonly profileId?: string;
   readonly defaultModel?: ModelRef;
@@ -17,11 +17,8 @@ export interface BuiltInCommandDeps {
   readonly newsHandle?: NewsSkillHandle;
 }
 
-/** 내장 명령어 등록 (deps 미제공 시 status/reset은 플레이스홀더) */
-export function registerBuiltInCommands(
-  registry: CommandRegistry,
-  deps: BuiltInCommandDeps = {},
-): void {
+/** 내장 명령어 등록 (toolRegistry 미제공 시 status 미등록) */
+export function registerBuiltInCommands(registry: CommandRegistry, deps: BuiltInCommandDeps): void {
   // /help - 도움말
   registry.register(
     {
@@ -60,16 +57,11 @@ export function registerBuiltInCommands(
       usage: '/reset',
       category: 'general',
     },
-    deps.storage
-      ? createResetCommand({ storage: deps.storage })
-      : async () => ({
-          content: '대화 세션이 초기화되었습니다. 새로운 대화를 시작해 주세요.',
-          ephemeral: false,
-        }),
+    createResetCommand({ storage: deps.storage }),
   );
 
   // /status - 서버 상태
-  if (deps.toolRegistry && deps.storage) {
+  if (deps.toolRegistry) {
     registry.register(
       {
         name: 'status',
@@ -89,62 +81,4 @@ export function registerBuiltInCommands(
       }),
     );
   }
-
-  // /price - 시세 조회
-  registry.register(
-    {
-      name: 'price',
-      aliases: ['시세', 'quote'],
-      description: '종목의 현재 시세를 조회합니다',
-      usage: '/price AAPL (또는 /price 삼성전자)',
-      category: 'finance',
-    },
-    async (args) => {
-      if (args.length === 0) {
-        return { content: '종목 심볼을 입력해 주세요. 예: `/price AAPL`', ephemeral: true };
-      }
-      return {
-        content: `${args[0]} 시세 조회 기능은 skills-finance 모듈 연동 후 활성화됩니다.`,
-        ephemeral: false,
-      };
-    },
-  );
-
-  // /portfolio - 포트폴리오 조회
-  registry.register(
-    {
-      name: 'portfolio',
-      aliases: ['포트폴리오', 'pf'],
-      description: '현재 포트폴리오 요약을 표시합니다',
-      usage: '/portfolio',
-      category: 'finance',
-    },
-    async () => ({
-      content: '포트폴리오 조회 기능은 skills-finance 모듈 연동 후 활성화됩니다.',
-      ephemeral: false,
-    }),
-  );
-
-  // /alert - 알림 설정
-  registry.register(
-    {
-      name: 'alert',
-      aliases: ['알림'],
-      description: '가격 알림을 설정합니다',
-      usage: '/alert AAPL > 200 (AAPL이 $200 이상일 때 알림)',
-      category: 'finance',
-    },
-    async (args) => {
-      if (args.length < 3) {
-        return {
-          content: '사용법: `/alert 종목 조건 가격`\n예: `/alert AAPL > 200`',
-          ephemeral: true,
-        };
-      }
-      return {
-        content: '알림 설정 기능은 skills-finance 모듈 연동 후 활성화됩니다.',
-        ephemeral: false,
-      };
-    },
-  );
 }

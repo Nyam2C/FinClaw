@@ -16,7 +16,6 @@ import { createTracer } from '../../observability/tracer.js';
 import type { BindingMatch } from '../../process/binding-matcher.js';
 import { InMemoryCommandRegistry } from '../commands/registry.js';
 import { MockExecutionAdapter } from '../execution-adapter.js';
-import type { FinanceContextProvider } from '../pipeline-context.js';
 import { AutoReplyPipeline } from '../pipeline.js';
 
 function makeLogger(): FinClawLogger {
@@ -32,25 +31,9 @@ function makeLogger(): FinClawLogger {
   } as unknown as FinClawLogger;
 }
 
-function makeProvider(): FinanceContextProvider {
-  return {
-    getActiveAlerts: vi.fn().mockResolvedValue([]),
-    getPortfolio: vi.fn().mockResolvedValue(null),
-    getRecentNews: vi.fn().mockResolvedValue([]),
-    getMarketSession: vi.fn().mockReturnValue({
-      isOpen: true,
-      market: 'NYSE',
-      nextOpenAt: null,
-      timezone: 'America/New_York',
-    }),
-    getWatchlist: vi.fn().mockResolvedValue([]),
-  };
-}
-
-function makeChannel(): Pick<ChannelPlugin, 'send' | 'addReaction' | 'sendTyping'> {
+function makeChannel(): Pick<ChannelPlugin, 'send' | 'sendTyping'> {
   return {
     send: vi.fn().mockResolvedValue(undefined),
-    addReaction: vi.fn().mockResolvedValue(undefined),
     sendTyping: vi.fn().mockResolvedValue(undefined),
   };
 }
@@ -88,7 +71,6 @@ describe('Phase 30 A15 — pipeline produces span tree', () => {
     const channel = makeChannel();
     const pipeline = new AutoReplyPipeline(
       {
-        enableAck: true,
         commandPrefix: '/',
         maxResponseLength: 2000,
         timeoutMs: 10_000,
@@ -96,7 +78,6 @@ describe('Phase 30 A15 — pipeline produces span tree', () => {
       },
       {
         executionAdapter: new MockExecutionAdapter('AI response'),
-        financeContextProvider: makeProvider(),
         commandRegistry: new InMemoryCommandRegistry(),
         logger: makeLogger(),
         getChannel: () => channel,

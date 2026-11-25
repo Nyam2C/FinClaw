@@ -8,8 +8,7 @@ import {
 } from '@finclaw/types';
 import { describe, it, expect } from 'vitest';
 import { MockExecutionAdapter, RunnerExecutionAdapter } from '../execution-adapter.js';
-import type { PipelineMsgContext, FinanceContextProvider } from '../pipeline-context.js';
-import { StubFinanceContextProvider } from '../pipeline-context.js';
+import type { PipelineMsgContext } from '../pipeline-context.js';
 import type { RetrievalResult } from '../stages/memory-retrieval.js';
 
 function makePipelineCtx(): PipelineMsgContext {
@@ -41,7 +40,6 @@ function makePipelineCtx(): PipelineMsgContext {
       maxMessageLength: 2000,
     },
     userRoles: [],
-    isAdmin: false,
   };
 }
 
@@ -285,25 +283,6 @@ describe('extractAssistantText', () => {
 
   it('빈 배열은 빈 문자열', () => {
     expect(extractAssistantText([])).toBe('');
-  });
-});
-
-describe('StubFinanceContextProvider', () => {
-  const provider: FinanceContextProvider = new StubFinanceContextProvider();
-
-  it('모든 조회 메서드는 빈 값 반환', async () => {
-    expect(await provider.getActiveAlerts('u', AbortSignal.timeout(100))).toEqual([]);
-    expect(await provider.getPortfolio('u', AbortSignal.timeout(100))).toBeNull();
-    expect(await provider.getRecentNews(AbortSignal.timeout(100))).toEqual([]);
-    expect(await provider.getWatchlist('u')).toEqual([]);
-  });
-
-  it('getMarketSession은 닫힌 세션을 반환', () => {
-    const session = provider.getMarketSession();
-    expect(session.isOpen).toBe(false);
-    expect(session.market).toBe('NONE');
-    expect(session.nextOpenAt).toBeNull();
-    expect(session.timezone).toBe('Asia/Seoul');
   });
 });
 
