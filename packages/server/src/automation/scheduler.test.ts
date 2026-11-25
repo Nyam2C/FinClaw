@@ -15,9 +15,10 @@ import {
   openDatabase,
   type Database,
 } from '@finclaw/storage';
-import { createAgentId } from '@finclaw/types';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createAgentId, type Timestamp } from '@finclaw/types';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SchedulerService } from './scheduler.js';
+import { DEFAULT_TOP_OF_HOUR_STAGGER_MS, staggerOffsetMs } from './stagger.js';
 
 /** runtime 계약(D1)을 흉내 — 종료 이벤트 yield 전에 agent_runs 1행. outcomes[i] 가 i번째 호출 결과. */
 function fakeRuntime(db: DatabaseSync, outcomes: Array<'ok' | 'fail'>) {
@@ -214,5 +215,38 @@ describe('SchedulerService.triggerNow', () => {
       schedule_id: string;
     }>;
     expect(rows).toEqual([{ id: runId, schedule_id: s.id }]);
+  });
+  describe('SchedulerService — 결정적 stagger (B5)', () => {
+    it('정각 cron 은 due 가 되면 skip 없이 실행되고 next_run_at 은 다음 정각 + 같은 오프셋', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      const s = addSchedule(database.db, {
+        name: 'hourly',
+        cron: '0 * * * *',
+        agentId: createAgentId('finclaw-partner'),
+        prompt: 'p',
+        deliveryChannel: 'web',
+        deliveryTarget: 'broadcast',
+        nextRunAt: Date.UTC(2026, 10, 26, 1, 0, 0) as Timestamp,
+      });
+      const offset = staggerOffsetMs(s.id, DEFAULT_TOP_OF_HOUR_STAGGER_MS);
+      vi.setSystemTime(Date.UTC(2026, 10, 26, 1, 0, 0) + offset);
+      const random = vi.spyOn(Math, 'random');
+      const { runtime, calls } = fakeRuntime(database.db, ['ok', 'ok']);
+      const sched = new SchedulerService({ db: database.db, runtime, lane, logger: makeLogger() });
+      const tick = () => (sched as unknown as { tick(): Promise<void> }).tick();
+
+      await tick();
+      await vi.waitFor(() => expect(calls).toHaveLength(1));
+      expect(random).not.toHaveBeenCalled();
+      await vi.waitFor(() =>
+        expect(getSchedule(database.db, s.id)?.nextRunAt).toBe(
+          Date.UTC(2026, 10, 26, 2, 0, 0) + offset,
+        ),
+      );
+
+      vi.setSystemTime(Date.UTC(2026, 10, 26, 2, 0, 0) + offset);
+      await tick();
+      await vi.waitFor(() => expect(calls).toHaveLength(2));
+    });
   });
 });

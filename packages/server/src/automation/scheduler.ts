@@ -6,12 +6,11 @@ import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import type { AgentRunPort } from '@finclaw/agent';
 import type { ConcurrencyLane, FinClawLogger } from '@finclaw/infra';
-import { nextRunAt as computeNextRunAt, parseCron } from '@finclaw/infra';
 import { findDueSchedules, getSchedule, markScheduleRun, updateSchedule } from '@finclaw/storage';
 import type { Schedule, SchedulerPort } from '@finclaw/types';
 import { createAgentId, createSessionKey } from '@finclaw/types';
 import type { FinclawTracer } from '../observability/tracer.js';
-import { resolveCronStaggerMs } from './stagger.js';
+import { nextStaggeredRunAt } from './stagger.js';
 
 export interface SchedulerCallbacks {
   /**
@@ -146,27 +145,12 @@ export class SchedulerService implements SchedulerPort {
           name: s.name,
         });
         try {
-          const cron = parseCron(s.cron);
-          const next = computeNextRunAt(cron, now);
+          const next = nextStaggeredRunAt(s, now);
           markScheduleRun(this.deps.db, s.id, s.lastRunId ?? null, s.lastRunAt ?? now, next);
         } catch {
           /* swallow */
         }
         continue;
-      }
-      const staggerMs = resolveCronStaggerMs(s);
-      if (staggerMs > 0) {
-        const jitter = Math.floor(Math.random() * staggerMs);
-        if (jitter > 0) {
-          // 이번 폴링 skip — 다음 분 폴링이 재평가 (SQLite 동시 락 안전).
-          this.deps.logger.debug('schedule.staggered', {
-            event: 'schedule.staggered',
-            scheduleId: s.id,
-            cron: s.cron,
-            jitterMs: jitter,
-          });
-          continue;
-        }
       }
       void this.runOne(s, { manual: false });
     }
@@ -221,8 +205,7 @@ export class SchedulerService implements SchedulerPort {
         // schedule.last_run + next_run_at 갱신.
         let nextMs: number | null = null;
         try {
-          const cron = parseCron(s.cron);
-          nextMs = computeNextRunAt(cron, Date.now());
+          nextMs = nextStaggeredRunAt(s, Date.now());
         } catch (cronErr) {
           this.deps.logger.warn('scheduler.cron_invalid', {
             event: 'scheduler.cron_invalid',
