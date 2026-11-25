@@ -41,6 +41,8 @@ export interface FinanceRpcDeps {
   readonly broadcaster?: GatewayBroadcaster;
   /** Phase 26 A: broadcast 대상 WebSocket 연결 맵 (broadcaster 와 함께 주입) */
   readonly connections?: Map<string, WsConnection>;
+  /** phase47 D5: create 시 채널 (생략 시 ['log','websocket']). main 이 Discord client + DISCORD_ALERT_USER_ID 일 때만 'discord' 추가 */
+  readonly alertChannels?: CreateAlertInput['channels']; // [TQ2] DeliveryChannel 은 패키지 barrel 미export
 }
 
 // ─── Phase 26 A: 헬퍼 ───
@@ -281,7 +283,7 @@ export function registerFinanceMethods(deps: FinanceRpcDeps, registry: MethodReg
         userId: params.userId ?? 'default',
         name: `${params.symbol.toUpperCase()} ${params.condition}`,
         condition,
-        channels: ['log', 'discord'],
+        channels: deps.alertChannels ?? ['log', 'websocket'],
         cooldownMs: params.cooldownMs ?? 900_000,
         enabled: true,
       };

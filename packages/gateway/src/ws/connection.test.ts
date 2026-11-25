@@ -219,4 +219,15 @@ describe('WebSocket Connection', () => {
     // authenticate가 즉시 resolve하므로 타임아웃 전에 클리어됨
     expect(ctx.connections.size).toBe(1);
   });
+
+  it('기본 구독에 alert.triggered 포함 (phase47)', async () => {
+    const ctx = makeCtx();
+    await handleWsConnection(createMockWs() as unknown as import('ws').WebSocket, makeReq(), ctx);
+    const conn = [...ctx.connections.values()][0];
+    expect([...(conn?.subscriptions ?? [])]).toEqual([
+      'portfolio.changed',
+      'schedule.completed',
+      'alert.triggered',
+    ]);
+  });
 });

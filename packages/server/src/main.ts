@@ -353,6 +353,10 @@ async function main(): Promise<void> {
       args,
     ),
   );
+  // phase47 M1: 가격 알림 → WS broadcast. setDeliveryHook 과 같은 late-bind (alerts 가 gateway 보다 먼저 생성됨).
+  alertHandle?.setBroadcast((data) =>
+    gateway.ctx.broadcaster.broadcastToChannel(gateway.ctx.connections, 'alert.triggered', data),
+  );
 
   lifecycle.init();
   await gateway.start();

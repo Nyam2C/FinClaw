@@ -293,6 +293,35 @@ describe('finance.* RPC methods', () => {
       const r = (result as { result: { immediateTrigger: boolean } }).result;
       expect(r.immediateTrigger).toBe(false);
     });
+
+    it('기본 channels = [log, websocket] (phase47 D5)', async () => {
+      const store = makeStore();
+      registerFinanceMethods({ alertStore: store }, methods);
+      await call('finance.alert.create', {
+        symbol: 'AAPL',
+        condition: 'price_above',
+        threshold: 200,
+      });
+      expect(store.create).toHaveBeenCalledWith(
+        expect.objectContaining({ channels: ['log', 'websocket'] }),
+      );
+    });
+
+    it('alertChannels 주입 시 그 값', async () => {
+      const store = makeStore();
+      registerFinanceMethods(
+        { alertStore: store, alertChannels: ['log', 'websocket', 'discord'] },
+        methods,
+      );
+      await call('finance.alert.create', {
+        symbol: 'AAPL',
+        condition: 'price_above',
+        threshold: 200,
+      });
+      expect(store.create).toHaveBeenCalledWith(
+        expect.objectContaining({ channels: ['log', 'websocket', 'discord'] }),
+      );
+    });
   });
 
   describe('finance.alert.list', () => {
