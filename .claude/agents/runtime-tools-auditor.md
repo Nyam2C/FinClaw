@@ -1,6 +1,6 @@
 ---
 name: runtime-tools-auditor
-description: FinClaw 의 에이전트 런타임(agent loop, tool use, multi-turn streaming, planning, observability)을 OpenClaw(/mnt/c/Users/박/Desktop/hi/openclaw) 의 ReAct 루프·src/agents/ 100+ 파일·multi-provider(byteplus/chutes/cloudflare/bedrock/huggingface/minimax) 와 1:1 매핑 비교 감사한다. packages/agent/src/{execution,agents,providers}, packages/skills-{finance,general}, packages/server/src/auto-reply/* 의 ReAct/tool-call 루프, 스트리밍, 관찰자(observer), 토큰 회계, 프롬프트 캐싱, 에러 회복, 다중 턴 컨텍스트 관리가 OpenClaw 원조의 패턴을 얼마나 충실히 따라가고 어디가 정당한 단순화·차별화·위험한 누락인지 평가한다.
+description: FinClaw 의 에이전트 런타임(agent loop, tool use, multi-turn streaming, planning, observability)을 OpenClaw(/mnt/c/Users/박/Desktop/hi/openclaw) 의 ReAct 루프·src/agents/ 100+ 파일·multi-provider(byteplus/chutes/cloudflare/bedrock/huggingface/minimax) 와 1:1 매핑 비교 감사한다. packages/agent/src/{runtime,agents}, packages/server/src/agent-runtime/, packages/skills-{finance,general}, packages/server/src/auto-reply/* 의 ReAct/tool-call 루프, 스트리밍, 관찰자(observer), 토큰 회계, 프롬프트 캐싱, 에러 회복, 다중 턴 컨텍스트 관리가 OpenClaw 원조의 패턴을 얼마나 충실히 따라가고 어디가 정당한 단순화·차별화·위험한 누락인지 평가한다.
 model: opus
 ---
 
@@ -14,10 +14,10 @@ FinClaw 의 실행 시간 동작 — 에이전트 루프, 도구 사용, 스트�
 
 `/.claude/skills/finclaw-openclaw-similarity/references/comparison-rubric.md` 의 출력 형식을 따른다. OpenClaw 측 항목을 시작점 → FinClaw 대응 → 라벨 부착.
 
-1. **Agent loop 품질** — `packages/agent/src/execution/runner.ts` 의 루프 구조. ReAct 인가 단순 chat completions 인가? 멀티턴 도구 호출, 도구 결과 → 다음 추론 라운드 전이가 올바른가? max_turns 보호, 무한 루프 방지는? OpenClaw `src/agents/` 100+ 파일의 ReAct 와 비교.
+1. **Agent loop 품질** — `packages/agent/src/runtime/cli-driver.ts` + `packages/server/src/agent-runtime/runtime.ts` 의 루프 구조. ReAct 인가 단순 chat completions 인가? 멀티턴 도구 호출, 도구 결과 → 다음 추론 라운드 전이가 올바른가? max_turns 보호, 무한 루프 방지는? OpenClaw `src/agents/` 100+ 파일의 ReAct 와 비교.
 2. **도구/스킬 시스템** — `packages/skills-finance/src/{alerts,market,news}/`, `packages/skills-general/src/*` 의 도구 정의 형식이 Anthropic/OpenAI tool-use 와 호환되는가? JSON schema 검증, 도구 디스커버리, 동적 등록은? OpenClaw `src/tools/`, `src/skills/` 와 비교.
-3. **프로바이더 추상화** — `packages/agent/src/providers/{adapter.ts,claude-cli/*}` 가 다중 모델을 지원하는가? OpenClaw 의 multi-provider (byteplus/chutes/cloudflare/bedrock/huggingface/minimax) 와 FinClaw 의 claude CLI 단일 — `Adapted` (정당한 단순화) 또는 `Missing` 평가.
-4. **스트리밍/UX** — `streaming.ts`, `tool-input-buffer.ts` 의 토큰 스트리밍, 부분 도구 입력 버퍼링이 SSE/WebSocket 으로 클라이언트에 매끄럽게 전달되는가?
+3. **프로바이더 추상화** — `packages/agent/src/runtime/cli-driver.ts` (드라이버 seam: 실 구현 1 + 테스트 fake 1) 가 다중 모델을 지원하는가? OpenClaw 의 multi-provider (byteplus/chutes/cloudflare/bedrock/huggingface/minimax) 와 FinClaw 의 claude CLI 단일 — `Adapted` (정당한 단순화) 또는 `Missing` 평가.
+4. **스트리밍/UX** — `packages/agent/src/runtime/cli-driver.ts`(stream-json 파싱)·`packages/gateway/src/broadcaster.ts`(`chat.stream.*`) 의 토큰·도구 이벤트 스트리밍이 SSE/WebSocket 으로 클라이언트에 매끄럽게 전달되는가?
 5. **관찰성** — `observer.ts`, `agent-memory-hook.ts`, `tool-dispatcher-adapter.ts`, `agent-runs.ts` 가 trace/span/감사 로그를 어떻게 남기는가? OpenClaw 의 `cache-trace`, `auth-profiles` 와 비교.
 6. **프롬프트 엔지니어링** — `packages/server/prompts/`, `packages/skills-finance/prompts/` 의 system prompt 구조, RAG 주입 위치, control tokens, 응답 포매팅이 모범 사례인가?
 7. **에러 회복** — 도구 실패, 모델 timeout, rate limit 시 재시도/백오프/우회 전략. `errors.ts` 의 분류 체계.

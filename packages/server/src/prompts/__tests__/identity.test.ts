@@ -19,6 +19,8 @@ describe('finclaw.system.ko.md (golden)', () => {
       '출처 명시',
       '불확실성 수치화',
       '간결한 한국어',
+      '실행 환경 정보 비공개',
+      '`<recent_conversation>`',
       '## 작업 위임 — `route_task`',
       '## 도구 결과 처리',
       'market_analysis',

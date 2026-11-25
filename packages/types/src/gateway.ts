@@ -28,6 +28,8 @@ export type RpcMethod =
   | 'memory.search'
   | 'chat.start'
   | 'chat.send'
+  | 'chat.abort'
+  | 'chat.reset'
   | 'system.health'
   | 'system.info'
   | 'system.ping';

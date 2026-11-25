@@ -1,0 +1,10 @@
+{"type":"system","subtype":"init","cwd":"/home/user/.finclaw/agent","session_id":"8a2494ed-5e2a-4f50-a83d-c2f2a972ec39","tools":[],"mcp_servers":[],"model":"claude-haiku-5-5","permissionMode":"default","slash_commands":[],"apiKeySource":"none","claude_code_version":"2.1.332","output_style":"default","agents":[],"skills":[],"plugins":[],"uuid":"d4000000-0000-4000-8000-000000000001"}
+{"type":"system","subtype":"status","status":"requesting","session_id":"8a2494ed-5e2a-4f50-a83d-c2f2a972ec39","uuid":"d4000000-0000-4000-8000-000000000002"}
+{"type":"system","subtype":"thinking_tokens","session_id":"8a2494ed-5e2a-4f50-a83d-c2f2a972ec39","uuid":"d4000000-0000-4000-8000-000000000003"}
+{"type":"system","subtype":"api_retry","attempt":1,"session_id":"8a2494ed-5e2a-4f50-a83d-c2f2a972ec39","uuid":"d4000000-0000-4000-8000-000000000004"}
+{"type":"system","subtype":"compact_boundary","session_id":"8a2494ed-5e2a-4f50-a83d-c2f2a972ec39","uuid":"d4000000-0000-4000-8000-000000000005"}
+{"type":"some_future_event","session_id":"8a2494ed-5e2a-4f50-a83d-c2f2a972ec39","uuid":"d4000000-0000-4000-8000-000000000006"}
+this line is not json
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"..."}},"session_id":"8a2494ed-5e2a-4f50-a83d-c2f2a972ec39","parent_tool_use_id":null,"uuid":"d4000000-0000-4000-8000-000000000007"}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"안녕"}},"session_id":"8a2494ed-5e2a-4f50-a83d-c2f2a972ec39","parent_tool_use_id":null,"uuid":"d4000000-0000-4000-8000-000000000008"}
+{"type":"result","subtype":"success","is_error":false,"duration_ms":900,"duration_api_ms":700,"num_turns":1,"result":"안녕","stop_reason":"end_turn","session_id":"8a2494ed-5e2a-4f50-a83d-c2f2a972ec39","total_cost_usd":0.00001,"usage":{"input_tokens":2,"cache_creation_input_tokens":0,"cache_read_input_tokens":659,"output_tokens":3},"permission_denials":[],"uuid":"d4000000-0000-4000-8000-000000000009"}

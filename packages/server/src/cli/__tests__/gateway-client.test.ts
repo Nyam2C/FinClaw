@@ -1,5 +1,6 @@
 // packages/server/src/cli/__tests__/gateway-client.test.ts
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { issueLocalToken } from '../../composition/local-auth.js';
 import { getGatewayHealth, callGateway } from '../gateway-client.js';
 
 const mockFetch = vi.fn<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>();
@@ -59,5 +60,22 @@ describe('callGateway', () => {
     mockFetch.mockRejectedValue(new Error('timeout'));
     const result = await callGateway('system.info');
     expect(result).toEqual({ ok: false, error: { code: -1, message: 'timeout' } });
+  });
+
+  it('B10: opts.token 이 있으면 Authorization: Bearer', async () => {
+    mockFetch.mockResolvedValue(new Response(JSON.stringify({ result: {} }), { status: 200 }));
+    await callGateway('agent.list', undefined, { token: 'tok' });
+    const init = mockFetch.mock.calls[0]?.[1];
+    expect((init?.headers as Record<string, string> | undefined)?.Authorization).toBe('Bearer tok');
+  });
+
+  it('B10: token 미지정이면 ~/.finclaw/gateway.token 을 쓴다', async () => {
+    issueLocalToken('s');
+    mockFetch.mockResolvedValue(new Response(JSON.stringify({ result: {} }), { status: 200 }));
+    await callGateway('agent.list');
+    const init = mockFetch.mock.calls[0]?.[1];
+    expect((init?.headers as Record<string, string> | undefined)?.Authorization).toMatch(
+      /^Bearer [\w-]+\.[\w-]+\.[\w-]+$/,
+    );
   });
 });

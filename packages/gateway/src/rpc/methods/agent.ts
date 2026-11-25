@@ -1,11 +1,13 @@
 // packages/server/src/gateway/rpc/methods/agent.ts
 import { randomUUID } from 'node:crypto';
-import type { DatabaseSync } from 'node:sqlite';
-import type { ProfileHealthMonitor, RunnerFactory, ToolRegistry } from '@finclaw/agent';
-import { extractAssistantText } from '@finclaw/agent';
+import type {
+  AgentRunPort,
+  ProfileHealthMonitor,
+  TerminalEvent,
+  ToolRegistry,
+} from '@finclaw/agent';
 import type { ConcurrencyLane, FinClawLogger } from '@finclaw/infra';
-import { addAgentRun, type AddAgentRunInput } from '@finclaw/storage';
-import type { AttachMemoryPort, ModelRef, SessionKey, TracerPort } from '@finclaw/types';
+import type { AttachMemoryInput, AttachMemoryPort, TracerPort } from '@finclaw/types';
 import { createAgentId, createSessionKey } from '@finclaw/types';
 import { z } from 'zod/v4';
 import type { MethodRegistry } from '../index.js';
@@ -16,28 +18,17 @@ export interface AgentRpcDeps {
   readonly toolRegistry: ToolRegistry;
   /** main.ts 가 finclaw.system.ko.md frontmatter (id/name/description) 로부터 로드해 주입. */
   readonly agents: readonly AgentInfo[];
-  readonly runnerFactory: RunnerFactory;
-  /** agent.run 전용 큐잉 lane (main.ts 에서 maxConcurrent:1 로 주입) */
+  /** Phase 46: agent.run = runtime oneShot. agent_runs 1행·profileHealth 기록은 runtime 소관 (D10). */
+  readonly runtime: AgentRunPort;
+  /** agent.run 전용 큐잉 lane (main.ts 에서 maxConcurrent:1 로 주입) — 현 동작 유지 (D6) */
   readonly agentRunLane: ConcurrencyLane;
+  /** agent.status 의 health 표시용. */
   readonly profileHealth: ProfileHealthMonitor;
-  readonly systemPrompt: string;
-  readonly defaultModel: ModelRef;
   readonly logger: FinClawLogger;
   readonly profileId?: string;
-  /**
-   * Phase 26 D: agent.run 종료 후 output 을 memory 로 저장하는 훅.
-   * 미주입 시 저장 단계 자체 생략. 호출 위치는 rpc-engineer 가 결정.
-   */
+  /** Phase 26 D: agent.run 종료 후 output → memory 저장 훅. 현 동작 유지 (S2·R6 — phase47 존폐 결정). */
   readonly attachMemoryService?: AttachMemoryPort;
-  /**
-   * Phase 26 D: agent_runs 영속화용 sqlite 핸들.
-   * 미주입 시 agent_runs 저장 + attachMemoryService 호출 모두 skip (best-effort).
-   */
-  readonly db?: DatabaseSync;
-  /**
-   * Phase 30 hotfix P0-1: agent.run RPC 진입을 span 으로 감싸 active trace context
-   * 를 강제. 미주입 시 traceId 부착 skip (기존 동작).
-   */
+  /** Phase 30 hotfix P0-1: agent.run 진입 span — runtime 이 그 traceId 를 agent_runs 에 부착. */
   readonly tracer?: TracerPort;
 }
 
@@ -47,49 +38,23 @@ export interface AgentInfo {
   readonly description: string;
 }
 
-/**
- * agent.run 결과를 agent_runs 에 영속화하고, 조건 충족 시 attachMemoryService 호출.
- *
- * Best-effort: db 미주입 / 저장 실패 / attach 실패 모두 swallow + warn 로그. RPC 응답엔 영향 X.
- * attach 호출 조건: error 없고, output 비어있지 않고, sessionKey 주어졌고, attachMemoryService 주입됐을 때.
- */
-async function persistAgentRunAndAttach(
-  deps: Pick<AgentRpcDeps, 'db' | 'logger' | 'attachMemoryService'>,
-  input: AddAgentRunInput & { sessionKey?: SessionKey },
-): Promise<{ runId?: string }> {
-  if (!deps.db) {
-    return {};
+/** Best-effort: attach 실패는 swallow + warn. RPC 응답엔 영향 X. */
+async function attachMemory(
+  deps: Pick<AgentRpcDeps, 'attachMemoryService' | 'logger'>,
+  input: AttachMemoryInput,
+): Promise<void> {
+  if (!deps.attachMemoryService || !input.output) {
+    return;
   }
-  let runId: string | undefined;
   try {
-    const run = addAgentRun(deps.db, input);
-    runId = run.id;
-    if (deps.attachMemoryService && !input.error && input.output && input.sessionKey) {
-      try {
-        await deps.attachMemoryService.attach({
-          agentRunId: run.id,
-          agentId: input.agentId as string,
-          prompt: input.prompt,
-          output: input.output,
-          sessionKey: input.sessionKey,
-          createdAt: run.createdAt as number,
-        });
-      } catch (attachErr) {
-        deps.logger.warn('agent.run.memory.attach_failed', {
-          event: 'agent.run.memory.attach_failed',
-          agentRunId: run.id,
-          error: (attachErr as Error).message,
-        });
-      }
-    }
-  } catch (storeErr) {
-    deps.logger.warn('agent.run.store_failed', {
-      event: 'agent.run.store_failed',
-      agentId: input.agentId as string,
-      error: (storeErr as Error).message,
+    await deps.attachMemoryService.attach(input);
+  } catch (attachErr) {
+    deps.logger.warn('agent.run.memory.attach_failed', {
+      event: 'agent.run.memory.attach_failed',
+      agentRunId: input.agentRunId,
+      error: (attachErr as Error).message,
     });
   }
-  return { runId };
 }
 
 // 프로세스 내 상태 — agent.status 응답에 사용
@@ -189,111 +154,77 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
         promptLength: params.prompt.length,
       });
 
-      // Phase 30 hotfix P0-1: tracer 주입 시 agent.run RPC 진입을 span 으로 감싸 active
-      // trace context 를 강제 → 하위 runner.execute / persistAgentRunAndAttach 가 traceId 사용.
-      // tracer 미주입 시 fn 을 그대로 실행 (의미적 동등).
-      const runWithSpan = <T>(
-        fn: (traceCtx?: { traceId: string; parentSpanId?: string }) => Promise<T>,
-      ): Promise<T> => {
-        if (!deps.tracer) {
-          return fn(undefined);
-        }
-        return deps.tracer.withSpan('rpc.agent.run', { agentId: params.agentId }, async (ctx) =>
-          fn({ traceId: ctx.traceId, parentSpanId: ctx.spanId }),
-        );
-      };
+      // tracer 주입 시 span 으로 감싸 active trace context 강제 → runtime 이 traceId 를 agent_runs 에 부착.
+      const runWithSpan = <T>(fn: () => Promise<T>): Promise<T> =>
+        deps.tracer
+          ? deps.tracer.withSpan('rpc.agent.run', { agentId: params.agentId }, async () => fn())
+          : fn();
 
-      return runWithSpan(async (traceCtx) => {
+      return runWithSpan(async () => {
         const handle = await deps.agentRunLane.acquire(params.agentId);
         activeRuns.set(params.agentId, (activeRuns.get(params.agentId) ?? 0) + 1);
-
         const sessionKey = createSessionKey(`agent-run-${randomUUID()}`);
-
         try {
-          const agentIdBrand = createAgentId(params.agentId);
-
-          const abortController = new AbortController();
-          const timeoutMs = params.timeoutMs ?? 60_000;
-          const timer = setTimeout(() => abortController.abort(), timeoutMs);
-
-          try {
-            const result = await deps.runnerFactory().execute({
-              agentId: agentIdBrand,
-              sessionKey,
-              model: deps.defaultModel,
-              systemPrompt: deps.systemPrompt,
-              messages: [{ role: 'user', content: params.prompt }],
-              abortSignal: abortController.signal,
-            });
-
-            const output = extractAssistantText(result.messages);
-            const durationMs = Date.now() - startedAt;
-
-            totalCalls.set(params.agentId, (totalCalls.get(params.agentId) ?? 0) + 1);
-            lastCallAt.set(params.agentId, Date.now());
-            lastError.delete(params.agentId);
-            deps.profileHealth.recordResult(profileId, {
-              success: true,
-              modelId: deps.defaultModel.model,
-            });
-
-            deps.logger.info('agent.run.completed', {
-              agentId: params.agentId,
-              durationMs,
-              tokensInput: result.usage.inputTokens,
-              tokensOutput: result.usage.outputTokens,
-              status: result.status,
-            });
-
-            // Phase 26 D: agent_runs 영속화 + memory attach (best-effort).
-            // Phase 30 hotfix P0-1: traceId / parentSpanId 부착.
-            const { runId } = await persistAgentRunAndAttach(deps, {
-              agentId: agentIdBrand,
-              prompt: params.prompt,
-              output,
-              tokensInput: result.usage.inputTokens,
-              tokensOutput: result.usage.outputTokens,
-              durationMs,
-              modelUsed: deps.defaultModel.model,
-              sessionKey,
-              traceId: traceCtx?.traceId,
-              parentSpanId: traceCtx?.parentSpanId,
-            });
-
-            return {
-              agentId: params.agentId,
-              output,
-              tokenUsage: {
-                input: result.usage.inputTokens,
-                output: result.usage.outputTokens,
-              },
-              durationMs,
-              stopReason: result.status,
-              runId,
-            };
-          } finally {
-            clearTimeout(timer);
+          let terminal: TerminalEvent | undefined;
+          for await (const ev of deps.runtime.run({
+            sessionKey,
+            agentId: createAgentId(params.agentId),
+            input: params.prompt,
+            mode: 'oneShot',
+            // [TQ5] timeoutMs 를 주면 그 시각에 abort, 없으면 runtime 무출력 120s / overall 300s 만
+            signal: params.timeoutMs
+              ? AbortSignal.timeout(params.timeoutMs)
+              : new AbortController().signal,
+          })) {
+            if (ev.type === 'done' || ev.type === 'error') {
+              terminal = ev;
+            }
           }
+          if (terminal?.type !== 'done') {
+            throw new Error(
+              terminal
+                ? `${terminal.reason}: ${terminal.message}`
+                : 'agent run ended without result',
+            );
+          }
+
+          const durationMs = Date.now() - startedAt;
+          totalCalls.set(params.agentId, (totalCalls.get(params.agentId) ?? 0) + 1);
+          lastCallAt.set(params.agentId, Date.now());
+          lastError.delete(params.agentId);
+          deps.logger.info('agent.run.completed', {
+            agentId: params.agentId,
+            runId: terminal.runId,
+            durationMs,
+            tokensInput: terminal.usage.input,
+            tokensOutput: terminal.usage.output,
+          });
+
+          // Phase 26 D: output → memory (현 동작 유지). agent_runs 행은 runtime 이 이미 기록 → link 가능.
+          await attachMemory(deps, {
+            agentRunId: terminal.runId,
+            agentId: params.agentId,
+            prompt: params.prompt,
+            output: terminal.text,
+            sessionKey,
+            createdAt: Date.now(),
+          });
+
+          return {
+            agentId: params.agentId,
+            output: terminal.text,
+            tokenUsage: { input: terminal.usage.input, output: terminal.usage.output },
+            durationMs,
+            stopReason: 'completed',
+            runId: terminal.runId,
+          };
         } catch (err) {
           const msg = (err as Error).message;
           lastError.set(params.agentId, msg);
-          deps.profileHealth.recordResult(profileId, false);
           deps.logger.warn('agent.run.failed', {
             agentId: params.agentId,
             error: msg,
             durationMs: Date.now() - startedAt,
-          });
-          // Phase 26 D: 실패도 agent_runs 에 기록 (감사용). attach 는 호출 X (output 없음 → helper 가 자동 skip).
-          // Phase 30 hotfix P0-1: traceId / parentSpanId 부착.
-          await persistAgentRunAndAttach(deps, {
-            agentId: createAgentId(params.agentId),
-            prompt: params.prompt,
-            output: '',
-            durationMs: Date.now() - startedAt,
-            modelUsed: deps.defaultModel.model,
-            error: msg,
-            traceId: traceCtx?.traceId,
-            parentSpanId: traceCtx?.parentSpanId,
           });
           throw err;
         } finally {

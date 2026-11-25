@@ -8,11 +8,12 @@ import type { ActiveSession } from './rpc/types.js';
  *
  * - 세션 시작/종료/조회
  * - 동일 연결에서 중복 실행 방지
- * - TTL 기반 자동 만료 (AbortSignal.timeout)
+ * - 마지막 활동(chat.send 수신·run 종료) 기준 유휴 TTL 만료 — 진행 중 run 이 있으면 유지
  * - 주기적 cleanup (60초 간격)
  */
 export class ChatRegistry {
   private readonly sessions = new Map<string, ActiveSession>();
+  private readonly activity = new Map<string, { lastActiveAt: number; runs: number }>();
   private readonly cleanupTimer: ReturnType<typeof setInterval>;
 
   constructor(private readonly sessionTtlMs: number) {
@@ -44,16 +45,8 @@ export class ChatRegistry {
       sessionKey: params.sessionKey,
     };
 
-    // TTL 기반 자동 타임아웃
-    // TODO(review-3): stopSession 시 TTL 타이머가 남아있음. AbortSignal.any 패턴으로 정리 권장
-    const ttlSignal = AbortSignal.timeout(this.sessionTtlMs);
-    ttlSignal.addEventListener('abort', () => {
-      if (this.sessions.has(session.sessionId)) {
-        this.stopSession(session.sessionId);
-      }
-    });
-
     this.sessions.set(session.sessionId, session);
+    this.activity.set(session.sessionId, { lastActiveAt: session.startedAt, runs: 0 });
 
     return session;
   }
@@ -67,8 +60,27 @@ export class ChatRegistry {
 
     session.abortController.abort();
     this.sessions.delete(sessionId);
+    this.activity.delete(sessionId);
 
     return { stopped: true };
+  }
+
+  /** chat.send 수신 — 유휴 TTL 연장 + 진행 중 run 표시 (진행 중이면 만료하지 않는다) */
+  runStarted(sessionId: string): void {
+    const a = this.activity.get(sessionId);
+    if (a) {
+      a.runs++;
+      a.lastActiveAt = Date.now();
+    }
+  }
+
+  /** run 종료 — 유휴 TTL 은 이 시점부터 다시 센다 */
+  runEnded(sessionId: string): void {
+    const a = this.activity.get(sessionId);
+    if (a) {
+      a.runs--;
+      a.lastActiveAt = Date.now();
+    }
   }
 
   /** 세션 조회 */
@@ -82,6 +94,7 @@ export class ChatRegistry {
       session.abortController.abort();
     }
     this.sessions.clear();
+    this.activity.clear();
   }
 
   /** 활성 세션 수 */
@@ -89,11 +102,11 @@ export class ChatRegistry {
     return this.sessions.size;
   }
 
-  /** TTL 만료 세션 정리 */
+  /** 유휴 TTL 만료 세션 정리 */
   private cleanup(): void {
     const now = Date.now();
-    for (const [id, session] of this.sessions) {
-      if (now - session.startedAt > this.sessionTtlMs) {
+    for (const [id, a] of this.activity) {
+      if (a.runs === 0 && now - a.lastActiveAt > this.sessionTtlMs) {
         this.stopSession(id);
       }
     }

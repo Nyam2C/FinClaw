@@ -34,8 +34,10 @@ export interface AgentRunRow {
 
 export type { AgentRunLog } from '@finclaw/types';
 
-/** addAgentRun 입력 — id/createdAt 은 함수 내부에서 생성 */
+/** addAgentRun 입력 — id 미지정 시 함수 내부에서 생성, createdAt 은 항상 내부 생성 */
 export interface AddAgentRunInput {
+  /** Phase 46 D1: runtime 이 발급한 runId 를 PK 로 (종료 이벤트 yield 전 1행 기록). */
+  id?: string;
   agentId: AgentId;
   prompt: string;
   output: string;
@@ -107,7 +109,7 @@ const MAX_LIMIT = 200;
 // ─── CRUD ───
 
 export function addAgentRun(db: DatabaseSync, input: AddAgentRunInput): AgentRunLog {
-  const id = randomUUID();
+  const id = input.id ?? randomUUID();
   const createdAt = Date.now() as Timestamp;
 
   db.prepare(

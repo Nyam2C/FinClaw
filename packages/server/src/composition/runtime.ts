@@ -4,12 +4,11 @@
 import {
   InMemoryToolRegistry,
   ProfileHealthMonitor,
-  Runner,
-  type ProviderAdapter,
-  type RunnerFactory,
-  type RunnerTracerAdapter,
+  type AgentDriver,
+  type AgentRunPort,
 } from '@finclaw/agent';
-import { ConcurrencyLane, ConcurrencyLaneManager, type FinClawLogger } from '@finclaw/infra';
+import { signToken } from '@finclaw/gateway';
+import { ConcurrencyLane, type FinClawLogger } from '@finclaw/infra';
 import type { MarketSkillHandle, NewsSkillHandle } from '@finclaw/skills-finance';
 import {
   createRerankerWithFallback,
@@ -17,11 +16,11 @@ import {
   type createStorage,
   type EmbeddingProvider,
 } from '@finclaw/storage';
-import type { ChannelPlugin, ModelRef, Schedule } from '@finclaw/types';
-import { DefaultAttachMemoryService } from '../auto-reply/agent-memory-hook.js';
+import type { ChannelPlugin, FinClawConfig, ModelRef, Schedule } from '@finclaw/types';
+import { AgentRuntime } from '../agent-runtime/runtime.js';
+import type { DefaultAttachMemoryService } from '../auto-reply/agent-memory-hook.js';
 import { registerBuiltInCommands } from '../auto-reply/commands/built-in.js';
 import { InMemoryCommandRegistry } from '../auto-reply/commands/registry.js';
-import { RunnerExecutionAdapter } from '../auto-reply/execution-adapter.js';
 import { AutoReplyPipeline } from '../auto-reply/pipeline.js';
 import { SchedulerService } from '../automation/scheduler.js';
 import { createTracer } from '../observability/tracer.js';
@@ -30,67 +29,91 @@ import { wireMemoryServices } from './memory-services.js';
 type Storage = ReturnType<typeof createStorage>;
 type Tracer = ReturnType<typeof createTracer>;
 
+/** [TQ3] N7: Discord pipeline 타임아웃 > 메인 overall 300s — runtime 의 timeout 분류(고정 문구)가 먼저 나도록. */
+const PIPELINE_TIMEOUT_MS = 330_000;
+
 // ───────────────────────── buildExecution (561-591) ─────────────────────────
 
 export interface BuildExecutionDeps {
   readonly storage: Storage;
-  readonly providerAdapter: ProviderAdapter;
-  readonly lanes: ConcurrencyLaneManager;
   readonly profileHealth: ProfileHealthMonitor;
   readonly logger: FinClawLogger;
   readonly defaultModel: ModelRef;
   readonly systemPrompt: string;
+  /** Phase 46 M3 */
+  readonly driver: AgentDriver;
+  readonly embeddingProvider: EmbeddingProvider | undefined;
+  readonly finclawConfig: FinClawConfig;
+  /** per-run JWT mint 용 (/mcp 와 같은 secret). */
+  readonly mcp: { readonly url: string; readonly jwtSecret: string };
 }
 
 export interface ExecutionBundle {
   readonly tracer: Tracer;
-  readonly runnerFactory: RunnerFactory;
-  readonly adapter: RunnerExecutionAdapter;
+  readonly runtime: AgentRuntime;
+  readonly attachMemoryService: DefaultAttachMemoryService;
 }
 
 export function buildExecution(deps: BuildExecutionDeps): ExecutionBundle {
-  const { storage, providerAdapter, lanes, profileHealth, logger, defaultModel, systemPrompt } =
-    deps;
-
-  // Phase 30 A6: OTel tracer — span 을 SQLite spans 테이블에 SQL exporter 로 기록.
-  // Phase 30 hotfix P0-2: Runner 에 tracer adapter 주입 — agent.turn / provider.stream span 활성화.
-  const tracer = createTracer({ db: storage.db });
-  const tracerAdapter: RunnerTracerAdapter = {
-    withSpan: (name, attrs, fn) => tracer.withSpan(name, attrs, async () => fn()),
-  };
-
-  const runnerFactory: RunnerFactory = () =>
-    new Runner({
-      provider: providerAdapter,
-      laneManager: lanes,
-      tracer: tracerAdapter,
-    });
-
-  // 4b. 실행 어댑터 (storage 주입 — 대화 이력 load/save)
-  const adapter = new RunnerExecutionAdapter({
-    runnerFactory,
+  const {
+    storage,
+    profileHealth,
+    logger,
     defaultModel,
     systemPrompt,
+    driver,
+    embeddingProvider,
+    finclawConfig,
+    mcp,
+  } = deps;
+
+  // Phase 30 A6: OTel tracer — span 을 SQLite spans 테이블에 SQL exporter 로 기록.
+  const tracer = createTracer({ db: storage.db });
+
+  // Phase 26 B/C/D + Phase 30 D5 (buildPipeline 에서 이동): capture / retrieval / attach 3 service.
+  const rerankCfg = finclawConfig.rag?.rerank;
+  const rerankEnabled = rerankCfg?.enabled !== false;
+  const reranker = rerankEnabled ? createRerankerWithFallback(new LocalReranker()) : undefined;
+  const { memoryCaptureService, memoryRetrievalService, attachMemoryService } = wireMemoryServices(
+    { db: storage.db, embeddingProvider, logger },
+    { reranker, rerankTopKFirst: rerankCfg?.topKFirst },
+  );
+
+  // Phase 46 M3: 채널 무관 런타임 — Discord(pipeline) 부터 사용. M4 에서 chat·cron·agent.run 도 합류.
+  const runtime = new AgentRuntime({
+    driver,
     storage,
-    logger,
+    db: storage.db,
+    systemPrompt,
+    defaultModel: defaultModel.model,
+    mcp: {
+      url: mcp.url,
+      // N3: 도구 ctx.sessionId = sessionKey (bridge identity). exp = run 최대 수명(overall 300s) + 여유 → 10분
+      mintToken: (sessionKey) =>
+        signToken(
+          { sub: 'finclaw', sessionId: sessionKey, exp: Math.floor(Date.now() / 1000) + 600 },
+          mcp.jwtSecret,
+        ),
+    },
+    capture: memoryCaptureService,
+    retrieval: memoryRetrievalService,
     profileHealth,
-    profileId: 'default',
+    tracer,
+    logger,
   });
 
-  return { tracer, runnerFactory, adapter };
+  return { tracer, runtime, attachMemoryService };
 }
 
 // ───────────────────────── buildPipeline (593-653) ─────────────────────────
 
 export interface BuildPipelineDeps {
-  readonly adapter: RunnerExecutionAdapter;
+  readonly runtime: AgentRunPort;
   readonly toolRegistry: InMemoryToolRegistry;
   readonly storage: Storage;
   readonly profileHealth: ProfileHealthMonitor;
   readonly marketHandle: MarketSkillHandle | undefined;
   readonly newsHandle: NewsSkillHandle | undefined;
-  readonly embeddingProvider: EmbeddingProvider | undefined;
-  readonly finclawConfig: import('@finclaw/types').FinClawConfig;
   readonly tracer: Tracer;
   readonly logger: FinClawLogger;
   readonly defaultModel: ModelRef;
@@ -99,19 +122,16 @@ export interface BuildPipelineDeps {
 
 export interface PipelineBundle {
   readonly pipeline: AutoReplyPipeline;
-  readonly attachMemoryService: DefaultAttachMemoryService;
 }
 
 export function buildPipeline(deps: BuildPipelineDeps): PipelineBundle {
   const {
-    adapter,
+    runtime,
     toolRegistry,
     storage,
     profileHealth,
     marketHandle,
     newsHandle,
-    embeddingProvider,
-    finclawConfig,
     tracer,
     logger,
     defaultModel,
@@ -130,45 +150,21 @@ export function buildPipeline(deps: BuildPipelineDeps): PipelineBundle {
     newsHandle,
   });
 
-  // Phase 26 B/C/D: capture / retrieval / attach 3 service 를 동일 deps 로 wire-up.
-  // - capture: 정규식 5종 명시적 선언 저장
-  // - retrieval: hybrid (vector+FTS) RAG 주입, embeddingProvider 미주입 시 FTS-only fallback
-  // - attach: agent.run output → memory 훅
-  // Phase 30 D5: RAG re-ranker (config.rag.rerank.enabled 기본 true).
-  // LocalReranker (Xenova ONNX) 가 모델 미존재 시 mock 으로 자동 fallback.
-  const rerankCfg = finclawConfig.rag?.rerank;
-  const rerankEnabled = rerankCfg?.enabled !== false;
-  const reranker = rerankEnabled ? createRerankerWithFallback(new LocalReranker()) : undefined;
-
-  const { memoryCaptureService, memoryRetrievalService, attachMemoryService } = wireMemoryServices(
-    {
-      db: storage.db,
-      embeddingProvider,
-      logger,
-    },
-    {
-      reranker,
-      rerankTopKFirst: rerankCfg?.topKFirst,
-    },
-  );
-
   const pipeline = new AutoReplyPipeline(
     {
       commandPrefix: '!finclaw ',
-      timeoutMs: 60_000,
+      timeoutMs: PIPELINE_TIMEOUT_MS,
     },
     {
-      executionAdapter: adapter,
+      runtime,
       commandRegistry,
       logger,
       getChannel: (id) => channelPluginRegistry.get(id),
-      memoryCaptureService,
-      memoryRetrievalService,
       tracer,
     },
   );
 
-  return { pipeline, attachMemoryService };
+  return { pipeline };
 }
 
 // ───────────────────────── buildAutomation (698-757) ─────────────────────────
@@ -182,11 +178,8 @@ export type DeliveryHook = (args: {
 
 export interface BuildAutomationDeps {
   readonly storage: Storage;
-  readonly runnerFactory: RunnerFactory;
-  readonly defaultModel: ModelRef;
-  readonly systemPrompt: string;
+  readonly runtime: AgentRunPort;
   readonly logger: FinClawLogger;
-  readonly profileHealth: ProfileHealthMonitor;
   readonly tracer: Tracer;
   readonly lifecycle: { register(fn: () => void | Promise<void>): void };
 }
@@ -199,16 +192,7 @@ export interface AutomationBundle {
 }
 
 export function buildAutomation(deps: BuildAutomationDeps): AutomationBundle {
-  const {
-    storage,
-    runnerFactory,
-    defaultModel,
-    systemPrompt,
-    logger,
-    profileHealth,
-    tracer,
-    lifecycle,
-  } = deps;
+  const { storage, runtime, logger, tracer, lifecycle } = deps;
 
   // Phase 28: schedule 동시 실행 1개로 제한하는 lane.
   // agent.run 큐잉 lane 과 별개로 schedule 전용 (대기열 5분 보유).
@@ -228,13 +212,9 @@ export function buildAutomation(deps: BuildAutomationDeps): AutomationBundle {
   const maxConsecutiveFailures = maxFailRaw ? Number(maxFailRaw) : 3;
   const scheduler = new SchedulerService({
     db: storage.db,
-    runnerFactory,
+    runtime,
     lane: scheduleLane,
-    defaultModel,
-    systemPrompt,
     logger,
-    profileHealth,
-    profileId: 'default',
     maxConsecutiveFailures,
     // Phase 30 hotfix P0-1: schedule 실행을 새 trace 로 감싸 agent_runs.trace_id 부착.
     tracer,

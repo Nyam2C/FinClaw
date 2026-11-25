@@ -9,7 +9,6 @@ export interface AnalyzeRunnerRequest {
   readonly systemPrompt: string;
   readonly prompt: string;
   readonly modelId: string;
-  readonly timeoutMs?: number;
 }
 export interface AnalyzeRunnerResult {
   readonly text: string;
@@ -79,7 +78,6 @@ export async function analyzeMarket(
     systemPrompt,
     prompt: userPrompt,
     modelId: modelRef.model,
-    timeoutMs: 30_000,
   });
 
   const parsed = AnalysisResponseSchema.safeParse(JSON.parse(result.text));

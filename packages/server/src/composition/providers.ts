@@ -1,50 +1,21 @@
 // packages/server/src/composition/providers.ts
-// Phase 36: main.ts 274-303 에서 추출. Phase 41: SDK dual-path 제거 (CLI 단일).
+// Phase 36: main.ts 274-303 에서 추출. Phase 46: CLI 실행은 agent-runtime 드라이버로 이동 — 도구 레지스트리만 남음.
 
-import { CliProviderAdapter, DEFAULT_CLAUDE_BACKEND, InMemoryToolRegistry } from '@finclaw/agent';
-import { signToken } from '@finclaw/gateway';
-import { ConcurrencyLaneManager, type FinClawLogger } from '@finclaw/infra';
-import type { FinClawConfig } from '@finclaw/types';
+import { InMemoryToolRegistry } from '@finclaw/agent';
+import type { FinClawLogger } from '@finclaw/infra';
 
 export interface BuildProvidersDeps {
-  readonly finclawConfig: FinClawConfig;
   readonly logger: FinClawLogger;
-  readonly mcpEndpoint: { readonly url: string; readonly jwtSecret: string };
 }
 
 export interface ProvidersBundle {
-  readonly providerAdapter: CliProviderAdapter;
-  readonly lanes: ConcurrencyLaneManager;
   readonly toolRegistry: InMemoryToolRegistry;
 }
 
-export function buildProviders({
-  finclawConfig,
-  logger,
-  mcpEndpoint,
-}: BuildProvidersDeps): ProvidersBundle {
-  const cliBackend = {
-    ...DEFAULT_CLAUDE_BACKEND,
-    command: finclawConfig.cliBackend?.command ?? 'claude',
-    ...(finclawConfig.cliBackend?.watchdog
-      ? { reliability: { watchdog: finclawConfig.cliBackend.watchdog } }
-      : {}),
-    mcp: {
-      url: mcpEndpoint.url,
-      mintToken: () => signToken({ sub: 'finclaw', sessionId: 'mcp' }, mcpEndpoint.jwtSecret),
-      allowedTools: 'mcp__finclaw__*',
-    },
-  };
-  const providerAdapter = new CliProviderAdapter({
-    backend: cliBackend,
-    defaultTimeoutMs: finclawConfig.cliBackend?.timeoutMs ?? 60_000,
-  });
+export function buildProviders({ logger }: BuildProvidersDeps): ProvidersBundle {
   logger.info('provider.initialized', {
     event: 'provider.initialized',
     providerKind: 'claude-cli',
   });
-  const lanes = new ConcurrencyLaneManager();
-  const toolRegistry = new InMemoryToolRegistry();
-
-  return { providerAdapter, lanes, toolRegistry };
+  return { toolRegistry: new InMemoryToolRegistry() };
 }

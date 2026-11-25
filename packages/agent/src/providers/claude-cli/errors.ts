@@ -1,42 +1,15 @@
 // packages/agent/src/providers/claude-cli/errors.ts
-
-export type CliFailoverReason =
-  | 'auth'
-  | 'rate_limit'
-  | 'timeout'
-  | 'format'
-  | 'model_not_found'
-  | 'unknown';
-
-export class CliFailoverError extends Error {
-  readonly reason: CliFailoverReason;
-  readonly provider: string;
-  readonly model: string;
-  readonly status?: number;
-
-  constructor(
-    message: string,
-    opts: {
-      reason: CliFailoverReason;
-      provider: string;
-      model: string;
-      status?: number;
-    },
-  ) {
-    super(message);
-    this.name = 'CliFailoverError';
-    this.reason = opts.reason;
-    this.provider = opts.provider;
-    this.model = opts.model;
-    this.status = opts.status;
-  }
-}
+// Phase 46 D5: CliFailoverError/Reason 삭제(유일 사용처 runner.ts 삭제). stderr·result 분류만 — cli-driver 가 사용.
+import type { AgentErrorReason } from '../../runtime/types.js';
 
 const TIMEOUT_RE = /timeout|timed out|deadline exceeded|no output for/i;
-const AUTH_RE = /(unauthor|forbid|invalid.+token|please log ?in|claude login)/i;
+// Phase 46: 'not logged in' — 실측 2.1.332 미인증 result 문구 ("Not logged in · Please run /login")
+const AUTH_RE = /(unauthor|forbid|invalid.+token|please log ?in|claude login|not logged in)/i;
 const RATE_LIMIT_RE = /(rate ?limit|too many req|quota)/i;
 
-export function classifyCliError(message: string): CliFailoverReason {
+export function classifyCliError(
+  message: string,
+): Extract<AgentErrorReason, 'auth' | 'rate_limit' | 'timeout' | 'unknown'> {
   if (AUTH_RE.test(message)) {
     return 'auth';
   }

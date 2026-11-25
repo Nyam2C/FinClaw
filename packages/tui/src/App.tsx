@@ -1,6 +1,10 @@
 // packages/tui/src/App.tsx
 
-import type { ChatStreamDeltaParams, ChatStreamErrorParams } from '@finclaw/types';
+import type {
+  ChatStreamDeltaParams,
+  ChatStreamEndParams,
+  ChatStreamErrorParams,
+} from '@finclaw/types';
 import { Box, useInput, useApp } from 'ink';
 import React, { useState, useEffect, useCallback } from 'react';
 import { ChatView, type ChatMessage } from './ChatView.js';
@@ -68,19 +72,15 @@ export function App({ gatewayUrl, token, agentId }: AppProps) {
           setStreamText((prev) => prev + delta);
           break;
         }
-        case 'chat.stream.end':
-          setStreamText((currentStream) => {
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: crypto.randomUUID(),
-                role: 'assistant',
-                content: currentStream,
-              },
-            ]);
-            return '';
-          });
+        case 'chat.stream.end': {
+          const { result } = params as unknown as ChatStreamEndParams;
+          setStreamText('');
+          setMessages((prev) => [
+            ...prev,
+            { id: crypto.randomUUID(), role: 'assistant', content: result.text },
+          ]);
           break;
+        }
         case 'chat.stream.error': {
           const { error } = params as unknown as ChatStreamErrorParams;
           setStreamText('');

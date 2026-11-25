@@ -23,4 +23,5 @@ export interface RouteResult {
   readonly isError: boolean;
 }
 
-export type Dispatcher = (req: RouteRequest) => Promise<RouteResult>;
+/** D2: signal = registry 가 timeout·외부 abort 를 합친 ctx.abortSignal — 서브에이전트 spawn 까지 전달. */
+export type Dispatcher = (req: RouteRequest, signal?: AbortSignal) => Promise<RouteResult>;

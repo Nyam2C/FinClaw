@@ -1,4 +1,4 @@
-import type { ChatExecutionPort } from '@finclaw/agent';
+import type { AgentRunPort } from '@finclaw/agent';
 import { resetEventBus } from '@finclaw/infra';
 import type { ModelRef } from '@finclaw/types';
 // packages/gateway/src/server.test.ts
@@ -11,21 +11,17 @@ const TEST_MODEL: ModelRef = {
   model: 'claude-test',
 };
 
-function makeStubAdapter(): ChatExecutionPort {
-  return {
-    execute: async () => ({ content: '', usage: { inputTokens: 0, outputTokens: 0 } }),
-    executeForTui: async () => ({
-      messageId: 'stub',
-      content: '',
-      usage: { inputTokens: 0, outputTokens: 0 },
-    }),
-  } as unknown as ChatExecutionPort;
-}
+const stubRuntime: AgentRunPort = {
+  async *run() {
+    yield* [];
+  },
+  reset: async () => false,
+};
 
 function makeTestDeps(): GatewayServerDeps {
   return {
     defaultModel: TEST_MODEL,
-    adapter: makeStubAdapter(),
+    runtime: stubRuntime,
   };
 }
 

@@ -1,6 +1,10 @@
 // packages/tui/src/__tests__/chat.test.ts
 
-import type { ChatStreamDeltaParams, ChatStreamErrorParams } from '@finclaw/types';
+import type {
+  ChatStreamDeltaParams,
+  ChatStreamEndParams,
+  ChatStreamErrorParams,
+} from '@finclaw/types';
 import { describe, it, expect } from 'vitest';
 
 /**
@@ -29,7 +33,10 @@ function handleNotification(
     }
     case 'chat.stream.end': {
       return {
-        messages: [...state.messages, { role: 'assistant', content: state.streamText }],
+        messages: [
+          ...state.messages,
+          { role: 'assistant', content: (params as unknown as ChatStreamEndParams).result.text },
+        ],
         streamText: '',
       };
     }
@@ -85,7 +92,7 @@ describe('chat notification routing', () => {
 
     state = handleNotification(state, 'chat.stream.end', {
       sessionId: 'sess-1',
-      result: {},
+      result: { text: 'Hello World', usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
     });
 
     expect(state.streamText).toBe('');

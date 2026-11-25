@@ -7,7 +7,7 @@ FinClaw 는 사용자 본인의 투자 판단·시장 조사·포트폴리오 �
 ## 왜 FinClaw 인가
 
 - **금융 도메인에 한정한 축약 코드베이스** — 12 워크스페이스 패키지, OpenClaw 아키텍처의 금융 특화 축소판. 한 사람이 전부 읽고 수정 가능한 크기를 의도.
-- **감사 가능성 우선** — 모든 거래 입력·기억·`agent.run` 결과·RAG 주입 ID 가 SQLite (`transactions`, `memories`, `agent_runs`) 에 영속화되며, 회상 시 어떤 기억이 주입됐는지 로그로 남는다.
+- **감사 가능성 우선** — 모든 거래 입력·기억·RAG 주입 ID 가 SQLite (`transactions`, `memories`, `agent_runs`) 에 영속화되고, 모든 실행(Discord·Web/TUI·cron·`agent.run`)이 run 당 `agent_runs` 1행을 남기며, 회상 시 어떤 기억이 주입됐는지 로그로 남는다.
 - **명시적 선언 기반 기억** — 사용자가 `!finclaw remember`, `기억해`, `메모`, `선호`, `내 (투자) 원칙은 …` 같은 정규식 패턴을 사용할 때만 저장. LLM 자동 추출은 환각 위험으로 의도적 비대상.
 - **읽기 전용 + 수동 입력 거래 이력** — `finance.transaction.add` 는 사용자가 "이미 한 매매" 를 기록하는 경로지 "FinClaw 가 자동 매매" 가 아니다. holdings 는 transactions 로부터 파생.
 - **외부 키 없이 작동하는 mock-only 테스트 스탠스** — 3-tier vitest (unit / storage / live) 분리. 라이브 API 호출은 `test:live` 로만 격리.
@@ -33,7 +33,7 @@ corepack prepare pnpm@10.4.1 --activate
 
 ```bash
 pnpm setup            # .env 복사 + pnpm install + ~/.finclaw/ 생성
-# 그 다음 .env 를 편집해 DISCORD_BOT_TOKEN 입력
+# (선택) Discord 를 쓰려면 .env 에 DISCORD_BOT_TOKEN 입력 — 없으면 Discord 만 비활성
 # 추론은 Claude 구독(CLI) — `claude login` 필요, API 키 불필요 (아래 "Claude 구독(CLI)-only" 참고)
 pnpm build
 ```
@@ -48,31 +48,32 @@ pnpm dev
 pnpm dev:all
 ```
 
-부팅이 완료되면 로그에 `Gateway listening on …` 이 찍힌다. Discord 봇이 온라인 상태가 되면 멘션이나 `!finclaw <메시지>` 로 대화할 수 있다.
+부팅이 완료되면 로그에 `Gateway listening on 127.0.0.1:3000` 이 찍히고, Web/TUI/CLI 용 로컬 토큰이 `~/.finclaw/gateway.token` 에 기록된다(아래 "Web UI 접속"). Discord 봇이 온라인 상태가 되면 멘션이나 `!finclaw <메시지>` 로 대화할 수 있다.
 
 > ⚠️ **함정**: `main()` 은 **현재 작업 디렉터리**의 `.env` 만 읽는다 (`process.loadEnvFile`, 이미 export 된 값은 덮어쓰지 않음). 레포 루트에서 `pnpm dev` 하면 루트 `.env` 가 로드되고, 다른 디렉터리에서 실행하면 셸 `export` 가 필요하다. Docker compose 는 `env_file: .env` 로 자동 주입한다.
 
 ### Claude 구독(CLI)-only (기본 모드)
 
-FinClaw 는 **Anthropic API 키 없이 Claude 구독(`claude` CLI 로그인)만으로** 구동한다 (`provider: 'claude-cli'`, 유일한 백엔드). 실행마다 `claude -p --output-format json` 자식 프로세스를 띄우고, FinClaw 의 도구는 **in-process HTTP MCP**(`/mcp`)로 노출되어 CLI 가 자기 루프 안에서 직접 호출한다.
+FinClaw 는 **Anthropic API 키 없이 Claude 구독(`claude` CLI 로그인)만으로** 구동한다 (`provider: 'claude-cli'`, 유일한 백엔드). 턴마다 `claude -p --output-format stream-json` 자식 프로세스를 하나 띄우고(cwd `~/.finclaw/agent`), 그 이벤트 스트림을 `AgentRuntime` 이 받아 delta·도구·종료 이벤트로 흘린다. FinClaw 의 도구는 **in-process HTTP MCP**(`/mcp`)로 노출되어 CLI 가 자기 루프 안에서 직접 호출한다.
 
 - **선행 조건:** `claude` CLI 설치 + `claude login`(구독 인증). `ANTHROPIC_API_KEY` 불필요 — 설정돼 있어도 CLI 자식 프로세스 env 에서 지운다(구독 인증 강제).
 - **읽기 전용:** `/mcp` 는 등록된 도구를 전부 노출하며, 등록 도구는 모두 **조회 전용**이다 — `get_current_datetime`, `route_task`, `list_alerts`, `get_alert_history`, 그리고 플러그인 MCP 도구(`mcp:*`). 알림 생성·삭제, 스케줄, 브로커리지 동기화, 거래 기록 같은 변경은 LLM 도구가 아니라 Web/TUI/CLI 의 RPC 로만 한다 — **주식 매수 권한은 사람에게만.**
-- **격리:** CLI 내장 도구(Bash/Edit/Read 등)는 `--tools ""` 로 막고, `--strict-mcp-config` 로 사용자 전역 MCP 설정을 배제한다.
+- **격리:** CLI 내장 도구(Bash/Edit/Read 등)는 `--tools ""` 로 막고, `--setting-sources ""` 로 사용자 설정·CLAUDE.md·훅을, `--strict-mcp-config` 로 사용자 전역 MCP 설정을 배제한다. 시스템 프롬프트는 `--system-prompt` 로 통째로 교체한다.
+- **대화별 세션:** 대화(sessionKey)마다 CLI 세션 하나를 `--session-id` 로 열고 다음 턴은 `--resume` 으로 잇는다(바인딩은 `conversations.metadata`). 6 시간 쉬면 새 세션으로 회전하고 직전 대화 몇 턴(recap)을 프롬프트 앞에 붙인다. cron·`agent.run` 은 세션을 남기지 않는 1회 실행(oneShot)이다.
 
 ## 기능
 
 ### 1. 대화 (auto-reply 파이프라인)
 
-Discord 멘션 또는 `!finclaw <메시지>` 로 자연어 대화. 메시지 한 건이 들어오면 다음 8 단계 파이프라인을 거친다 (`packages/server/src/auto-reply/pipeline.ts`):
+Discord 멘션 또는 `!finclaw <메시지>` 로 자연어 대화. 메시지 한 건이 들어오면 다음 6 단계 파이프라인을 거친다 (`packages/server/src/auto-reply/pipeline.ts`). 기억 저장·회상은 Execute 가 부르는 `AgentRuntime` 의 `prepareTurn` 안에서 돈다 — Web/TUI 채팅도 같은 경로다.
 
 ```
-Normalize → Command → MemoryCapture → ACK → Context → MemoryRetrieval → Execute → Deliver
+Normalize → Command → ACK → Context → Execute(AgentRuntime: MemoryCapture → MemoryRetrieval → claude -p) → Deliver
 ```
 
 - **Command**: `!finclaw help|reset|status` 인-채팅 명령어. 시세·포트폴리오·알림은 자연어 대화로 요청한다.
 - **MemoryCapture**: 정규식 5종(`!finclaw remember …`, `기억해: …`, `메모: …`, `선호: …`, `내 (투자) 원칙은 …`) 매칭 시 `memories` 테이블에 저장. SHA-256 dedup, 임베딩 실패 시 FTS-only fallback.
-- **MemoryRetrieval**: 매 발화마다 hybrid (vector + FTS5) RAG 검색. 임계값 0.65, 신선도 반감기 90 일, 상한 3 개. 발화에서 추출된 티커별 거래 이력 3 건도 함께 시스템 프롬프트의 "사용자 배경지식" 섹션에 주입.
+- **MemoryRetrieval**: 매 발화마다 hybrid (vector + FTS5) RAG 검색. 임계값 0.65, 신선도 반감기 90 일, 상한 3 개. 발화에서 추출된 티커별 거래 이력 3 건도 함께 user 메시지 앞 `<context>` 블록의 "사용자 배경지식 (자동 주입)" 섹션에 주입(시스템 프롬프트는 정적).
 
 ### 2. 금융 스킬 (LLM 도구)
 
@@ -89,11 +90,12 @@ Normalize → Command → MemoryCapture → ACK → Context → MemoryRetrieval 
 
 ### 3. 자동화 (cron 스케줄러, Phase 28)
 
-Web Settings 또는 `schedule.create` RPC 로 cron 표현식과 prompt 를 등록하면, `SchedulerService` 가 매 분 폴러로 매칭되는 schedule 을 찾아 `agent.run` 을 직접 실행하고 결과를 Discord DM 또는 Web 알림으로 송출한다.
+Web Settings 또는 `schedule.create` RPC 로 cron 표현식과 prompt 를 등록하면, `SchedulerService` 가 매 분 폴러로 매칭되는 schedule 을 찾아 `AgentRuntime` oneShot(비영속, 직전 대화 없음, `<context>` 는 현재 시각만)으로 실행하고 결과를 Discord DM 또는 Web 알림으로 송출한다.
 
 - Cron 파서: 5필드 (분 시 일 월 요일), `*`, `*/N`, `M-N`, `M,N,O` 지원. `L`/`W`/`?` 비지원.
 - 연속 실패 자동 비활성화: `AUTOMATION_MAX_CONSECUTIVE_FAILURES` (기본 3) 회 연속 실패 시 schedule 을 자동 비활성.
 - 직렬화: `ConcurrencyLane(maxConcurrent: 1, queueSize: 50, waitTimeoutMs: 5분)`.
+- Stagger: 정각 반복 cron(`0 * …`)은 schedule id 해시로 정해지는 0~5분 오프셋만큼 늦게 발화한다(결정적 — 같은 schedule 은 항상 같은 분).
 
 ### 4. 운영 인터페이스
 
@@ -103,14 +105,14 @@ Web Settings 또는 `schedule.create` RPC 로 cron 표현식과 prompt 를 등�
 | **TUI** (Ink + React)   | `finclaw tui`        | 4 탭 — chat / market / portfolio / alerts                                                                                 |
 | **CLI** (commander)     | `finclaw <cmd>`      | `start` / `health` / `status` / `agent {list,status}` / `market quote` / `news` / `alert {add,list}` / `tui`              |
 
-### 5. Gateway JSON-RPC (34 개 메서드)
+### 5. Gateway JSON-RPC (36 개 메서드)
 
 HTTP `POST /rpc` + WebSocket `ws://…/ws` 에서 동일 JSON-RPC 2.0 스키마로 호출 가능. Zod v4 스키마 검증, 3 단계 권한 (`none / api_key / token`). 같은 서버의 `/mcp` 는 `claude` CLI 용 MCP 엔드포인트다.
 
 | 그룹           | 메서드                                                                                                 |
 | -------------- | ------------------------------------------------------------------------------------------------------ |
 | `system.*`     | `health`, `info`, `ping`                                                                               |
-| `chat.*`       | `start`, `send`                                                                                        |
+| `chat.*`       | `start`, `send`, `abort`, `reset`                                                                      |
 | `session.*`    | `get`                                                                                                  |
 | `agent.*`      | `list`, `status`, `run`                                                                                |
 | `agent.runs.*` | `list`, `get` (감사 이력)                                                                              |
@@ -119,13 +121,17 @@ HTTP `POST /rpc` + WebSocket `ws://…/ws` 에서 동일 JSON-RPC 2.0 스키마�
 | `schedule.*`   | `create`, `list`, `update`, `delete`, `runNow`, `history`, `enable`, `disable`                         |
 | `brokerage.*`  | `sync.run`, `health.get` (KIS read-only 잔고 동기화)                                                   |
 
-WebSocket notification: `chat.stream.{delta,end,error}`, `portfolio.changed`, `schedule.completed`.
+WebSocket notification: `chat.stream.{delta,tool,end,error}` (모두 `runId` 포함), `portfolio.changed`, `schedule.completed`.
+
+- `chat.send` 는 실행을 기다리지 않고 즉시 `{runId}` 를 돌려준다. 진행·결과는 `chat.stream.*` 로 온다 — `delta` N 회 뒤 `end`(확정 텍스트) 또는 `error` 가 정확히 1 회.
+- `chat.stream.tool` 은 도구 시작/끝(`phase: start|end`, 도구 이름·`toolCallId`)만 알린다 — 입력·결과 내용은 싣지 않는다.
+- `chat.abort {sessionId, runId?}` 는 진행 중 실행을 끊는다(종료 신호는 `chat.stream.error{reason:'aborted'}`). `chat.reset {sessionId}` 는 그 대화의 CLI 세션 바인딩을 지워 다음 턴을 새 세션으로 시작한다.
 
 ### 6. 기억 / RAG (Phase 26)
 
 - **저장:** `memories` 테이블 (4 type: `fact` / `preference` / `summary` / `financial`), `memory_chunks_vec` (1024-d), `memory_chunks_fts` (trigram).
 - **회상:** hybrid vector + FTS, 임계값 0.65, 신선도 반감기 90 일, 상한 3 개.
-- **agent.run 결과 → memory:** output 길이 > 100자 + error 없음 시 `type='financial'` 로 자동 저장 (`agent_runs.memory_id` 링크).
+- **agent.run 결과 → memory:** output 길이 > 100자 + error 없음 시 `type='financial'` 로 자동 저장 (`agent_runs.memory_id` 링크). 이 훅의 존폐는 phase47 에서 결정.
 - **임베딩 프로바이더:** `VOYAGE_API_KEY` 또는 `OPENAI_API_KEY` 가 있으면 `createEmbeddingProvider('auto')` 시도. 실패/미설정 시 모든 경로 FTS-only fallback (best-effort, 파이프라인 차단 없음).
 - **OpenAI 임베딩:** vec0 DDL 이 1024D 라 OpenAI `text-embedding-3-small` 은 `dimensions: 1024` truncation 으로 맞춘다. Voyage `voyage-finance-2` 권장.
 
@@ -186,12 +192,12 @@ graph TD
 
 ### 런타임 토폴로지
 
-| 프로세스                          | 진입점                                                 | 점유 포트                                    | 역할                                                                             |
-| --------------------------------- | ------------------------------------------------------ | -------------------------------------------- | -------------------------------------------------------------------------------- |
-| `@finclaw/server` (Node 22+, ESM) | `packages/server/src/main.ts` (`main()`)               | `GATEWAY_PORT` (기본 `3000`, host `0.0.0.0`) | Discord 수신 · 파이프라인 · LLM · 스토리지 · gateway · cron 을 1 프로세스에 흡수 |
-| `claude` CLI (자식 프로세스)      | 실행마다 `claude -p --output-format json` spawn        | (없음)                                       | 추론. 도구는 server 의 `/mcp` 로 HTTP 호출                                       |
-| `@finclaw/web`                    | `packages/web/src/main.ts` (Vite 빌드 또는 `vite dev`) | Vite 기본 `5173`                             | 브라우저 클라이언트, gateway WS + JSON-RPC                                       |
-| `@finclaw/tui`                    | `packages/tui/src/index.ts`                            | (stdin/stdout)                               | gateway WebSocket 으로 chat 세션 유지하는 ink/React TUI                          |
+| 프로세스                          | 진입점                                                 | 점유 포트                                                       | 역할                                                                             |
+| --------------------------------- | ------------------------------------------------------ | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `@finclaw/server` (Node 22+, ESM) | `packages/server/src/main.ts` (`main()`)               | `GATEWAY_PORT` (기본 `3000`, host `127.0.0.1` — `GATEWAY_HOST`) | Discord 수신 · 파이프라인 · LLM · 스토리지 · gateway · cron 을 1 프로세스에 흡수 |
+| `claude` CLI (자식 프로세스)      | 턴마다 `claude -p --output-format stream-json` spawn   | (없음)                                                          | 추론. 도구는 server 의 `/mcp` 로 HTTP 호출                                       |
+| `@finclaw/web`                    | `packages/web/src/main.ts` (Vite 빌드 또는 `vite dev`) | Vite 기본 `5173`                                                | 브라우저 클라이언트, gateway WS + JSON-RPC                                       |
+| `@finclaw/tui`                    | `packages/tui/src/index.ts`                            | (stdin/stdout)                                                  | gateway WebSocket 으로 chat 세션 유지하는 ink/React TUI                          |
 
 ### 데이터 흐름: Discord 메시지 → 응답
 
@@ -203,8 +209,9 @@ sequenceDiagram
   participant R as MessageRouter
   participant Q as MessageQueue + Lane
   participant P as AutoReplyPipeline
+  participant RT as AgentRuntime
   participant DB as SQLite (storage)
-  participant Rn as Runner (agent)
+  participant DRV as cli-driver
   participant LLM as claude CLI (claude -p)
   participant M as Gateway /mcp (ToolRegistry)
 
@@ -213,26 +220,29 @@ sequenceDiagram
   R->>R: deriveSessionKey + Dedupe(5s) + matchBinding
   R->>Q: enqueue
   Q->>P: laneManager.acquire('main') → process(ctx, match, signal)
-  P->>P: normalize → command → memoryCapture
-  P->>DB: addMemory[WithEmbedding] (정규식 매칭 시)
+  P->>P: normalize → command
   P->>D: ackStage (typing + reaction)
-  P->>P: context → memoryRetrieval (hybrid 검색)
-  P->>DB: searchVector + searchFts → mergeHybridResults
-  P->>Rn: executeStage (Runner 생성)
-  Rn->>LLM: 자식 프로세스 spawn (--resume, --mcp-config)
+  P->>P: context
+  P->>RT: executeStage → runtime.run({mode:'chat', sessionKey})
+  RT->>DB: 세션 바인딩 조회 (conversations.metadata)
+  RT->>RT: prepareTurn — memoryCapture + memoryRetrieval → <context>
+  RT->>DB: addMemory[WithEmbedding] (정규식 매칭 시) · searchVector + searchFts
+  RT->>DRV: driver.run (--session-id 새 세션 / --resume 이어가기, --mcp-config)
+  DRV->>LLM: 자식 프로세스 spawn (stream-json)
   LLM->>M: 도구 호출 (HTTP MCP, CLI 내부 루프)
   M-->>LLM: 도구 결과
-  LLM-->>Rn: 최종 텍스트 (JSON 1회)
-  Rn-->>P: assistant text
-  P->>DB: agent_runs 영속화 + memory hook
+  LLM-->>DRV: stream-json 이벤트 (text delta · tool_use/tool_result · result)
+  DRV-->>RT: delta · tool · done/error
+  RT->>DB: agent_runs 1행 + 세션 바인딩 저장
+  RT-->>P: done.text
   P->>D: deliver (chunking + 마크다운 다듬기)
   D->>U: 응답
 ```
 
 부팅 부수 흐름:
 
-- **자동화 (cron):** `SchedulerService.start()` 가 매 분 0초 `findDueSchedules` → `scheduleLane` → `Runner` 실행 → `onRunComplete` → Discord DM 또는 WebSocket broadcast.
-- **gateway RPC:** Web/TUI 의 `agent.runs.list`, `finance.transaction.add`, `memory.search` 등 호출은 `dispatchRpc` → 등록 핸들러 → `storage.db` 직접 호출 또는 `RunnerExecutionAdapter` 재사용.
+- **자동화 (cron):** `SchedulerService.start()` 가 매 분 0초 `findDueSchedules` → `scheduleLane` → `runtime.run({mode:'oneShot'})` → `onRunComplete` → Discord DM 또는 WebSocket broadcast.
+- **gateway RPC:** Web/TUI 의 `agent.runs.list`, `finance.transaction.add`, `memory.search` 등 호출은 `dispatchRpc` → 등록 핸들러 → `storage.db` 직접 호출. `chat.send`·`agent.run` 은 같은 `AgentRuntime` 으로 실행한다.
 
 ## 패키지 구조
 
@@ -242,7 +252,7 @@ sequenceDiagram
 | `@finclaw/infra`           | logger, eventbus, fetch, ports, ConcurrencyLane, ALS context, SSRF, cron, circuit-breaker   | `types`                                                                                                                 |
 | `@finclaw/config`          | JSON5 설정 로딩, Zod 스키마, env 치환, strict 검증                                          | `types`, `infra`                                                                                                        |
 | `@finclaw/storage`         | SQLite (`node:sqlite`) + sqlite-vec, 스키마 v12, transactions/agent_runs/schedules/memories | `types`                                                                                                                 |
-| `@finclaw/agent`           | `claude` CLI provider (spawn·큐·세션 resume), tool registry (정책·가드·감사), Runner        | `types`, `infra`                                                                                                        |
+| `@finclaw/agent`           | stream-json 드라이버(`runtime/cli-driver.ts`), tool registry (정책·가드·감사)               | `types`, `infra`                                                                                                        |
 | `@finclaw/channel-discord` | Discord 채널 어댑터 (discord.js v14)                                                        | `types`, `infra`                                                                                                        |
 | `@finclaw/skills-finance`  | market / news / alerts / brokerage(KIS) 서비스 + 알림 조회 도구, 시세 캐시                  | `types`, `infra`, `storage`, `agent`                                                                                    |
 | `@finclaw/skills-general`  | `get_current_datetime`, `route_task` 도구                                                   | `types`, `agent`                                                                                                        |
@@ -255,9 +265,9 @@ sequenceDiagram
 
 1. `packages/server/src/main.ts` — `main()` 한 곳에서 모든 wiring (env → 로거 → config → storage → discord → agent/tools → 파이프라인 → router → gateway → scheduler).
 2. `packages/server/src/process/message-router.ts` — Discord InboundMessage → dedupe → bind matching → queue → lane → pipeline.
-3. `packages/server/src/auto-reply/pipeline.ts` — 8 단계 스테이지 호출 + abort 신호 + (선택) OTel span.
+3. `packages/server/src/auto-reply/pipeline.ts` — 6 단계 스테이지 호출 + abort 신호 + (선택) OTel span.
 4. `packages/server/src/auto-reply/stages/` — 각 스테이지 구현.
-5. `packages/agent/src/execution/runner.ts` + `providers/claude-cli/` — `claude -p` 1회 실행, 결과 텍스트 수집 (도구 루프는 CLI 내부).
+5. `packages/agent/src/runtime/cli-driver.ts` + `packages/server/src/agent-runtime/{runtime,prepare-turn}.ts` — `claude -p` stream-json 1턴 실행(도구 루프는 CLI 내부), 세션 바인딩·컨텍스트 주입·`agent_runs` 기록.
 6. `packages/storage/src/database.ts` + `index.ts` — 스키마 (v12) + `createStorage` 팩토리.
 7. `packages/gateway/src/server.ts` + `rpc/index.ts` + `rpc/methods/` + `mcp/` — JSON-RPC·MCP 표면.
 8. `packages/server/src/automation/scheduler.ts` — cron 폴러.
@@ -266,13 +276,13 @@ sequenceDiagram
 
 `.env.example` 을 복사 (`cp .env.example .env`). `grep -rn "process.env" packages/` 결과 기준 전수.
 
-### 필수 (없으면 부팅 차단)
+### 선택 — Discord (필수 env 없음)
 
-| 변수                | 설명                   |
-| ------------------- | ---------------------- |
-| `DISCORD_BOT_TOKEN` | Discord 봇 로그인 토큰 |
+| 변수                | 설명                                                                 |
+| ------------------- | -------------------------------------------------------------------- |
+| `DISCORD_BOT_TOKEN` | Discord 봇 로그인 토큰. 없으면 Discord 만 비활성(`discord.disabled`) |
 
-미설정 시: `[fatal] Missing required env: <NAME>` 로그 후 `process.exit(1)`. 추론은 env 키가 아니라 `claude login` 구독 인증을 쓴다 (`ANTHROPIC_API_KEY` 는 CLI 자식 env 에서 제거됨).
+추론은 env 키가 아니라 `claude login` 구독 인증을 쓴다 (`ANTHROPIC_API_KEY` 는 CLI 자식 env 에서 제거됨).
 
 ### 선택 — 금융 데이터
 
@@ -302,14 +312,15 @@ sequenceDiagram
 
 ### 선택 — Gateway / Web UI 인증
 
-| 변수                                  | 기본값               | 비고                                                  |
-| ------------------------------------- | -------------------- | ----------------------------------------------------- |
-| `FINCLAW_API_KEY`                     | (없음 = 인증 비활성) | 설정 시 `X-API-Key` 헤더 검증 (단일 키)               |
-| `GATEWAY_JWT_SECRET`                  | `'dev-secret'`       | `??` fallback. 빈 문자열은 fallback 안 됨 (아래 함정) |
-| `GATEWAY_PORT`                        | `3000`               | `Number()` 변환 후 strict 검증                        |
-| `AUTOMATION_MAX_CONSECUTIVE_FAILURES` | `3`                  | 연속 실패 N회 시 schedule 자동 비활성                 |
+| 변수                                  | 기본값                      | 비고                                                                   |
+| ------------------------------------- | --------------------------- | ---------------------------------------------------------------------- |
+| `FINCLAW_API_KEY`                     | (없음 = 인증 비활성)        | 설정 시 `X-API-Key` 헤더 검증 (단일 키)                                |
+| `GATEWAY_JWT_SECRET`                  | `~/.finclaw/gateway.secret` | 없거나 빈 값이면 최초 부팅에 32바이트 secret 을 자동 생성(0600)·재사용 |
+| `GATEWAY_PORT`                        | `3000`                      | `Number()` 변환 후 strict 검증                                         |
+| `GATEWAY_HOST`                        | `127.0.0.1`                 | 바인딩 호스트. Docker 는 `0.0.0.0`                                     |
+| `AUTOMATION_MAX_CONSECUTIVE_FAILURES` | `3`                         | 연속 실패 N회 시 schedule 자동 비활성                                  |
 
-> ⚠️ **함정**: `GATEWAY_JWT_SECRET=` 처럼 빈 값으로 라인을 두면 코드의 `??` 연산자가 fallback 하지 않아 secret 이 빈 문자열이 된다. 기본값 `dev-secret` 을 쓰려면 라인 자체를 제거하거나 명시적 값을 넣어야 한다.
+> 부팅마다 이 secret 으로 서명한 30일짜리 로컬 토큰을 `~/.finclaw/gateway.token`(0600) 에 다시 쓴다. TUI·CLI 는 이 파일을 읽어 인증한다. 토큰·secret 은 로그에 찍히지 않는다.
 
 ### 선택 — 저장소 / 파일
 
@@ -330,15 +341,15 @@ sequenceDiagram
 
 `config.example.json5` 을 복사 (파일 자체가 선택 — 없으면 기본값). 해석 우선순위: `FINCLAW_CONFIG` → `~/.finclaw/config/finclaw.json5` → `./finclaw.json5`. 모든 섹션이 `z.strictObject()` — 알 수 없는 키가 있으면 부팅이 차단된다. 값의 `${ENV}` 는 환경변수로 치환된다.
 
-| 키           | 내용                                                                   |
-| ------------ | ---------------------------------------------------------------------- |
-| `provider`   | `'claude-cli'` 만 허용 (유일한 백엔드, 생략 가능)                      |
-| `cliBackend` | `command`, `timeoutMs`, `watchdog.{fresh,resume}.noOutputTimeoutRatio` |
-| `rag`        | `rerank.{enabled,topKFirst}`                                           |
-| `accessLog`  | `retentionDays`                                                        |
-| `gateway`    | `auth.token` (`finclaw tui` 가 게이트웨이에 보낼 토큰)                 |
+| 키           | 내용                                                                                      |
+| ------------ | ----------------------------------------------------------------------------------------- |
+| `provider`   | `'claude-cli'` 만 허용 (유일한 백엔드, 생략 가능)                                         |
+| `cliBackend` | `command` (`claude` 실행 파일)                                                            |
+| `rag`        | `rerank.{enabled,topKFirst}`                                                              |
+| `accessLog`  | `retentionDays`                                                                           |
+| `gateway`    | `auth.token` (`finclaw tui` 가 게이트웨이에 보낼 토큰, 없으면 `~/.finclaw/gateway.token`) |
 
-게이트웨이 포트는 config 가 아니라 `GATEWAY_PORT` env, 바인딩 호스트는 코드 고정 `0.0.0.0` 이다.
+게이트웨이 포트는 config 가 아니라 `GATEWAY_PORT` env, 바인딩 호스트는 `GATEWAY_HOST` env(기본 `127.0.0.1`)다.
 
 ## 명령어
 
@@ -382,12 +393,12 @@ pnpm dev:all   # docker compose up --build
 
 `docker-compose.yml`:
 
-| 서비스   | 이미지          | 포트 (host:container)            | 마운트                              | 헬스체크              |
-| -------- | --------------- | -------------------------------- | ----------------------------------- | --------------------- |
-| `server` | `finclaw:local` | `${GATEWAY_PORT:-3000}:3000`     | `finclaw-data:/data` (named volume) | `GET /healthz` 매 30s |
-| `web`    | `finclaw:local` | `${FINCLAW_WEB_PORT:-5173}:5173` | -                                   | disabled              |
+| 서비스   | 이미지          | 포트 (host:container)                  | 마운트                              | 헬스체크              |
+| -------- | --------------- | -------------------------------------- | ----------------------------------- | --------------------- |
+| `server` | `finclaw:local` | `127.0.0.1:${GATEWAY_PORT:-3000}:3000` | `finclaw-data:/data` (named volume) | `GET /healthz` 매 30s |
+| `web`    | `finclaw:local` | `${FINCLAW_WEB_PORT:-5173}:5173`       | -                                   | disabled              |
 
-빌드 흐름 (`Dockerfile`): `node:22-bookworm-slim` 기반 multi-stage. builder 에서 `pnpm install --frozen-lockfile` → `pnpm build` + `pnpm --filter @finclaw/web build`. runner 는 non-root `USER node` 로 `node packages/server/dist/main.js` 실행. web 컨테이너는 compose 가 override 해 `pnpm exec vite preview --host 0.0.0.0 --port 5173`. 컨테이너 안 server 는 항상 `3000` 에서 listen 하고, `.env` 의 `GATEWAY_PORT` 는 호스트 쪽 포트만 바꾼다.
+빌드 흐름 (`Dockerfile`): `node:22-bookworm-slim` 기반 multi-stage. builder 에서 `pnpm install --frozen-lockfile` → `pnpm build` + `pnpm --filter @finclaw/web build`. runner 는 non-root `USER node` 로 `node packages/server/dist/main.js` 실행. web 컨테이너는 compose 가 override 해 `pnpm exec vite preview --host 0.0.0.0 --port 5173`. 컨테이너 안 server 는 항상 `0.0.0.0:3000`(`GATEWAY_HOST=0.0.0.0`) 에서 listen 하고, `.env` 의 `GATEWAY_PORT` 는 호스트 쪽 포트만 바꾼다.
 
 > ⚠️ 이미지에는 `claude` CLI 가 들어 있지 않다. 컨테이너에서 추론을 돌리려면 CLI 설치와 로그인 정보가 별도로 필요하다.
 
@@ -395,24 +406,17 @@ pnpm dev:all   # docker compose up --build
 
 ### Web UI 접속 / RPC 호출
 
-브라우저 Web UI 접속에는 **JWT (HS256)** 가 필요하다. `?token=` 쿼리 파라미터로 전달:
+브라우저 Web UI 접속에는 **JWT (HS256)** 가 필요하다. 서버가 부팅마다 `~/.finclaw/gateway.token` 에 써 두는 토큰을 `?token=` 쿼리 파라미터로 전달한다(토큰은 로그에 찍히지 않으니 파일에서 읽는다):
 
 ```bash
-node -e "
-const { createHmac } = require('crypto');
-const secret = process.env.GATEWAY_JWT_SECRET || 'dev-secret';
-const b64url = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
-const h = b64url({ alg: 'HS256', typ: 'JWT' });
-const p = b64url({ sub: 'dev', permissions: [] });
-const s = createHmac('sha256', secret).update(h + '.' + p).digest('base64url');
-console.log(h + '.' + p + '.' + s);
-"
+cat ~/.finclaw/gateway.token
+# Docker: docker compose exec server cat /home/node/.finclaw/gateway.token
 ```
 
 브라우저:
 
 ```
-http://localhost:5173?token=<JWT>&gateway=http://localhost:3000
+http://localhost:5173/?token=<gateway.token 내용>
 ```
 
 curl 로 RPC:
@@ -420,31 +424,30 @@ curl 로 RPC:
 ```bash
 curl -X POST http://localhost:3000/rpc \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <JWT>" \
+  -H "Authorization: Bearer $(cat ~/.finclaw/gateway.token)" \
   -d '{"jsonrpc":"2.0","id":1,"method":"finance.portfolio.get","params":{}}'
 ```
 
 ### 트러블슈팅 (실측)
 
-| 증상                                                                         | 원인                                                            | 대응                                                                                       |
-| ---------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `[fatal] Missing required env: DISCORD_BOT_TOKEN`                            | `requireEnv()` throw                                            | `.env` 채우거나 export. `.env` 는 현재 작업 디렉터리 것만 자동 로드                        |
-| WS 인증 실패                                                                 | `GATEWAY_JWT_SECRET=` (빈 값) 라인이 있으면 `??` fallback 안 됨 | 라인을 제거하거나 명시적 값 입력                                                           |
-| `pnpm dev:all` 즉시 종료 + `.env not found`                                  | `scripts/dev-all.sh` 의 사전 체크                               | `pnpm setup` 또는 `cp .env.example .env`                                                   |
-| `Read/Write/Edit ENOENT` (WSL `/mnt/c/...`)                                  | WSL2 ↔ Windows 크로스 파일시스템 캐시                           | 같은 파일을 다시 Read 하면 해소                                                            |
-| lefthook hook 이 `node: command not found`                                   | git hook 은 minimal `sh` 에서 동작, nvm PATH 부재               | `lefthook.yml` 의 `rc: ./.lefthookrc` 가 `.node-version` 읽어 PATH 주입 — `./` prefix 필수 |
-| `pnpm format:fix` 후 `package.json` 키 reorder                               | oxfmt 가 키 순서 재정렬                                         | edit 후 한 번 더 `pnpm format:fix` 실행                                                    |
-| `commit-msg` hook 이 한글 subject 거부                                       | dash + C.UTF-8 grep conventional 검증                           | subject 는 ASCII conventional commits 로                                                   |
-| `[fatal] Port 3000 is in use by …`                                           | `assertPortAvailable` + `inspectPortOccupant`                   | 점유 프로세스 종료 또는 `GATEWAY_PORT` 변경                                                |
-| `Failed to create embedding provider — memory.search will use FTS-only` warn | Voyage/OpenAI 키 둘 다 없거나 생성 실패                         | 의도된 graceful fallback. 무시 가능. 키 채우면 hybrid 활성                                 |
+| 증상                                                                         | 원인                                                                 | 대응                                                                                                                          |
+| ---------------------------------------------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| WS 인증 실패                                                                 | 토큰이 현재 secret 으로 서명되지 않음 (`GATEWAY_JWT_SECRET` 변경 등) | `~/.finclaw/gateway.token` 을 다시 읽어 사용. 빈 `GATEWAY_JWT_SECRET=` 은 미설정으로 보고 `~/.finclaw/gateway.secret` 을 쓴다 |
+| `pnpm dev:all` 즉시 종료 + `.env not found`                                  | `scripts/dev-all.sh` 의 사전 체크                                    | `pnpm setup` 또는 `cp .env.example .env`                                                                                      |
+| `Read/Write/Edit ENOENT` (WSL `/mnt/c/...`)                                  | WSL2 ↔ Windows 크로스 파일시스템 캐시                                | 같은 파일을 다시 Read 하면 해소                                                                                               |
+| lefthook hook 이 `node: command not found`                                   | git hook 은 minimal `sh` 에서 동작, nvm PATH 부재                    | `lefthook.yml` 의 `rc: ./.lefthookrc` 가 `.node-version` 읽어 PATH 주입 — `./` prefix 필수                                    |
+| `pnpm format:fix` 후 `package.json` 키 reorder                               | oxfmt 가 키 순서 재정렬                                              | edit 후 한 번 더 `pnpm format:fix` 실행                                                                                       |
+| `commit-msg` hook 이 한글 subject 거부                                       | dash + C.UTF-8 grep conventional 검증                                | subject 는 ASCII conventional commits 로                                                                                      |
+| `[fatal] Port 3000 is in use by …`                                           | `assertPortAvailable` + `inspectPortOccupant`                        | 점유 프로세스 종료 또는 `GATEWAY_PORT` 변경                                                                                   |
+| `Failed to create embedding provider — memory.search will use FTS-only` warn | Voyage/OpenAI 키 둘 다 없거나 생성 실패                              | 의도된 graceful fallback. 무시 가능. 키 채우면 hybrid 활성                                                                    |
 
 ## 보안
 
 - **인증 모델:**
   - `FINCLAW_API_KEY` 설정 시 → API key 인증 활성 (`X-API-Key` 헤더, 단일 키).
   - JWT (HS256) — WebSocket `?token=`, HTTP `Authorization: Bearer …` 모두 지원.
-  - secret 미설정 시 `'dev-secret'` fallback — 프로덕션 사용 금지.
-- **네트워크 노출:** gateway 는 `0.0.0.0` 에 바인딩하고 CORS origin 은 `*` 다 (코드 고정). 같은 네트워크에서 접근 가능하므로 `GATEWAY_JWT_SECRET` 을 반드시 설정한다.
+  - secret 미설정 시 `~/.finclaw/gateway.secret`(0600) 을 최초 1회 랜덤 생성해 재사용하고, 부팅마다 30일짜리 로컬 토큰을 `~/.finclaw/gateway.token`(0600) 에 쓴다. 토큰·secret 은 로그에 남지 않는다.
+- **네트워크 노출:** gateway 는 기본 `127.0.0.1` 에만 바인딩하고(`GATEWAY_HOST` 로 변경, Docker 는 `0.0.0.0`), CORS origin 은 `http://localhost:5173`·`http://127.0.0.1:5173` 두 개뿐이다.
 - **Non-root 컨테이너:** `Dockerfile` 의 `USER node`, `/data` 디렉토리 owner = node:node.
 - **테스트 격리:** `test-env.ts` 가 `DISCORD_BOT_TOKEN`·API 키 등 sensitive 키를 테스트 시작 시 삭제.
 - **Strict config:** `z.strictObject()` 로 알 수 없는 키 거부.

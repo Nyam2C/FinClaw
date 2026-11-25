@@ -1,6 +1,5 @@
 // packages/server/src/auto-reply/pipeline-context.ts
 import type { ChannelCapabilities, MsgContext } from '@finclaw/types';
-import type { RetrievalResult } from './stages/memory-retrieval.js';
 
 /**
  * 파이프라인 전용 메시지 컨텍스트
@@ -24,8 +23,4 @@ export interface PipelineMsgContext extends MsgContext {
     readonly content: string;
     readonly duplicate: boolean;
   };
-
-  // --- 기억 retrieval (Phase 26 C) ---
-  /** Context 직후 retrieval 결과. execution-adapter 가 system prompt 에 주입. */
-  readonly retrievalResult?: RetrievalResult;
 }

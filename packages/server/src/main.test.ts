@@ -1,3 +1,4 @@
+import type { AgentRunPort } from '@finclaw/agent';
 import {
   createGatewayServer,
   type GatewayServer,
@@ -5,30 +6,49 @@ import {
 } from '@finclaw/gateway';
 import { resetEventBus } from '@finclaw/infra';
 import type { ModelRef } from '@finclaw/types';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { RunnerExecutionAdapter } from './auto-reply/execution-adapter.js';
-import { MissingEnvError, requireEnv } from './main.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setupDiscord } from './main.js';
 
-describe('requireEnv', () => {
-  it('env에 값이 있으면 반환한다', () => {
-    const env = { FOO: 'bar' };
-    expect(requireEnv('FOO', env)).toBe('bar');
+// vi.mock 은 import 보다 먼저 호이스팅된다 → 팩토리가 쓰는 값은 vi.hoisted 로.
+const { setup } = vi.hoisted(() => ({ setup: vi.fn().mockResolvedValue(async () => {}) }));
+vi.mock('@finclaw/channel-discord', () => ({
+  DiscordAccountSchema: { parse: (v: unknown) => v },
+  // new 로 호출되므로 화살표 함수가 아니라 function (vitest 4)
+  DiscordAdapter: vi.fn(function () {
+    return { setup, id: 'discord', getClient: () => null };
+  }),
+}));
+
+const logger = {
+  trace: vi.fn(),
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  fatal: vi.fn(),
+  child: vi.fn(),
+  flush: vi.fn(),
+} as never;
+
+describe('setupDiscord (I8)', () => {
+  it('토큰이 없으면 discord.disabled warn 후 undefined — 로그인·cleanup 등록 없음', async () => {
+    const register = vi.fn();
+    const adapter = await setupDiscord(undefined, { logger, lifecycle: { register } });
+    expect(adapter).toBeUndefined();
+    expect((logger as { warn: ReturnType<typeof vi.fn> }).warn).toHaveBeenCalledWith(
+      'discord.disabled',
+      expect.objectContaining({ event: 'discord.disabled' }),
+    );
+    expect(setup).not.toHaveBeenCalled();
+    expect(register).not.toHaveBeenCalled();
   });
 
-  it('값이 없으면 MissingEnvError throw', () => {
-    const env = {};
-    expect(() => requireEnv('ANTHROPIC_API_KEY', env)).toThrow(MissingEnvError);
-    try {
-      requireEnv('ANTHROPIC_API_KEY', env);
-    } catch (err) {
-      expect(err).toBeInstanceOf(MissingEnvError);
-      expect((err as MissingEnvError).envName).toBe('ANTHROPIC_API_KEY');
-    }
-  });
-
-  it('값이 빈 문자열이어도 throw', () => {
-    const env = { DISCORD_BOT_TOKEN: '' };
-    expect(() => requireEnv('DISCORD_BOT_TOKEN', env)).toThrow(MissingEnvError);
+  it('토큰이 있으면 기존처럼 로그인하고 cleanup 을 lifecycle 에 등록', async () => {
+    const register = vi.fn();
+    const adapter = await setupDiscord('bot-token', { logger, lifecycle: { register } });
+    expect(adapter).toBeDefined();
+    expect(setup).toHaveBeenCalledWith({ botToken: 'bot-token' });
+    expect(register).toHaveBeenCalledOnce();
   });
 });
 
@@ -38,16 +58,12 @@ const TEST_MODEL: ModelRef = {
   model: 'claude-test',
 };
 
-function makeStubAdapter(): RunnerExecutionAdapter {
-  return {
-    execute: async () => ({ content: '', usage: { inputTokens: 0, outputTokens: 0 } }),
-    executeForTui: async () => ({
-      messageId: 'stub',
-      content: '',
-      usage: { inputTokens: 0, outputTokens: 0 },
-    }),
-  } as unknown as RunnerExecutionAdapter;
-}
+const stubRuntime: AgentRunPort = {
+  async *run() {
+    yield* [];
+  },
+  reset: async () => false,
+};
 
 function makeTestConfig(): GatewayServerConfig {
   return {
@@ -83,7 +99,7 @@ describe('main boot wiring (Phase 29 E)', () => {
   it('gateway ctx 에 rateLimiter / accessLogger / authRateLimiter 가 주입된다', () => {
     server = createGatewayServer(makeTestConfig(), {
       defaultModel: TEST_MODEL,
-      adapter: makeStubAdapter(),
+      runtime: stubRuntime,
     });
     expect(server.ctx.rateLimiter).toBeDefined();
     expect(server.ctx.accessLogger).toBeDefined();

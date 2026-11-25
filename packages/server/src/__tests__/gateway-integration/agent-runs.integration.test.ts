@@ -1,4 +1,5 @@
 // packages/server/src/__tests__/gateway-integration/agent-runs.integration.test.ts
+import type { AgentRunPort } from '@finclaw/agent';
 import {
   dispatchRpc,
   MethodRegistry,
@@ -304,15 +305,23 @@ function makeMockEmbeddingProvider(): EmbeddingProvider {
   };
 }
 
-function makeAgentRunResult(output: string) {
+/** runtime 계약(D1): 종료 이벤트 yield 전에 agent_runs 1행 → attach 가 link 할 수 있다. */
+function runtimeWriting(db: Database['db'], output: string): AgentRunPort {
   return {
-    status: 'completed' as const,
-    messages: [
-      { role: 'user' as const, content: 'analyze AAPL' },
-      { role: 'assistant' as const, content: output },
-    ],
-    usage: { inputTokens: 30, outputTokens: 60 },
-    durationMs: 400,
+    async *run(req) {
+      const runId = `run-${Math.random().toString(36).slice(2)}`;
+      addAgentRun(db, { id: runId, agentId: req.agentId, prompt: req.input, output });
+      yield {
+        type: 'done',
+        runId,
+        cliSessionId: 'c',
+        text: output,
+        usage: { input: 30, output: 60, cacheRead: 0, cacheWrite: 0 },
+        durationMs: 400,
+        numTurns: 1,
+      };
+    },
+    reset: async () => false,
   };
 }
 
@@ -326,7 +335,7 @@ function makeAgentDeps(overrides: Partial<AgentRpcDeps>): AgentRpcDeps {
         description: '개인 금융 파트너. 시세 조회·뉴스·포트폴리오·알림 관리.',
       },
     ],
-    runnerFactory: vi.fn(),
+    runtime: { run: vi.fn(), reset: vi.fn() } as never,
     agentRunLane: new ConcurrencyLane({
       maxConcurrent: 1,
       maxQueueSize: 10,
@@ -336,11 +345,6 @@ function makeAgentDeps(overrides: Partial<AgentRpcDeps>): AgentRpcDeps {
       getHealth: vi.fn().mockReturnValue('healthy'),
       recordResult: vi.fn(),
     } as never,
-    systemPrompt: 'system',
-    defaultModel: {
-      provider: 'anthropic',
-      model: 'claude-sonnet-4-6',
-    },
     logger: {
       trace: vi.fn(),
       debug: vi.fn(),
@@ -373,10 +377,6 @@ describe('boundary: agent.run → agent_runs + memories → agent.runs.get (mock
   it('agent.run with long output persists to agent_runs and links memory, then agent.runs.get returns full record with memoryId', async () => {
     // output > 100자 → too-short skip 미발동
     const longOutput = `AAPL 분석 결과: ${'가'.repeat(150)}`;
-    const runner = {
-      execute: vi.fn().mockResolvedValue(makeAgentRunResult(longOutput)),
-    };
-    const runnerFactory = vi.fn(() => runner as never);
 
     // 실제 DefaultAttachMemoryService 인스턴스 + mock embedding provider
     const logger = {
@@ -398,8 +398,7 @@ describe('boundary: agent.run → agent_runs + memories → agent.runs.get (mock
     // 두 RPC 모듈 모두 같은 db 로 등록
     registerAgentMethods(
       makeAgentDeps({
-        runnerFactory,
-        db: database.db,
+        runtime: runtimeWriting(database.db, longOutput),
         attachMemoryService: attachService,
         logger,
       }),

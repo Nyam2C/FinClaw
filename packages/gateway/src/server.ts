@@ -7,7 +7,7 @@ import {
   type ServerResponse,
 } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
-import type { ChatExecutionPort } from '@finclaw/agent';
+import type { AgentRunPort } from '@finclaw/agent';
 import { getEventBus } from '@finclaw/infra';
 import type { ModelRef } from '@finclaw/types';
 import { WebSocketServer, type WebSocket } from 'ws';
@@ -41,7 +41,8 @@ import { startHeartbeat } from './ws/heartbeat.js';
 
 export interface GatewayServerDeps {
   readonly defaultModel: ModelRef;
-  readonly adapter: ChatExecutionPort;
+  /** Phase 46: chat.* 실행 포트 (AgentRuntime). */
+  readonly runtime: AgentRunPort;
   /** Phase 23: finance.* RPC 배선용 의존성 (생략 시 해당 메서드는 provider_unavailable 에러) */
   readonly financeDeps?: FinanceRpcDeps;
   /** Phase 23: agent.* RPC 배선용 의존성 (생략 시 agent.* 메서드 등록 스킵) */
@@ -144,7 +145,7 @@ export function createGatewayServer(
       connections: ctx.connections,
       broadcaster: ctx.broadcaster,
       defaultModel: deps.defaultModel,
-      adapter: deps.adapter,
+      runtime: deps.runtime,
       // Phase 24 D: ModelFloorExhaustedError 구조화 로그용 — agent.* 와 logger 공유
       logger: deps.agentDeps?.logger,
     },
@@ -162,9 +163,9 @@ export function createGatewayServer(
   registerSessionMethods({ registry: ctx.registry }, ctx.methods);
   // Phase 26 B: memory.* RPC 등록 (deps 미주입 시 모든 호출이 provider_unavailable).
   registerMemoryMethods(deps.memoryDeps ?? {}, ctx.methods);
-  // Phase 26 D: agent.runs.* RPC 등록. agentDeps 또는 financeDeps 의 db 를 재사용
-  // (둘 다 같은 storage.db 인스턴스를 가리키도록 main.ts 가 배선).
-  registerAgentRunsMethods({ db: deps.agentDeps?.db ?? deps.financeDeps?.db }, ctx.methods);
+  // Phase 26 D: agent.runs.* RPC 등록.
+  // [TQ9] AgentRpcDeps.db 제거(M4-5) → agent.runs.* 는 financeDeps.db (main 에서 같은 storage.db)
+  registerAgentRunsMethods({ db: deps.financeDeps?.db }, ctx.methods);
   if (deps.agentDeps) {
     registerAgentMethods(deps.agentDeps, ctx.methods);
   }

@@ -1,10 +1,12 @@
+import { execFile } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 // packages/server/src/main.ts
-import { ProfileHealthMonitor } from '@finclaw/agent';
+import { createCliDriver, ProfileHealthMonitor } from '@finclaw/agent';
 import { DiscordAccountSchema, DiscordAdapter } from '@finclaw/channel-discord';
 import { ConfigValidationError, loadConfig, validateConfigStrict } from '@finclaw/config';
 import { createGatewayServer, type GatewayServerConfig } from '@finclaw/gateway';
+import type { FinClawLogger } from '@finclaw/infra';
 import {
   assertPortAvailable,
   assertSupportedRuntime,
@@ -27,6 +29,7 @@ import type { ChannelPlugin, ConfigValidationIssue } from '@finclaw/types';
 import { deliverScheduleResult } from './automation/delivery.js';
 import { initChannels } from './channels/index.js';
 import { DEFAULT_MODEL, defaultConfig } from './composition/constants.js';
+import { issueLocalToken, resolveJwtSecret } from './composition/local-auth.js';
 import { buildProviders } from './composition/providers.js';
 import { buildAutomation, buildExecution, buildPipeline } from './composition/runtime.js';
 import { registerSkills } from './composition/skills.js';
@@ -34,23 +37,26 @@ import { ProcessLifecycle } from './process/lifecycle.js';
 import { MessageRouter } from './process/message-router.js';
 import { loadPrompt, requireFrontmatterKeys } from './prompts/loader.js';
 
-export class MissingEnvError extends Error {
-  constructor(public readonly envName: string) {
-    super(`Missing required env: ${envName}`);
-    this.name = 'MissingEnvError';
-  }
-}
-
 /**
- * 환경 변수 조회 (테스트 가능한 형태).
- * 값이 없으면 MissingEnvError throw.
+ * Phase 46 M11 (I8): DISCORD_BOT_TOKEN 이 없으면 Discord 만 비활성 — gateway·scheduler·Web/TUI 는 그대로.
+ * 테스트 가능하도록 export (main() 은 VITEST 에서 실행되지 않음).
  */
-export function requireEnv(name: string, env: NodeJS.ProcessEnv = process.env): string {
-  const value = env[name];
-  if (!value) {
-    throw new MissingEnvError(name);
+export async function setupDiscord(
+  token: string | undefined,
+  deps: { readonly logger: FinClawLogger; readonly lifecycle: Pick<ProcessLifecycle, 'register'> },
+): Promise<DiscordAdapter | undefined> {
+  if (!token) {
+    deps.logger.warn('discord.disabled', {
+      event: 'discord.disabled',
+      reason: 'DISCORD_BOT_TOKEN not set',
+    });
+    return undefined;
   }
-  return value;
+  const adapter = new DiscordAdapter();
+  const cleanup = await adapter.setup(DiscordAccountSchema.parse({ botToken: token }));
+  deps.lifecycle.register(cleanup);
+  deps.logger.info('Discord adapter logged in');
+  return adapter;
 }
 
 async function main(): Promise<void> {
@@ -75,9 +81,6 @@ async function main(): Promise<void> {
     },
   ];
 
-  // 1. env 검증
-  const discordToken = requireEnv('DISCORD_BOT_TOKEN');
-
   // 1a. GATEWAY_PORT 검증
   const gatewayPortRaw = process.env.GATEWAY_PORT;
   const gatewayPort = gatewayPortRaw ? Number(gatewayPortRaw) : defaultConfig.port;
@@ -95,6 +98,9 @@ async function main(): Promise<void> {
   // 2a. 전체 config 로드 + strict 재검증
   const finclawConfig = loadConfig({ logger });
   validateConfigStrict(finclawConfig);
+
+  // Phase 46 M10 (B6/B10): JWT secret (env → ~/.finclaw/gateway.secret). 로컬 토큰 파일은 포트 검사 뒤(8). 값은 로그 금지.
+  const jwtSecret = resolveJwtSecret();
 
   const dbPath = process.env.FINCLAW_DB_PATH ?? join(homedir(), '.finclaw', 'db.sqlite');
   const storage = createStorage({ dbPath });
@@ -130,27 +136,32 @@ async function main(): Promise<void> {
   // 2b. 채널 도크 자동 등록 (discord)
   initChannels(logger);
 
-  // 3. Discord 클라이언트 먼저 로그인 (alerts가 DM 전달 핸들을 필요로 함)
-  const discordAdapter = new DiscordAdapter();
-  const discordAccount = DiscordAccountSchema.parse({ botToken: discordToken });
-  const cleanup = await discordAdapter.setup(discordAccount);
-  lifecycle.register(cleanup);
-  logger.info('Discord adapter logged in');
+  // 3. Discord (선택) — alerts DM 핸들 때문에 skills 등록 전에 로그인
+  const discordAdapter = await setupDiscord(process.env.DISCORD_BOT_TOKEN, { logger, lifecycle });
 
-  // 4. Agent 레이어 (툴 레지스트리 + 러너 팩토리)
-  const { providerAdapter, lanes, toolRegistry } = buildProviders({
-    finclawConfig,
-    logger,
-    // Phase 40 C: CLI 모드의 claude 가 접속할 in-process /mcp 엔드포인트 + JWT mint secret.
-    // jwtSecret 은 gatewayConfig.auth (= defaultConfig.auth) 와 동일해야 /mcp 검증 통과.
-    mcpEndpoint: {
-      url: `http://127.0.0.1:${gatewayPort}/mcp`,
-      jwtSecret: defaultConfig.auth.jwtSecret,
-    },
-  });
+  // 4. Agent 레이어 (툴 레지스트리)
+  const { toolRegistry } = buildProviders({ logger });
 
   // 4a. 프로필 건강 모니터.
   const profileHealth = new ProfileHealthMonitor();
+
+  // Phase 46 M3: stream-json 드라이버 (격리 cwd 고정, Q12). 버전 로그는 스키마 drift(R1) 추적용 — 실패해도 부팅 계속.
+  const cliCommand = finclawConfig.cliBackend?.command ?? 'claude';
+  const driver = createCliDriver({
+    command: cliCommand,
+    cwd: join(homedir(), '.finclaw', 'agent'),
+    logger,
+  });
+  execFile(cliCommand, ['--version'], { timeout: 10_000 }, (err, stdout) => {
+    if (err) {
+      logger.warn('cli.version_unavailable', {
+        event: 'cli.version_unavailable',
+        error: err.message,
+      });
+      return;
+    }
+    logger.info('cli.version', { event: 'cli.version', version: stdout.trim() });
+  });
 
   // Phase 36: skills/tools/KIS/mcp/plugins 등록 (구 363-559 흡수)
   const { marketHandle, newsHandle, alertHandle, brokerageSyncService, kisEnv } =
@@ -158,32 +169,37 @@ async function main(): Promise<void> {
       toolRegistry,
       storage,
       logger,
-      discordAdapter,
+      discordClient: discordAdapter?.getClient() ?? undefined,
       lifecycle,
+      driver,
     });
 
-  // Phase 36: 실행 레이어 (tracer + runnerFactory + adapter) — 구 561-591
-  const { tracer, runnerFactory, adapter } = buildExecution({
+  // Phase 36: 실행 레이어 (tracer + runtime) — 구 561-591
+  const { tracer, runtime, attachMemoryService } = buildExecution({
     storage,
-    providerAdapter,
-    lanes,
     profileHealth,
     logger,
     defaultModel: DEFAULT_MODEL,
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
+    driver,
+    embeddingProvider,
+    finclawConfig,
+    mcp: {
+      url: `http://127.0.0.1:${gatewayPort}/mcp`,
+      jwtSecret,
+    },
   });
+  lifecycle.register(async () => runtime.abortAll());
 
   // 5. 파이프라인 — 구 593-653. channelPluginRegistry 는 main 이 소유 (router/discord set).
   const channelPluginRegistry = new Map<string, ChannelPlugin>();
-  const { pipeline, attachMemoryService } = buildPipeline({
-    adapter,
+  const { pipeline } = buildPipeline({
+    runtime,
     toolRegistry,
     storage,
     profileHealth,
     marketHandle,
     newsHandle,
-    embeddingProvider,
-    finclawConfig,
     tracer,
     logger,
     defaultModel: DEFAULT_MODEL,
@@ -196,19 +212,23 @@ async function main(): Promise<void> {
     onProcess: (ctx) => pipeline.process(ctx),
   });
 
-  // 7. Discord onMessage 등록 (client는 이미 위에서 로그인 완료)
-  channelPluginRegistry.set(discordAdapter.id as string, discordAdapter);
-  discordAdapter.onMessage(async (msg) => {
-    await router.route(msg);
-  });
-  logger.info('Discord adapter connected');
+  // 7. Discord onMessage 등록 — 토큰이 있을 때만
+  if (discordAdapter) {
+    channelPluginRegistry.set(discordAdapter.id as string, discordAdapter);
+    discordAdapter.onMessage(async (msg) => {
+      await router.route(msg);
+    });
+    logger.info('Discord adapter connected');
+  }
 
   // 8. Gateway — FINCLAW_API_KEY 환경변수로 API 키 기반 인증 활성화
   const gatewayConfig: GatewayServerConfig = {
     ...defaultConfig,
+    host: process.env.GATEWAY_HOST || defaultConfig.host,
     port: gatewayPort,
     auth: {
       ...defaultConfig.auth,
+      jwtSecret,
       apiKeys: process.env.FINCLAW_API_KEY ? [process.env.FINCLAW_API_KEY] : [],
     },
   };
@@ -222,6 +242,8 @@ async function main(): Promise<void> {
     }
     throw err;
   }
+  // 포트 검사 뒤 — 이미 떠 있는 서버가 있으면 그 서버의 토큰 파일을 덮어쓰지 않고 종료한다
+  issueLocalToken(jwtSecret);
   const alertHandleForRpc = alertHandle;
   const agentRunLane = new ConcurrencyLane({
     maxConcurrent: 1,
@@ -233,18 +255,15 @@ async function main(): Promise<void> {
   // gateway 생성 직전에 호출 → lifecycle ⑤(scheduler.stop) 가 ⑦(gateway.stop) 보다 먼저 등록.
   const { scheduler, setDeliveryHook } = buildAutomation({
     storage,
-    runnerFactory,
-    defaultModel: DEFAULT_MODEL,
-    systemPrompt: DEFAULT_SYSTEM_PROMPT,
+    runtime,
     logger,
-    profileHealth,
     tracer,
     lifecycle,
   });
 
   const gateway = createGatewayServer(gatewayConfig, {
     defaultModel: DEFAULT_MODEL,
-    adapter,
+    runtime,
     toolRegistry, // Phase 40 A: /mcp in-process 호출용 (top-level — agentDeps.toolRegistry 와 동일 인스턴스)
     financeDeps: {
       quoteService: marketHandle?.quoteService,
@@ -265,17 +284,13 @@ async function main(): Promise<void> {
     agentDeps: {
       toolRegistry,
       agents: AGENT_METADATA,
-      runnerFactory,
+      runtime,
       agentRunLane,
       profileHealth,
-      systemPrompt: DEFAULT_SYSTEM_PROMPT,
-      defaultModel: DEFAULT_MODEL,
       logger,
       profileId: 'default',
       // Phase 26 D: agent.run 종료 후 output → memory 저장 훅 (rpc-engineer 가 호출 위치 결정).
       attachMemoryService,
-      // Phase 26 D: agent_runs 영속화 + agent.runs.* RPC 가 사용 (server.ts 에서 재패스).
-      db: storage.db,
       // Phase 30 hotfix P0-1: agent.run RPC 진입을 span 으로 감싸 traceId 강제.
       tracer,
     },
@@ -330,7 +345,7 @@ async function main(): Promise<void> {
   setDeliveryHook((args) =>
     deliverScheduleResult(
       {
-        discordClient: discordAdapter.getClient() ?? undefined,
+        discordClient: discordAdapter?.getClient() ?? undefined,
         broadcaster: gateway.ctx.broadcaster,
         connections: gateway.ctx.connections,
         logger,
@@ -347,9 +362,7 @@ async function main(): Promise<void> {
 
 if (!process.env.VITEST) {
   main().catch((err) => {
-    if (err instanceof MissingEnvError) {
-      console.error(`[fatal] Missing required env: ${err.envName}`);
-    } else if (err instanceof ConfigValidationError) {
+    if (err instanceof ConfigValidationError) {
       console.error('[fatal] Invalid configuration:');
       const issues = (err.details?.issues as ConfigValidationIssue[] | undefined) ?? [];
       for (const issue of issues) {

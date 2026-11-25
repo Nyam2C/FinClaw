@@ -54,6 +54,8 @@ COPY --from=builder --chown=node:node /app/packages/ ./packages/
 
 ENV NODE_ENV=production
 ENV GATEWAY_PORT=3000
+# B6: 기본은 loopback — 컨테이너 밖에서 publish 하려면 전 인터페이스 바인딩 (R8)
+ENV GATEWAY_HOST=0.0.0.0
 
 EXPOSE 3000 5173
 

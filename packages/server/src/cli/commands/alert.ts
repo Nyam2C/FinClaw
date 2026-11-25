@@ -5,6 +5,9 @@ import { EXIT } from '../exit-codes.js';
 import { formatTable } from '../terminal/table.js';
 import { theme } from '../terminal/theme.js';
 
+/** CLI `above|below` → 서버 finance.alert.create enum. 그 외 값은 그대로 보내 서버 검증에 맡긴다. */
+const CONDITIONS: Readonly<Record<string, string>> = { above: 'price_above', below: 'price_below' };
+
 export function register(program: Command, deps: CliDeps): void {
   const cmd = program.command('alert').description('manage alerts');
 
@@ -17,10 +20,11 @@ export function register(program: Command, deps: CliDeps): void {
     .option('--channel <channel>', 'notification channel')
     .action(
       async (opts: { ticker: string; condition: string; price: string; channel?: string }) => {
+        // 서버 schema {symbol, condition: price_above|price_below|…, threshold} 로 매핑 (CLI 인자는 above|below 유지)
         const params: Record<string, unknown> = {
-          ticker: opts.ticker,
-          condition: opts.condition,
-          price: Number(opts.price),
+          symbol: opts.ticker,
+          condition: CONDITIONS[opts.condition] ?? opts.condition,
+          threshold: Number(opts.price),
         };
         if (opts.channel) {
           params['channel'] = opts.channel;

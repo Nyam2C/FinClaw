@@ -3,7 +3,7 @@
 
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import type { InMemoryToolRegistry } from '@finclaw/agent';
+import type { AgentDriver, InMemoryToolRegistry } from '@finclaw/agent';
 import type { DiscordAdapter } from '@finclaw/channel-discord';
 import type { FinClawLogger } from '@finclaw/infra';
 import {
@@ -32,8 +32,11 @@ export interface RegisterSkillsDeps {
   readonly toolRegistry: InMemoryToolRegistry;
   readonly storage: Storage;
   readonly logger: FinClawLogger;
-  readonly discordAdapter: DiscordAdapter;
+  /** Phase 46 M11: Discord 비활성이면 undefined — alerts 는 Discord DM 핸들러 없이 동작. */
+  readonly discordClient?: NonNullable<ReturnType<DiscordAdapter['getClient']>>;
   readonly lifecycle: ProcessLifecycle;
+  /** Phase 46 M3: route_task market_analysis 서브에이전트 1-shot. */
+  readonly driver: AgentDriver;
 }
 
 export interface SkillsBundle {
@@ -45,7 +48,7 @@ export interface SkillsBundle {
 }
 
 export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBundle> {
-  const { toolRegistry, storage, logger, discordAdapter, lifecycle } = deps;
+  const { toolRegistry, storage, logger, discordClient, lifecycle, driver } = deps;
 
   registerDatetimeTool(toolRegistry);
 
@@ -111,6 +114,7 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
       chartService: marketHandle.chartService,
       newsAggregator: newsHandle?.aggregator,
       portfolioStore: newsHandle?.portfolioStore,
+      driver,
     });
     registerRouteTaskTool(toolRegistry, dispatcher);
     logger.info('route_task registered', {
@@ -121,14 +125,13 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
 
   let alertHandle: AlertSkillHandle | undefined;
   if (marketHandle && newsHandle) {
-    const discordClient = discordAdapter.getClient();
     alertHandle = await registerAlertTools(toolRegistry, {
       db: storage.db,
       cache: marketHandle.cache,
       registry: marketHandle.providers,
       newsAggregator: newsHandle.aggregator,
       logger,
-      discordClient: discordClient ?? undefined,
+      discordClient,
     });
     const handle = alertHandle;
     lifecycle.register(async () => {

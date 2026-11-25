@@ -38,20 +38,6 @@ export const FinClawConfigSchema = z.strictObject({
   cliBackend: z
     .strictObject({
       command: z.string().optional(),
-      timeoutMs: z.number().int().positive().optional(),
-      watchdog: z
-        .strictObject({
-          fresh: z
-            .strictObject({ noOutputTimeoutRatio: z.number().min(0.05).max(0.95).optional() })
-            .partial()
-            .optional(),
-          resume: z
-            .strictObject({ noOutputTimeoutRatio: z.number().min(0.05).max(0.95).optional() })
-            .partial()
-            .optional(),
-        })
-        .partial()
-        .optional(),
     })
     .optional(),
 });

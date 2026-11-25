@@ -1,7 +1,6 @@
 // packages/server/src/auto-reply/stages/command.ts
 import type { MsgContext } from '@finclaw/types';
 import type { CommandRegistry, CommandResult } from '../commands/registry.js';
-import type { StageResult } from '../pipeline.js';
 
 export interface CommandStageResult {
   readonly handled: boolean;
@@ -9,39 +8,27 @@ export interface CommandStageResult {
 }
 
 /**
- * 명령어 단계
- *
- * 1. 메시지가 명령어 접두사로 시작하는지 확인
- * 2. 코드 펜스 내부의 명령어는 무시 (isInsideCodeFence)
- * 3. CommandRegistry에서 명령어 조회
- * 4. 매칭되면: 명령어 실행 -> skip (AI 호출 불필요)
- * 5. 미매칭이면: continue (일반 메시지로 AI에 전달)
+ * 명령어 단계 — 명령이면 실행 결과를 돌려주고(B4: 예전엔 버렸다) pipeline 이 채널로 보낸다.
+ * 코드 펜스 안·미등록·비명령은 handled:false (일반 메시지로 AI 에 전달).
  */
 export async function commandStage(
   normalizedBody: string,
   registry: CommandRegistry,
   prefix: string,
   ctx: MsgContext,
-): Promise<StageResult<MsgContext>> {
-  // 코드 펜스 내부의 명령어는 무시
+): Promise<CommandStageResult> {
   if (isInsideCodeFence(normalizedBody, prefix)) {
-    return { action: 'continue', data: ctx };
+    return { handled: false };
   }
-
   const parsed = registry.parse(normalizedBody, prefix);
   if (!parsed) {
-    return { action: 'continue', data: ctx };
+    return { handled: false };
   }
-
   const command = registry.get(parsed.name);
   if (!command) {
-    return { action: 'continue', data: ctx };
+    return { handled: false };
   }
-
-  // 명령어 실행
-  await command.executor(parsed.args, ctx);
-
-  return { action: 'skip', reason: `Command executed: ${parsed.name}` };
+  return { handled: true, commandResult: await command.executor(parsed.args, ctx) };
 }
 
 /** 코드 펜스(```) 내부에 있는 명령어인지 판별 */

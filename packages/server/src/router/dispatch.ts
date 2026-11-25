@@ -1,3 +1,5 @@
+import type { AgentDriver } from '@finclaw/agent';
+import { ConcurrencyLane } from '@finclaw/infra';
 import {
   analyzeMarket,
   createPortfolioTracker,
@@ -32,9 +34,16 @@ export interface DispatcherDeps {
   /** 뉴스 키 미설정 시 undefined — 뉴스 의존 intent(news_summary·market_analysis·portfolio_calc)는 에러 결과. */
   readonly newsAggregator?: NewsAggregator;
   readonly portfolioStore?: PortfolioStore;
+  /** Phase 46: market_analysis 서브에이전트 1-shot 드라이버. */
+  readonly driver: AgentDriver;
 }
 
-const ANALYSIS_QUEUE_KEY = 'claude-sub-agent-analysis';
+/**
+ * 서브에이전트(opus) spawn 직렬화 — 메인 run 전역 lane 과 별개(서브끼리만 대기 → 교착 없음, Q7).
+ * 대기 10s + 서브 overall 75s + 뉴스 조회 여유 < route_task 도구 타임아웃 90s → 대기 초과는 명확한 에러 결과로.
+ */
+const SUB_AGENT_LANE_KEY = 'sub-agent';
+const SUB_AGENT_WAIT_MS = 10_000;
 
 const NEWS_UNAVAILABLE: RouteResult = {
   content: 'news provider not configured (set NEWSDATA_API_KEY, FINNHUB_KEY or ALPHA_VANTAGE_KEY)',
@@ -49,6 +58,7 @@ export function buildRouteDispatcher(deps: DispatcherDeps): Dispatcher {
   if (!def) {
     throw new Error('sub-agent definition missing: market_analysis');
   }
+  const subAgentLane = new ConcurrencyLane({ maxConcurrent: 1, waitTimeoutMs: SUB_AGENT_WAIT_MS });
   const marketAnalysisProfile: AgentProfile = {
     id: createAgentId(def.id),
     name: def.name,
@@ -56,10 +66,10 @@ export function buildRouteDispatcher(deps: DispatcherDeps): Dispatcher {
     agentDir: 'prompts/sub-agents',
   };
 
-  return async (req: RouteRequest): Promise<RouteResult> => {
+  return async (req: RouteRequest, signal?: AbortSignal): Promise<RouteResult> => {
     switch (req.intent) {
       case 'market_analysis':
-        return dispatchMarketAnalysis(req, deps, marketAnalysisProfile);
+        return dispatchMarketAnalysis(req, deps, marketAnalysisProfile, subAgentLane, signal);
       case 'price_lookup':
         return dispatchPriceLookup(req, deps);
       case 'chart_data':
@@ -76,6 +86,8 @@ async function dispatchMarketAnalysis(
   req: RouteRequest,
   deps: DispatcherDeps,
   profile: AgentProfile,
+  lane: ConcurrencyLane,
+  signal?: AbortSignal,
 ): Promise<RouteResult> {
   if (!deps.newsAggregator) {
     return NEWS_UNAVAILABLE;
@@ -97,14 +109,20 @@ async function dispatchMarketAnalysis(
   try {
     const analysis = await analyzeMarket(
       async (runReq) => {
-        const res = await runSubAgent({
-          systemPrompt: runReq.systemPrompt,
-          query: runReq.prompt,
-          modelId: runReq.modelId,
-          timeoutMs: runReq.timeoutMs ?? 30_000,
-          queueKey: ANALYSIS_QUEUE_KEY,
+        const handle = await lane.acquire(SUB_AGENT_LANE_KEY).catch(() => {
+          throw new Error(
+            `sub-agent busy: another market_analysis is still running (waited ${SUB_AGENT_WAIT_MS / 1000}s)`,
+          );
         });
-        return { text: res.text };
+        try {
+          return await runSubAgent(
+            deps.driver,
+            { systemPrompt: runReq.systemPrompt, query: runReq.prompt, modelId: runReq.modelId },
+            signal,
+          );
+        } finally {
+          handle.release();
+        }
       },
       news,
       options,

@@ -21,8 +21,29 @@ export interface McpHost {
   handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void>;
 }
 
+/** B12: 유휴 TTL 10분 (> 메인 overall 300s — 진행 중 run 의 세션은 지우지 않는다). 타이머 없이 새 initialize 때 정리. */
+export const MCP_IDLE_TTL_MS = 10 * 60_000;
+
+interface TrackedTransport<T> {
+  readonly transport: T;
+  lastSeenAt: number;
+}
+
+/** 유휴 TTL 을 넘긴 transport 를 close + 삭제. (close → onclose 의 delete 와 중복돼도 무해.) */
+export function sweepIdleTransports<T extends { close(): Promise<void> }>(
+  transports: Map<string, TrackedTransport<T>>,
+  now: number,
+): void {
+  for (const [sid, entry] of transports) {
+    if (now - entry.lastSeenAt > MCP_IDLE_TTL_MS) {
+      transports.delete(sid);
+      void entry.transport.close().catch(() => {});
+    }
+  }
+}
+
 export function createMcpHost(toolRegistry: ToolRegistry, config: GatewayServerConfig): McpHost {
-  const transports = new Map<string, StreamableHTTPServerTransport>();
+  const transports = new Map<string, TrackedTransport<StreamableHTTPServerTransport>>();
 
   return {
     async handleRequest(req, res): Promise<void> {
@@ -47,7 +68,11 @@ export function createMcpHost(toolRegistry: ToolRegistry, config: GatewayServerC
 
       // ③ 세션 라우팅: 기존 세션이면 transport 재사용, 신규 initialize 면 transport 생성.
       const sessionId = req.headers['mcp-session-id'] as string | undefined;
-      let transport = sessionId ? transports.get(sessionId) : undefined;
+      const entry = sessionId ? transports.get(sessionId) : undefined;
+      if (entry) {
+        entry.lastSeenAt = Date.now();
+      }
+      let transport = entry?.transport;
 
       if (!transport) {
         if (sessionId || !isInitializeRequest(parsedBody)) {
@@ -55,12 +80,13 @@ export function createMcpHost(toolRegistry: ToolRegistry, config: GatewayServerC
           res.end(JSON.stringify({ error: 'No valid session for non-initialize request' }));
           return;
         }
+        sweepIdleTransports(transports, Date.now());
         // 신규 세션 — stateful transport (session id 발급) + 레지스트리 도구 등록.
         // 명시 타입 — onsessioninitialized 클로저가 created 를 self-reference 하므로 (tsc TS7022).
         const created: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => randomUUID(),
           onsessioninitialized: (sid) => {
-            transports.set(sid, created);
+            transports.set(sid, { transport: created, lastSeenAt: Date.now() });
           },
         });
         // MCP Transport 는 EventTarget 이 아니라 onclose 콜백 프로퍼티만 노출 (SDK API) — addEventListener 불가.
