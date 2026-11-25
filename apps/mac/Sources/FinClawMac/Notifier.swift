@@ -6,14 +6,19 @@ import UserNotifications
   static var enabled: Bool { Bundle.main.bundleIdentifier != nil }
   private static var asked = false
 
-  static func post(id: String, title: String, body: String, active: Bool) {  // id = alertId | scheduleId → 교체 게시 (P3)
+  /// id = alertId | scheduleId → 같은 id 는 교체 게시 (P3)
+  static func post(id: String, title: String, body: String, active: Bool) {
     guard enabled else { return }
     let center = UNUserNotificationCenter.current()
-    if !asked { asked = true; center.requestAuthorization(options: [.alert, .sound]) { _, _ in } }
+    if !asked {
+      asked = true
+      center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+    }
     let c = UNMutableNotificationContent()
     c.title = title
     c.body = body  // 본문 = 서버 결정적 문자열 (M2)
-    c.interruptionLevel = active ? .active : .passive  // 가격·뉴스 .active + 기본 사운드, 브리핑 .passive (U4)
+    // 가격·뉴스 .active + 기본 사운드, 브리핑 .passive (U4)
+    c.interruptionLevel = active ? .active : .passive
     if active { c.sound = .default }
     center.add(UNNotificationRequest(identifier: id, content: c, trigger: nil))
   }

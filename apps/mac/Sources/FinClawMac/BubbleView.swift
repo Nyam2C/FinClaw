@@ -3,8 +3,13 @@ import SwiftUI
 
 /// 말풍선 (plan §4-3 B1~B6). 값 + 클로저만 받는다 (D3).
 struct BubbleView: View {
-  let bubble: Bubble, running: Bool, toolLabel: String?
-  var onAbort = {}, onMore = {}, onDeleteAlert = {}, onExplain = {}
+  let bubble: Bubble
+  let running: Bool
+  let toolLabel: String?
+  var onAbort = {}
+  var onMore = {}
+  var onDeleteAlert = {}
+  var onExplain = {}
   @State private var lingering: String?  // 도구 문구 최소 유지 0.4s
 
   var body: some View {
@@ -12,10 +17,18 @@ struct BubbleView: View {
       switch bubble {
       case .answer(let text, _):
         if !text.isEmpty { Clamped(text: text, onMore: onMore) }
-        if let label = toolLabel ?? lingering { Text(label).font(.callout).foregroundStyle(.secondary).help(label) }
-        if running { Button("중지", action: onAbort).keyboardShortcut(".", modifiers: .command).buttonStyle(Pill()) }
+        if let label = toolLabel ?? lingering {
+          Text(label).font(.callout).foregroundStyle(.secondary).help(label)
+        }
+        if running {
+          // ⌘. 는 패널이 키 창일 때만 먹는다(보낸 뒤엔 키를 내려놓는다) — 기본 경로는 버튼 클릭
+          Button("중지", action: onAbort).keyboardShortcut(".", modifiers: .command).buttonStyle(Pill())
+        }
       case .proactive(let p, _):
-        HStack(spacing: 4) { Text(p.title).bold(); if p.count >= 2 { Text("×\(p.count)").foregroundStyle(.secondary) } }
+        HStack(spacing: 4) {
+          Text(p.title).bold()
+          if p.count >= 2 { Text("×\(p.count)").foregroundStyle(.secondary) }
+        }
         Clamped(text: p.body, onMore: nil)  // 브리핑은 아래 "자세히" 하나만
         HStack(spacing: 6) {
           if p.kind == .alert {
@@ -34,14 +47,20 @@ struct BubbleView: View {
     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
     .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.separator))
     .task(id: toolLabel) {
-      if toolLabel != nil { lingering = toolLabel } else { try? await Task.sleep(for: .seconds(0.4)); lingering = nil }
+      if toolLabel != nil {
+        lingering = toolLabel
+      } else {
+        try? await Task.sleep(for: .seconds(0.4))
+        lingering = nil
+      }
     }
   }
 }
 
 /// B1·B3: 폭 300pt 로 줄바꿈, 6줄이 넘으면 앞 6줄 + 24pt 페이드 + "자세히 ▸". 마크다운은 인라인만.
 struct Clamped: View {
-  let text: String, onMore: (() -> Void)?
+  let text: String
+  let onMore: (() -> Void)?
 
   var body: some View {
     let md = inlineMarkdown(text)
@@ -50,11 +69,13 @@ struct Clamped: View {
       ViewThatFits(in: .vertical) {
         Text(md)
         VStack(alignment: .leading, spacing: 2) {
-          Text(md).lineLimit(6).mask(
-            LinearGradient(
-              stops: [.init(color: .black, location: 0.75), .init(color: .clear, location: 1)], startPoint: .top,
-              endPoint: .bottom))
-          if let onMore { Button("자세히 ▸", action: onMore).buttonStyle(.plain).foregroundStyle(.tint) }
+          let fade = LinearGradient(
+            stops: [.init(color: .black, location: 0.75), .init(color: .clear, location: 1)],
+            startPoint: .top, endPoint: .bottom)
+          Text(md).lineLimit(6).mask(fade)
+          if let onMore {
+            Button("자세히 ▸", action: onMore).buttonStyle(.plain).foregroundStyle(.tint)
+          }
         }
         .fixedSize(horizontal: false, vertical: true)  // 제안 높이(6줄)에 눌려 5줄로 줄지 않게
       }
@@ -63,7 +84,8 @@ struct Clamped: View {
 }
 
 func inlineMarkdown(_ t: String) -> AttributedString {
-  (try? AttributedString(markdown: t, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(t)
+  let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+  return (try? AttributedString(markdown: t, options: options)) ?? AttributedString(t)
 }
 
 /// 첫 subview(숨긴 6줄 기준)의 높이를 둘째(ViewThatFits)에 높이 제안으로 준다. 폭은 최대 300.
@@ -78,7 +100,8 @@ struct SixLines: Layout {
   }
   private func offer(_ p: ProposedViewSize, _ s: Subviews) -> ProposedViewSize {
     let w = min(p.width ?? 300, 300)
-    return ProposedViewSize(width: w, height: s[0].sizeThatFits(ProposedViewSize(width: w, height: nil)).height + 1)
+    let sixLines = s[0].sizeThatFits(ProposedViewSize(width: w, height: nil)).height
+    return ProposedViewSize(width: w, height: sixLines + 1)
   }
 }
 
@@ -86,7 +109,10 @@ struct SixLines: Layout {
 struct Pill: ButtonStyle {
   var on = false
   func makeBody(configuration: Configuration) -> some View {
-    configuration.label.font(.callout.weight(on ? .semibold : .regular)).padding(.horizontal, 9).padding(.vertical, 3)
+    configuration.label
+      .font(.callout.weight(on ? .semibold : .regular))
+      .padding(.horizontal, 9)
+      .padding(.vertical, 3)
       .background(Capsule().fill(.primary.opacity(on || configuration.isPressed ? 0.22 : 0.1)))
       .accessibilityAddTraits(on ? .isSelected : [])
   }
@@ -94,13 +120,21 @@ struct Pill: ButtonStyle {
 
 /// B6 2단계 삭제: 첫 클릭 → 경고 라벨, 3s 안에 두 번째 클릭 → action.
 struct TwoStepButton: View {
-  let title: String, action: () -> Void
+  let title: String
+  let action: () -> Void
   @State private var armed = false
 
   var body: some View {
-    Button(armed ? "한 번 더 누르면 기록까지 삭제돼요" : title) { if armed { action() }; armed.toggle() }
-      .buttonStyle(Pill())
-      .task(id: armed) { if armed { try? await Task.sleep(for: .seconds(3)); armed = false } }
+    Button(armed ? "한 번 더 누르면 기록까지 삭제돼요" : title) {
+      if armed { action() }
+      armed.toggle()
+    }
+    .buttonStyle(Pill())
+    .task(id: armed) {
+      guard armed else { return }
+      try? await Task.sleep(for: .seconds(3))
+      armed = false
+    }
   }
 }
 
@@ -109,19 +143,28 @@ struct InputBar: View {
   @Binding var text: String
   let disabled: Bool
   let hint: String?  // 있으면 Enter 로 보내지 않는다 (입력은 그대로)
-  let onSubmit: () -> Void, onCancel: () -> Void, onExpand: () -> Void, onFocus: (Bool) -> Void
+  let onSubmit: () -> Void
+  let onCancel: () -> Void
+  let onExpand: () -> Void
+  let onFocus: (Bool) -> Void
   @FocusState private var focused: Bool
 
   var body: some View {
     VStack(alignment: .leading, spacing: 4) {
       HStack(spacing: 6) {
-        TextField(Copy.inputPlaceholder, text: $text).textFieldStyle(.plain).focused($focused).disabled(disabled)
+        TextField(Copy.inputPlaceholder, text: $text)
+          .textFieldStyle(.plain)
+          .focused($focused)
+          .disabled(disabled)
           .onSubmit {
             guard hint == nil else { return }
             onSubmit()
             focused = false
           }
-          .onExitCommand { focused = false; onCancel() }
+          .onExitCommand {
+            focused = false
+            onCancel()
+          }
         Button("▸", action: onExpand).buttonStyle(.plain).help("대화 펼치기")
       }
       if let hint { Text(hint).font(.caption).foregroundStyle(.secondary) }

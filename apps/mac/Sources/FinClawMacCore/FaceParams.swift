@@ -8,7 +8,9 @@ public enum Palette {
 
 /// mood·시각만으로 정해지는 얼굴 값 (plan §4-1 수식).
 public struct FaceParams: Equatable, Sendable {
-  public enum Mouth: Equatable, Sendable { case none, smile(controlY: Double), dot(r: Double), line, oval(h: Double), wave }
+  public enum Mouth: Equatable, Sendable {
+    case none, smile(controlY: Double), dot(r: Double), line, oval(h: Double), wave
+  }
   public enum Prop: Equatable, Sendable { case none, dots(lit: Int), spinner(angle: Double), bang, question, z }
   public enum Eyes: Equatable, Sendable { case open, closedArc, happyArc }  // ∪ / ∩
   public var eyes = Eyes.open, eyeOpen = 1.0, eyeScaleY = 1.0, eyeDX = 0.0, eyeDY = 0.0
@@ -20,31 +22,60 @@ public struct FaceParams: Equatable, Sendable {
     let t = reduceMotion ? 0 : now.timeIntervalSinceReferenceDate  // 주기 함수용
     let p = reduceMotion ? .infinity : now.timeIntervalSince(since)  // 진입 경과
     let wave = { (hz: Double) in sin(2 * .pi * hz * t) }
+    let blink = !reduceMotion && blinking(t) ? 0.1 : 1
     var f = FaceParams()
     if mood != .offline {  // 숨쉬기, offline 은 1
       let s = sin(2 * .pi * t / (mood == .working ? 1.6 : 3.2))
-      (f.breathY, f.breathX) = (1 + 0.025 * s, 1 - 0.012 * s)
+      f.breathY = 1 + 0.025 * s
+      f.breathX = 1 - 0.012 * s
     }
     switch mood {  // plan §4-1 mood 표
-    case .offline: f.eyes = .closedArc; f.prop = .z; f.gray = true
-    case .idle: f.eyeOpen = !reduceMotion && blinking(t) ? 0.1 : 1; f.mouth = .smile(controlY: 74); f.cheekOpacity = 0.35
-    case .listening: f.eyeScaleY = 1.1; f.tiltDeg = 2; f.mouth = .smile(controlY: 72)
+    case .offline:
+      f.eyes = .closedArc
+      f.prop = .z
+      f.gray = true
+    case .idle:
+      f.eyeOpen = blink
+      f.mouth = .smile(controlY: 74)
+      f.cheekOpacity = 0.35
+    case .listening:
+      f.eyeScaleY = 1.1
+      f.tiltDeg = 2
+      f.mouth = .smile(controlY: 72)
     case .thinking:
-      f.eyeScaleY = 0.75; f.eyeDX = 2; f.eyeDY = -2; f.mouth = .dot(r: 1.6); f.browRaise = 3
+      f.eyeScaleY = 0.75
+      f.eyeDX = 2
+      f.eyeDY = -2
+      f.mouth = .dot(r: 1.6)
+      f.browRaise = 3
       f.prop = .dots(lit: Int(t / 0.4) % 3)
     case .working:
-      f.eyeScaleY = 0.55; f.eyeDX = 2 * wave(0.8); f.mouth = .line; f.finDeg = 4 * wave(1.2)
+      f.eyeScaleY = 0.55
+      f.eyeDX = 2 * wave(0.8)
+      f.mouth = .line
+      f.finDeg = 4 * wave(1.2)
       f.prop = .spinner(angle: t.truncatingRemainder(dividingBy: 1.2) / 1.2 * 360)
     case .talking:
       let decay = lastDeltaAt.map { max(0, 1 - now.timeIntervalSince($0) / 0.45) } ?? 0
-      f.eyeOpen = !reduceMotion && blinking(t) ? 0.1 : 1; f.cheekOpacity = 0.35; f.finDeg = 4 * wave(1.2)
+      f.eyeOpen = blink
+      f.cheekOpacity = 0.35
+      f.finDeg = 4 * wave(1.2)
       f.mouth = .oval(h: 1.5 + 6 * (reduceMotion ? 0.5 : abs(wave(4.5)) * decay))
-    case .happy: f.eyes = .happyArc; f.mouth = .smile(controlY: 77); f.cheekOpacity = 0.55
+    case .happy:
+      f.eyes = .happyArc
+      f.mouth = .smile(controlY: 77)
+      f.cheekOpacity = 0.55
     case .alert:
-      f.eyeScaleY = 1.2; f.mouth = .dot(r: 3.2); f.prop = .bang
+      f.eyeScaleY = 1.2
+      f.mouth = .dot(r: 3.2)
+      f.prop = .bang
       if p < 0.6 { f.jumpY = -6 * abs(sin(.pi * p / 0.3)) }
       if p < 1.2 { f.finDeg = 10 * wave(3) }
-    case .error: f.eyeScaleY = 0.8; f.worriedBrows = true; f.mouth = .wave; f.prop = .question
+    case .error:
+      f.eyeScaleY = 0.8
+      f.worriedBrows = true
+      f.mouth = .wave
+      f.prop = .question
     }
     return f
   }

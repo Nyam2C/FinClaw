@@ -6,20 +6,33 @@ import SwiftUI
 /// 화면 상태 정본. 클라이언트 이벤트 → reduce, 0.5s tick, 사용자 액션.
 @MainActor @Observable final class AppModel {
   private(set) var state = CharacterState(now: .now)
-  var hovering = false; var expanded = false; var inputOpen = false; var hidden = false; var input = ""
-  var tab = PanelTab.chat; var history: [HistoryLine] = []; var detail: String?  // 브리핑 전문 (U2)
-  var alerts: [AlertRow] = []; var alertError: String?
+  var hovering = false
+  var expanded = false
+  var inputOpen = false
+  var hidden = false
+  var input = ""
+  var tab = PanelTab.chat
+  var history: [HistoryLine] = []
   var historyError: String?
+  var detail: String?  // 브리핑 전문 (U2)
+  var alerts: [AlertRow] = []
+  var alertError: String?
   @ObservationIgnored weak var panel: CharacterPanel?
   @ObservationIgnored private var client: GatewayClient!  // init 안에서 self 캡처 때문에 지연 대입
   @ObservationIgnored private var timer: Timer?
 
   init() {
-    client = GatewayClient(url: Settings.gatewayURL, tokenURL: Settings.tokenURL) { [weak self] in self?.apply(.client($0)) }
-    state.proactiveEnabled = UserDefaults.standard.object(forKey: "proactiveEnabled") as? Bool ?? true  // S9 기본 켜짐
+    client = GatewayClient(url: Settings.gatewayURL, tokenURL: Settings.tokenURL) { [weak self] in
+      self?.apply(.client($0))
+    }
+    // S9 기본 켜짐
+    state.proactiveEnabled = UserDefaults.standard.object(forKey: "proactiveEnabled") as? Bool ?? true
     client.start()
     timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-      MainActor.assumeIsolated { if let self { self.apply(.tick(holdBubble: self.hovering || self.expanded)) } }
+      MainActor.assumeIsolated {
+        guard let self else { return }
+        self.apply(.tick(holdBubble: self.hovering || self.expanded))
+      }
     }
   }
 
@@ -28,7 +41,8 @@ import SwiftUI
     var s = state
     CharacterReducer.reduce(&s, e, now: .now)
     guard s != state else { return }  // tick 마다 뷰를 다시 그리지 않게
-    let old = state; state = s
+    let old = state
+    state = s
     if old.runId != nil, s.runId == nil, expanded { loadHistory() }  // 펼친 패널에 방금 끝난 답을 반영
     if old.mood != .happy, s.mood == .happy, case .answer(let t, _)? = s.bubble {  // B9: end 첫 문장 1회
       announce(String(t.prefix { !".?!\n".contains($0) }), high: false)
@@ -39,17 +53,13 @@ import SwiftUI
     }
   }
 
-  private static func key(_ b: Bubble?) -> String? { if case .proactive(let p, _)? = b { p.key } else { nil } }
+  private static func key(_ b: Bubble?) -> String? {
+    if case .proactive(let p, _)? = b { p.key } else { nil }
+  }
 
   private func notify(_ ev: ServerEvent) {
-    switch ev {
-    case .alertTriggered(let a): Notifier.post(id: a.alertId, title: Copy.alertTitle(a.name), body: a.message, active: true)
-    case .scheduleCompleted(let c):
-      Notifier.post(
-        id: c.scheduleId, title: Copy.briefingTitle(c.name),
-        body: c.error == nil ? Copy.firstLines(c.output, 6) : Copy.briefingFailed(c.name), active: false)
-    default: break
-    }
+    guard let p = Proactive(ev) else { return }
+    Notifier.post(id: p.key, title: p.title, body: p.body, active: p.kind == .alert)
   }
 
   private func announce(_ text: String, high: Bool) {
@@ -97,12 +107,31 @@ import SwiftUI
       }
     }
   }
+
   func reconnect() { client.reconnect() }
-  func setProactive(_ on: Bool) { UserDefaults.standard.set(on, forKey: "proactiveEnabled"); apply(.setProactive(on)) }
+
+  func setProactive(_ on: Bool) {
+    UserDefaults.standard.set(on, forKey: "proactiveEnabled")
+    apply(.setProactive(on))
+  }
+
   /// B8: 캐릭터 탭 → 입력창 + key. proactive 표시에는 쓰지 않는다 (P1).
-  func openInput() { inputOpen = true; panel?.makeKey() }
-  func closeInput() { inputOpen = false; apply(.inputFocused(false)); panel?.resignKey() }
-  func collapse() { expanded = false; detail = nil }
+  func openInput() {
+    inputOpen = true
+    panel?.makeKey()
+  }
+
+  func closeInput() {
+    inputOpen = false
+    apply(.inputFocused(false))
+    panel?.resignKey()
+  }
+
+  func collapse() {
+    expanded = false
+    detail = nil
+  }
+
   func toggleHidden() {
     hidden.toggle()
     if hidden { panel?.orderOut(nil) } else { panel?.orderFrontRegardless() }
@@ -134,17 +163,25 @@ import SwiftUI
   /// B6 "설명 물어보기": 입력창 프리필만, 전송은 사용자가 (M2·P7).
   func explain() {
     guard case .proactive(let p, _)? = state.bubble else { return }
-    input = "이 알림 설명해줘: \(p.body)"; openInput()
+    input = "이 알림 설명해줘: \(p.body)"
+    openInput()
   }
 
   func deleteShownAlert() {
     guard case .proactive(let p, _)? = state.bubble, p.kind == .alert else { return }
-    apply(.dismiss); deleteAlert(p.key)
+    apply(.dismiss)
+    deleteAlert(p.key)
   }
 
   func listAlerts() { alertCall {} }
-  func createAlert(_ a: AlertCreate) { alertCall { _ = try await self.client.call("finance.alert.create", a, as: Ack.self) } }
-  func deleteAlert(_ id: String) { alertCall { _ = try await self.client.call("finance.alert.delete", ["alertId": id], as: Ack.self) } }
+
+  func createAlert(_ a: AlertCreate) {
+    alertCall { _ = try await self.client.call("finance.alert.create", a, as: Ack.self) }
+  }
+
+  func deleteAlert(_ id: String) {
+    alertCall { _ = try await self.client.call("finance.alert.delete", ["alertId": id], as: Ack.self) }
+  }
 
   /// 만들기·삭제 뒤 목록 재조회. 실패는 폼에, 접힌 상태면 말풍선 안내로.
   private func alertCall(_ work: @escaping @MainActor () async throws -> Void) {

@@ -12,9 +12,15 @@ import Foundation
     print("connecting \(Settings.gatewayURL.absoluteString)")
     Task {
       try? await Task.sleep(for: .seconds(10))
-      if !online { print("offline \(lastOffline)"); exit(2) }
+      guard !online else { return }
+      print("offline \(lastOffline)")
+      exit(2)
     }
-    Task { try? await Task.sleep(for: .seconds(330)); print("timeout"); exit(3) }
+    Task {
+      try? await Task.sleep(for: .seconds(330))
+      print("timeout")
+      exit(3)
+    }
     client.start()
     for await ev in stream {
       switch ev {
@@ -23,7 +29,12 @@ import Foundation
         print("connected")
         print("sent run=\(runId)")
         Task {
-          do { try await client.send(question, runId: runId) } catch { print("send failed"); exit(1) }
+          do {
+            try await client.send(question, runId: runId)
+          } catch {
+            print("send failed")
+            exit(1)
+          }
         }
       case .disconnected(let r):
         lastOffline = r
@@ -38,7 +49,10 @@ import Foundation
         print("delta x\(deltas) chars=\(chars)")
         print("end chars=\(text.count) text=\"\(text.prefix(120))\"")
         guard listen > 0 else { return 0 }
-        Task { try? await Task.sleep(for: .seconds(listen)); exit(0) }
+        Task {
+          try? await Task.sleep(for: .seconds(listen))
+          exit(0)
+        }
       case .server(.runError(runId, let reason)):
         print("reason=\(reason)")
         return 1

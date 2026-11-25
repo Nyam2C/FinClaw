@@ -14,7 +14,8 @@ struct AlertFormView: View {
     VStack(alignment: .leading, spacing: 8) {
       ForEach(rows) { r in
         HStack {
-          Text("\(r.symbol) \(Self.label(r.condition)) \(r.keyword ?? r.threshold.map { String(format: "%g", $0) } ?? "")")
+          let value = r.keyword ?? r.threshold.map { String(format: "%g", $0) } ?? ""
+          Text("\(r.symbol) \(Self.label(r.condition)) \(value)")
           Spacer()
           TwoStepButton(title: "삭제") { onDelete(r.id) }
         }

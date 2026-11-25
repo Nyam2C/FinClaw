@@ -12,7 +12,8 @@ import SwiftUI
       dispatchMain()
     }
     if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
-      MainActor.assumeIsolated { Snapshot.run(to: URL(fileURLWithPath: args[i + 1], isDirectory: true)) }; exit(0)
+      MainActor.assumeIsolated { Snapshot.run(to: URL(fileURLWithPath: args[i + 1], isDirectory: true)) }
+      exit(0)
     }
     MainActor.assumeIsolated { FinClawMacApp.main() }
   }
@@ -23,7 +24,8 @@ struct FinClawMacApp: App {
 
   var body: some Scene {
     let m = delegate.model
-    MenuBarExtra("FinClaw", systemImage: m.state.mood == .offline ? "zzz" : "face.smiling") {  // Settings 씬 금지(macOS 26 빈 창)
+    // Settings 씬 금지 (macOS 26 에서 빈 창이 뜬다)
+    MenuBarExtra("FinClaw", systemImage: m.state.mood == .offline ? "zzz" : "face.smiling") {
       Button(m.hidden ? "캐릭터 보이기" : "캐릭터 숨기기") { m.toggleHidden() }
       Button("대화 새로 시작") { m.reset() }
       Toggle("먼저 말 걸기", isOn: Binding(get: { m.state.proactiveEnabled }, set: { m.setProactive($0) }))
@@ -40,7 +42,8 @@ struct FinClawMacApp: App {
   func applicationDidFinishLaunching(_ n: Notification) {
     NSApp.setActivationPolicy(.accessory)
     let p = CharacterPanel(rootView: RootView(model: model))
-    model.panel = p; p.orderFrontRegardless()
+    model.panel = p
+    p.orderFrontRegardless()
     NotificationCenter.default.addObserver(
       forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
     ) { [weak p] _ in MainActor.assumeIsolated { p?.ensureOnScreen() } }
@@ -84,7 +87,8 @@ struct RootView: View {
 /// D1 — 인자 도메인 덕에 `-gatewayURL`·`-tokenPath` 와 `defaults write` 둘 다 먹는다.
 enum Settings {
   static var gatewayURL: URL {
-    UserDefaults.standard.string(forKey: "gatewayURL").flatMap(URL.init(string:)) ?? URL(string: "ws://127.0.0.1:3000/")!
+    let stored = UserDefaults.standard.string(forKey: "gatewayURL").flatMap(URL.init(string:))
+    return stored ?? URL(string: "ws://127.0.0.1:3000/")!
   }
   static var tokenURL: URL {
     let path = UserDefaults.standard.string(forKey: "tokenPath") ?? "~/.finclaw/gateway.token"

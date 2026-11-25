@@ -42,10 +42,17 @@ public struct Reply<R: Decodable>: Decodable { public let result: R }
 public struct StartResult: Decodable, Sendable { public let sessionId: String }
 public struct RunIdResult: Decodable, Sendable { public let runId: String }
 
-private struct Envelope: Decodable { let id: Int?; let method: String?; let error: RpcError? }
+private struct Envelope: Decodable {
+  let id: Int?
+  let method: String?
+  let error: RpcError?
+}
 private struct Params<P: Decodable>: Decodable { let params: P }
 private struct Wrapped<T: Decodable>: Decodable { let data: T }  // notification.* 의 params.data
-private struct DeltaP: Decodable { let runId: String; let delta: String }
+private struct DeltaP: Decodable {
+  let runId: String
+  let delta: String
+}
 private struct ToolP: Decodable {
   let runId, toolCallId, name: String
   let phase: ToolPhase
@@ -56,7 +63,10 @@ private struct EndP: Decodable {
   let result: Text
   struct Text: Decodable { let text: String }
 }
-private struct ErrP: Decodable { let runId: String; let reason: String }
+private struct ErrP: Decodable {
+  let runId: String
+  let reason: String
+}
 
 public func decodeFrame(_ text: String) -> Frame? {
   let data = Data(text.utf8)
@@ -70,11 +80,14 @@ public func decodeFrame(_ text: String) -> Frame? {
   case "chat.stream.delta": return p(DeltaP.self).map { .event(.delta(runId: $0.runId, text: $0.delta)) }
   case "chat.stream.tool":
     return p(ToolP.self).map {
-      .event(.tool(runId: $0.runId, toolCallId: $0.toolCallId, name: $0.name, phase: $0.phase, isError: $0.isError ?? false))
+      let tool = ServerEvent.tool(
+        runId: $0.runId, toolCallId: $0.toolCallId, name: $0.name, phase: $0.phase, isError: $0.isError ?? false)
+      return .event(tool)
     }
   case "chat.stream.end": return p(EndP.self).map { .event(.end(runId: $0.runId, text: $0.result.text)) }
   case "chat.stream.error": return p(ErrP.self).map { .event(.runError(runId: $0.runId, reason: $0.reason)) }
-  case "notification.alert.triggered": return p(Wrapped<AlertTriggered>.self).map { .event(.alertTriggered($0.data)) }
+  case "notification.alert.triggered":
+    return p(Wrapped<AlertTriggered>.self).map { .event(.alertTriggered($0.data)) }
   case "notification.schedule.completed":
     return p(Wrapped<ScheduleCompleted>.self).map { .event(.scheduleCompleted($0.data)) }
   case "system.shutdown": return .event(.shutdown)

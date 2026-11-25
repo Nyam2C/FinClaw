@@ -19,10 +19,16 @@ struct ChatPanelView: View {
           Button(t.1) { tab = t.0 }.buttonStyle(Pill(on: tab == t.0))
         }
         Spacer()
-        Button(detail == nil ? "접기" : "닫기", action: detail == nil ? onCollapse : onCloseDetail).buttonStyle(Pill())
+        Button(detail == nil ? "접기" : "닫기", action: detail == nil ? onCollapse : onCloseDetail)
+          .buttonStyle(Pill())
       }
       if let detail {
-        ScrollView { Text(detail).font(.body.monospaced()).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
+        ScrollView {
+          Text(detail)
+            .font(.body.monospaced())
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
       } else if tab == .alerts {
         alerts
         Spacer(minLength: 0)

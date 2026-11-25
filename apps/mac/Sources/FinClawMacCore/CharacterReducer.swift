@@ -1,6 +1,8 @@
 import Foundation
 
-public enum Mood: String, CaseIterable, Sendable { case offline, idle, listening, thinking, working, talking, happy, alert, error }
+public enum Mood: String, CaseIterable, Sendable {
+  case offline, idle, listening, thinking, working, talking, happy, alert, error
+}
 
 public struct Proactive: Equatable, Sendable {
   public enum Kind: Sendable { case alert, briefing }
@@ -12,6 +14,24 @@ public struct Proactive: Equatable, Sendable {
   public var count = 1
   public init(kind: Kind, key: String, title: String, body: String, detail: String?, count: Int = 1) {
     (self.kind, self.key, self.title, self.body, self.detail, self.count) = (kind, key, title, body, detail, count)
+  }
+}
+
+extension Proactive {
+  /// 알림·브리핑 이벤트 → 말풍선 항목. 시스템 알림(Notifier)도 같은 제목·본문을 쓴다. 그 외 이벤트는 nil.
+  public init?(_ ev: ServerEvent) {
+    switch ev {
+    case .alertTriggered(let a):
+      self.init(kind: .alert, key: a.alertId, title: Copy.alertTitle(a.name), body: a.message, detail: nil)
+    case .scheduleCompleted(let c):
+      let failed = c.error != nil
+      let body = failed ? Copy.briefingFailed(c.name) : Copy.firstLines(c.output, 6)
+      self.init(
+        kind: .briefing, key: c.scheduleId, title: Copy.briefingTitle(c.name), body: body,
+        detail: failed ? nil : c.output)
+    default:
+      return nil
+    }
   }
 }
 
@@ -85,29 +105,46 @@ public enum CharacterReducer {
     case .client(.connected):
       guard s.mood == .offline else { return }
       let long = s.offlineSince.map { now.timeIntervalSince($0) > offlineDelay } ?? false
-      s.mood = .idle; s.offlineSince = nil; s.bubble = nil
-      if s.lostRun { s.lostRun = false; s.bubble = .notice(Copy.lostRun, closesAt: now + lostRunSecs) }
-      else if long { s.bubble = .notice(Copy.reconnected, closesAt: now + noticeSecs) }
+      s.mood = .idle
+      s.offlineSince = nil
+      s.bubble = nil
+      if s.lostRun {
+        s.lostRun = false
+        s.bubble = .notice(Copy.lostRun, closesAt: now + lostRunSecs)
+      } else if long {
+        s.bubble = .notice(Copy.reconnected, closesAt: now + noticeSecs)
+      }
     case .client(.server(let ev)): server(&s, ev, now)
     case .sent(let id):
       clearRun(&s)
-      s.runId = id; s.mood = .thinking; s.bubble = .answer(text: "", closesAt: nil); s.lastDeltaAt = nil
+      s.runId = id
+      s.mood = .thinking
+      s.bubble = .answer(text: "", closesAt: nil)
+      s.lastDeltaAt = nil
     case .requestFailed:
       guard s.mood != .offline else { return }  // 끊긴 상태가 우선 — 실패 표정으로 offline 을 가리지 않는다
       fail(&s, Copy.requestFailed, now)
     case .abandoned(let id): server(&s, .runError(runId: id, reason: "aborted"), now)
     case .inputFocused(let b):
       s.inputFocused = b
-      if b, s.mood == .idle { s.mood = .listening } else if !b, s.mood == .listening { showNextOrIdle(&s, now) }
+      if b, s.mood == .idle {
+        s.mood = .listening
+      } else if !b, s.mood == .listening {
+        showNextOrIdle(&s, now)  // 입력하는 동안 기다리던 큐 알림을 꺼낸다
+      }
     case .dismiss:
       guard s.runId == nil else { return }  // [TQ4c] 중지 버튼이 정식 경로
-      s.bubble = nil; showNextOrIdle(&s, now)
+      s.bubble = nil
+      showNextOrIdle(&s, now)
     case .setProactive(let b):
       s.proactiveEnabled = b
       if b, s.mood == .idle, s.bubble == nil { showNextOrIdle(&s, now) }
     case .notice(let msg):
       guard s.mood != .offline else { return }
-      switch s.bubble { case .answer?, .proactive?: return; default: s.bubble = .notice(msg, closesAt: now + noticeSecs) }
+      switch s.bubble {
+      case .answer?, .proactive?: return
+      default: s.bubble = .notice(msg, closesAt: now + noticeSecs)
+      }
     case .tick(let hold):
       if s.mood == .happy, now.timeIntervalSince(s.moodSince) >= happyHold { s.mood = .talking }
       if !hold, let c = s.bubble?.closesAt, now >= c {  // [TQ4d]
@@ -115,7 +152,8 @@ public enum CharacterReducer {
         // P4: 입력 중이면 큐 알림은 입력을 마칠 때까지 기다린다 (inputFocused(false) 가 꺼낸다)
         if s.inputFocused, s.mood != .offline { s.mood = .listening } else { showNextOrIdle(&s, now) }
       }
-      if s.mood == .offline, s.bubble == nil, let since = s.offlineSince, now.timeIntervalSince(since) >= offlineDelay {
+      let offlineLong = s.offlineSince.map { now.timeIntervalSince($0) >= offlineDelay } ?? false
+      if s.mood == .offline, s.bubble == nil, offlineLong {
         s.bubble = .notice(Copy.offline(s.offlineReason ?? .serverDown), closesAt: .distantFuture)
       }
     }
@@ -123,68 +161,101 @@ public enum CharacterReducer {
 
   static func server(_ s: inout CharacterState, _ ev: ServerEvent, _ now: Date) {
     switch ev {
-    case .alertTriggered(let a):
-      proactive(&s, Proactive(kind: .alert, key: a.alertId, title: Copy.alertTitle(a.name), body: a.message, detail: nil), now)
-    case .scheduleCompleted(let c):
-      let failed = c.error != nil
-      let p = Proactive(
-        kind: .briefing, key: c.scheduleId, title: Copy.briefingTitle(c.name),
-        body: failed ? Copy.briefingFailed(c.name) : Copy.firstLines(c.output, 6), detail: failed ? nil : c.output)
-      proactive(&s, p, now)
+    case .alertTriggered, .scheduleCompleted:
+      if let p = Proactive(ev) { proactive(&s, p, now) }
     case .shutdown: break  // reduce 앞단에서 처리
     case .delta(let id, let text):
       guard id == s.runId else { return }
-      if case .answer(let t, _)? = s.bubble { s.bubble = .answer(text: t + text, closesAt: nil) }
-      else { s.bubble = .answer(text: text, closesAt: nil) }
+      if case .answer(let t, _)? = s.bubble {
+        s.bubble = .answer(text: t + text, closesAt: nil)
+      } else {
+        s.bubble = .answer(text: text, closesAt: nil)
+      }
       s.lastDeltaAt = now
       if s.mood != .working { s.mood = .talking }
     case .tool(let id, let callId, let name, let phase, _):  // isError 는 표정에 쓰지 않는다 (회귀 ①)
       guard id == s.runId else { return }
       if phase == .start {
         guard let label = Copy.toolLabel(name) else { return }  // get_current_datetime: 아무 일 없음
-        s.activeTools.append(ToolRun(id: callId, label: label)); s.toolLabel = label; s.mood = .working
+        s.activeTools.append(ToolRun(id: callId, label: label))
+        s.toolLabel = label
+        s.mood = .working
       } else {
         guard let i = s.activeTools.firstIndex(where: { $0.id == callId }) else { return }  // [TQ4e]
-        s.activeTools.remove(at: i); s.toolLabel = s.activeTools.last?.label  // [TQ4f]
+        s.activeTools.remove(at: i)
+        s.toolLabel = s.activeTools.last?.label  // [TQ4f]
         s.mood = s.activeTools.isEmpty ? .thinking : .working
       }
     case .end(let id, let text):
       guard id == s.runId else { return }
       clearRun(&s)
-      s.bubble = .answer(text: text, closesAt: now + min(max(4 + Double(text.count) / 8, 6), 25))  // U5
+      let readSecs = min(max(4 + Double(text.count) / 8, 6), 25)  // U5
+      s.bubble = .answer(text: text, closesAt: now + readSecs)
       s.mood = .happy
     case .runError(let id, let reason):
       guard id == s.runId else { return }
-      if reason == "aborted" { clearRun(&s); s.bubble = nil; showNextOrIdle(&s, now) }  // error 를 거치지 않음 [TQ4b]
-      else { fail(&s, Copy.reason(reason), now) }
+      if reason == "aborted" {  // error 를 거치지 않음 [TQ4b]
+        clearRun(&s)
+        s.bubble = nil
+        showNextOrIdle(&s, now)
+      } else {
+        fail(&s, Copy.reason(reason), now)
+      }
     }
   }
 
   static func proactive(_ s: inout CharacterState, _ p: Proactive, _ now: Date) {
-    if let i = s.queue.firstIndex(where: { $0.key == p.key }) { merge(&s.queue[i], p); return }
-    if case .proactive(var cur, let c)? = s.bubble, cur.key == p.key {
-      merge(&cur, p); s.bubble = .proactive(cur, closesAt: c); return
+    if let i = s.queue.firstIndex(where: { $0.key == p.key }) {
+      merge(&s.queue[i], p)
+      return
     }
-    let busy: Bool = switch s.bubble { case .answer?, .error?, .proactive?: true; default: false }  // [TQ4a]
-    if s.runId != nil || s.mood == .listening || busy || !s.proactiveEnabled { s.queue.append(p); return }
-    show(&s, p, now)
+    if case .proactive(var cur, let c)? = s.bubble, cur.key == p.key {
+      merge(&cur, p)
+      s.bubble = .proactive(cur, closesAt: c)
+      return
+    }
+    let busy: Bool =
+      switch s.bubble {  // [TQ4a]
+      case .answer?, .error?, .proactive?: true
+      default: false
+      }
+    if s.runId != nil || s.mood == .listening || busy || !s.proactiveEnabled {
+      s.queue.append(p)
+    } else {
+      show(&s, p, now)
+    }
   }
 
-  static func merge(_ cur: inout Proactive, _ new: Proactive) { cur.count += 1; cur.body = new.body; cur.detail = new.detail }
+  static func merge(_ cur: inout Proactive, _ new: Proactive) {
+    cur.count += 1
+    cur.body = new.body
+    cur.detail = new.detail
+  }
 
   static func show(_ s: inout CharacterState, _ p: Proactive, _ now: Date) {
-    s.bubble = .proactive(p, closesAt: now + (p.kind == .alert ? alertSecs : briefingSecs)); s.mood = .alert
+    s.bubble = .proactive(p, closesAt: now + (p.kind == .alert ? alertSecs : briefingSecs))
+    s.mood = .alert
   }
 
   /// [TQ4b·d] aborted·dismiss·tick 닫힘·setProactive(true) 공용. offline 이면 mood 를 바꾸지 않는다.
   static func showNextOrIdle(_ s: inout CharacterState, _ now: Date) {
     guard s.mood != .offline else { return }
-    if s.proactiveEnabled, !s.queue.isEmpty { show(&s, s.queue.removeFirst(), now) } else { s.mood = .idle }
+    if s.proactiveEnabled, !s.queue.isEmpty {
+      show(&s, s.queue.removeFirst(), now)
+    } else {
+      s.mood = .idle
+    }
   }
 
-  static func clearRun(_ s: inout CharacterState) { s.runId = nil; s.activeTools = []; s.toolLabel = nil }
+  static func clearRun(_ s: inout CharacterState) {
+    s.runId = nil
+    s.activeTools = []
+    s.toolLabel = nil
+  }
 
   static func fail(_ s: inout CharacterState, _ msg: String, _ now: Date) {
-    clearRun(&s); s.bubble = .error(msg, closesAt: now + errorSecs); s.mood = .error
+    clearRun(&s)
+    s.bubble = .error(msg, closesAt: now + errorSecs)
+    s.mood = .error
   }
 }
