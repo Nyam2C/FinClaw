@@ -453,9 +453,7 @@ curl -X POST http://localhost:3000/rpc \
 
 ## 기여 / 개발 워크플로우
 
-- 브랜치 명명: `feature/<topic>`, `chore/<topic>`, `fix/<topic>`.
-- 커밋 subject: ASCII Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:` …) — 한글 subject 는 lefthook 이 거부.
-- PR 전 권장 시퀀스: `pnpm typecheck && pnpm lint && pnpm format && pnpm test:ci`.
+- 브랜치 · 커밋 · PR 규칙은 [`CONTRIBUTING.md`](./CONTRIBUTING.md) 를 따른다 (`main` 직접 커밋 금지, `<type>/<slug>` 브랜치, ASCII Conventional Commits, merge commit 머지).
 - 신규 패키지 추가 시: `pnpm-workspace.yaml` glob 에 자동 포함, `tsconfig.json` references 에 추가, `composite: true` 유지, workspace 의존은 `workspace:*` 프로토콜.
 - 스킬 / RPC / 마이그레이션 변경 시: `.claude/skills/` 의 도메인별 스킬과 CLAUDE.md 의 하네스 트리거 규칙을 참고.
 
