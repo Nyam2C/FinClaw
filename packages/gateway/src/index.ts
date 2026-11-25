@@ -25,15 +25,3 @@ export { signToken } from './auth/sign.js';
 
 // RPC 디스패처
 export { dispatchRpc, MethodRegistry } from './rpc/index.js';
-
-// Phase 11: 고급 기능
-export { createHotReloader } from './hot-reload.js';
-
-// Phase 40: OpenAI-compat 토대 (flag off, 미배선 — phase45 정리 예정)
-export { handleChatCompletions } from './openai-compat/router.js';
-export {
-  mapModelId,
-  adaptRequest,
-  adaptResponse,
-  adaptStreamChunk,
-} from './openai-compat/adapter.js';

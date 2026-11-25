@@ -14,7 +14,7 @@ interface AppProps {
   agentId: string;
 }
 
-const PANELS: TuiPanel[] = ['chat', 'market', 'portfolio', 'alerts', 'settings'];
+const PANELS: TuiPanel[] = ['chat', 'market', 'portfolio', 'alerts'];
 
 export function App({ gatewayUrl, token, agentId }: AppProps) {
   const { exit } = useApp();
@@ -141,14 +141,13 @@ export function App({ gatewayUrl, token, agentId }: AppProps) {
             {
               id: crypto.randomUUID(),
               role: 'system',
-              content: 'Commands: /help, /market, /portfolio, /alerts, /settings, /quit',
+              content: 'Commands: /help, /market, /portfolio, /alerts, /quit',
             },
           ]);
           break;
         case 'market':
         case 'portfolio':
         case 'alerts':
-        case 'settings':
           setPanel(cmd);
           break;
         case 'quit':

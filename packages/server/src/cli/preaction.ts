@@ -5,7 +5,7 @@ import { EXIT } from './exit-codes.js';
 import { theme } from './terminal/theme.js';
 
 /** 설정 검증을 스킵하는 명령어 */
-const SKIP_CONFIG_COMMANDS = new Set(['start', 'config', 'health', 'status']);
+const SKIP_CONFIG_COMMANDS = new Set(['start', 'health', 'status']);
 
 /**
  * Commander pre-action 훅 등록.

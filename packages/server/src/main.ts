@@ -331,24 +331,6 @@ async function main(): Promise<void> {
   logger.info('finance.* / memory.* / agent.* RPC methods wired');
   lifecycle.register(() => gateway.stop());
 
-  // Phase 29 E6: dev 모드에서만 hot reload — prompts 디렉터리 watch.
-  if (process.env.NODE_ENV !== 'production') {
-    const { createHotReloader } = await import('@finclaw/gateway');
-    const promptsPath = join(import.meta.dirname, '..', 'prompts', 'finclaw.system.ko.md');
-    const hotReloader = createHotReloader(
-      { configPath: promptsPath, debounceMs: 500, validateBeforeApply: false, mode: 'watch' },
-      gateway.ctx,
-      () => ({ success: true }),
-    );
-    hotReloader.on('change', (e) => {
-      logger.info('Prompts hot-reloaded', { event: 'prompts.reloaded', path: e.path });
-    });
-    await hotReloader.start();
-    lifecycle.register(async () => {
-      hotReloader.stop();
-    });
-  }
-
   // Phase 28: gateway 생성 후 delivery hook 활성화. broadcaster/connections 는 gateway.ctx 에서 가져온다.
   // Phase 36: deliveryHook let 은 buildAutomation 내부로 이동 — setter 로 같은 시점(구 864) 대입.
   setDeliveryHook((args) =>

@@ -170,13 +170,6 @@ export interface ConfigValidationIssue {
   severity: 'error' | 'warning';
 }
 
-/** 설정 변경 이벤트 */
-export type ConfigChangeEvent = {
-  previous: FinClawConfig;
-  current: FinClawConfig;
-  changedPaths: string[];
-};
-
 /** 설정 I/O 의존성 -- OpenClaw ConfigIoDeps 축소판 (DI용) */
 export interface ConfigIoDeps {
   /** 설정 파일 읽기 */

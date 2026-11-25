@@ -53,7 +53,6 @@ function handleCommand(command: string): { action: string; args?: string } {
     case 'market':
     case 'portfolio':
     case 'alerts':
-    case 'settings':
       return { action: 'navigate', args: cmd };
     case 'quit':
       return { action: 'quit' };

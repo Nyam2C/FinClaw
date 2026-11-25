@@ -1,7 +1,6 @@
 import type {
   FinClawConfig,
   ConfigFileSnapshot,
-  ConfigChangeEvent,
   ConfigIoDeps,
   ConfigValidationIssue,
 } from '@finclaw/types';
@@ -30,14 +29,6 @@ describe('ConfigFileSnapshot', () => {
     expectTypeOf<ConfigFileSnapshot>().toHaveProperty('valid');
     expectTypeOf<ConfigFileSnapshot>().toHaveProperty('config');
     expectTypeOf<ConfigFileSnapshot>().toHaveProperty('issues');
-  });
-});
-
-describe('ConfigChangeEvent', () => {
-  it('previous, current, changedPaths 필드를 갖는다', () => {
-    expectTypeOf<ConfigChangeEvent>().toHaveProperty('previous');
-    expectTypeOf<ConfigChangeEvent>().toHaveProperty('current');
-    expectTypeOf<ConfigChangeEvent>().toHaveProperty('changedPaths');
   });
 });
 

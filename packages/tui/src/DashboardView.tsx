@@ -57,11 +57,6 @@ export function DashboardView({ panel, client }: DashboardViewProps) {
             setData(result);
             break;
           }
-          case 'settings': {
-            const result = await client.request('config.get');
-            setData(result);
-            break;
-          }
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -96,7 +91,6 @@ export function DashboardView({ panel, client }: DashboardViewProps) {
       {panel === 'market' && renderMarket(data as QuoteData | null)}
       {panel === 'portfolio' && renderPortfolio(data)}
       {panel === 'alerts' && renderAlerts(data as AlertData[] | null)}
-      {panel === 'settings' && renderSettings(data)}
     </Box>
   );
 }
@@ -142,17 +136,6 @@ function renderAlerts(alerts: AlertData[] | null) {
           {alert.triggerCount})
         </Text>
       ))}
-    </Box>
-  );
-}
-
-function renderSettings(data: unknown) {
-  if (!data) {
-    return <Text color="gray">No settings loaded</Text>;
-  }
-  return (
-    <Box flexDirection="column">
-      <Text>{JSON.stringify(data, null, 2)}</Text>
     </Box>
   );
 }

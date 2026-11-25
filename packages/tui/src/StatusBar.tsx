@@ -3,7 +3,7 @@
 import { Box, Text } from 'ink';
 import React from 'react';
 
-export type TuiPanel = 'chat' | 'market' | 'portfolio' | 'alerts' | 'settings';
+export type TuiPanel = 'chat' | 'market' | 'portfolio' | 'alerts';
 
 interface StatusBarProps {
   connected: boolean;

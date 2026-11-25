@@ -4,7 +4,6 @@ import { authenticate } from './auth/index.js';
 import type { GatewayServerContext } from './context.js';
 import { handleCors } from './cors.js';
 import { checkLiveness, checkReadiness } from './health.js';
-import { handleChatCompletions } from './openai-compat/router.js';
 import { RequestRateLimiter } from './rate-limit.js';
 import { createError, RpcErrors } from './rpc/errors.js';
 import { dispatchRpc } from './rpc/index.js';
@@ -46,16 +45,6 @@ export async function handleHttpRequest(
   if (ctx.isDraining && req.url !== '/healthz') {
     res.writeHead(503, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Service shutting down' }));
-    return;
-  }
-
-  // OpenAI compat 조건부 라우트
-  if (
-    ctx.config.openaiCompat?.enabled &&
-    req.method === 'POST' &&
-    req.url?.startsWith('/v1/chat/completions')
-  ) {
-    await handleChatCompletions(req, res, ctx);
     return;
   }
 

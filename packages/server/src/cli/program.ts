@@ -3,12 +3,9 @@ import { readFileSync } from 'node:fs';
 import { Command } from 'commander';
 import * as agentCmd from './commands/agent.js';
 import * as alertCmd from './commands/alert.js';
-import * as channelCmd from './commands/channel.js';
-import * as configCmd from './commands/config.js';
 import * as marketCmd from './commands/market.js';
 import * as newsCmd from './commands/news.js';
 import * as startCmd from './commands/start.js';
-import * as stopCmd from './commands/stop.js';
 import * as tuiCmd from './commands/tui.js';
 import type { CliDeps } from './deps.js';
 import { EXIT } from './exit-codes.js';
@@ -31,7 +28,6 @@ export function buildProgram(deps: CliDeps): Command {
     .version(ctx.version)
     .description('FinClaw — AI-powered financial assistant CLI')
     .option('-v, --verbose', 'enable verbose output')
-    .option('--gateway-url <url>', 'gateway server URL', 'http://127.0.0.1:3000')
     .option('--json', 'output as JSON')
     .option('--no-color', 'disable color output');
 
@@ -39,10 +35,7 @@ export function buildProgram(deps: CliDeps): Command {
 
   // ── Commands ──
   startCmd.register(program, deps);
-  stopCmd.register(program, deps);
-  configCmd.register(program, deps);
   agentCmd.register(program, deps);
-  channelCmd.register(program, deps);
   marketCmd.register(program, deps);
   newsCmd.register(program, deps);
   alertCmd.register(program, deps);

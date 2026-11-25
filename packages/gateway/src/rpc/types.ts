@@ -125,16 +125,6 @@ export interface GatewayServerConfig {
   };
 
   // ── Phase 11 추가 ──
-  readonly openaiCompat?: {
-    readonly enabled: boolean;
-    readonly sseKeepaliveMs: number;
-  };
-  readonly hotReload?: {
-    readonly configPath: string;
-    readonly debounceMs: number;
-    readonly validateBeforeApply: boolean;
-    readonly mode: 'watch' | 'poll';
-  };
   readonly rateLimit?: {
     readonly windowMs: number;
     readonly maxRequests: number;
@@ -170,15 +160,6 @@ export type RegistryEvent =
   | { readonly type: 'session_error'; readonly sessionId: string; readonly error: Error };
 
 // ── Phase 11 타입 ──
-
-/** 설정 변경 이벤트 */
-export interface ConfigChangeEvent {
-  readonly path: string;
-  readonly changeType: 'modified' | 'added' | 'removed';
-  readonly timestamp: number;
-  readonly previousHash: string;
-  readonly currentHash: string;
-}
 
 /** Rate limit 상태 */
 export interface RateLimitInfo {
@@ -232,78 +213,4 @@ export interface AccessLogEntry {
   readonly contentLength: number;
   readonly rpcMethod?: string;
   readonly authLevel?: string;
-}
-
-/** OpenAI 호환 타입 */
-export interface OpenAIChatRequest {
-  readonly model: string;
-  readonly messages: readonly OpenAIMessage[];
-  readonly temperature?: number;
-  readonly max_tokens?: number;
-  readonly stream?: boolean;
-  readonly tools?: readonly OpenAITool[];
-}
-
-export interface OpenAIMessage {
-  readonly role: 'system' | 'user' | 'assistant' | 'tool';
-  readonly content: string | null;
-  readonly tool_calls?: readonly OpenAIToolCall[];
-  readonly tool_call_id?: string;
-}
-
-export interface OpenAIToolCall {
-  readonly id: string;
-  readonly type: 'function';
-  readonly function: { readonly name: string; readonly arguments: string };
-}
-
-export interface OpenAITool {
-  readonly type: 'function';
-  readonly function: {
-    readonly name: string;
-    readonly description?: string;
-    readonly parameters?: Record<string, unknown>;
-  };
-}
-
-export interface OpenAIChatResponse {
-  readonly id: string;
-  readonly object: 'chat.completion';
-  readonly created: number;
-  readonly model: string;
-  readonly choices: readonly {
-    readonly index: number;
-    readonly message: OpenAIMessage;
-    readonly finish_reason: string;
-  }[];
-  readonly usage: {
-    readonly prompt_tokens: number;
-    readonly completion_tokens: number;
-    readonly total_tokens: number;
-  };
-}
-
-export interface OpenAIStreamChunk {
-  readonly id: string;
-  readonly object: 'chat.completion.chunk';
-  readonly created: number;
-  readonly model: string;
-  readonly choices: readonly {
-    readonly index: number;
-    readonly delta: Partial<OpenAIMessage>;
-    readonly finish_reason: string | null;
-  }[];
-}
-
-export interface OpenAIErrorResponse {
-  readonly error: {
-    readonly message: string;
-    readonly type:
-      | 'invalid_request_error'
-      | 'authentication_error'
-      | 'rate_limit_error'
-      | 'server_error';
-    readonly code: string | null;
-    readonly param: string | null;
-  };
 }

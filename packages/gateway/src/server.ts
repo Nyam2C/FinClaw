@@ -30,7 +30,6 @@ import { registerAgentMethods, type AgentRpcDeps } from './rpc/methods/agent.js'
 import { registerAuditMethods } from './rpc/methods/audit.js';
 import { registerBrokerageMethods, type BrokerageRpcDeps } from './rpc/methods/brokerage.js';
 import { registerChatMethods } from './rpc/methods/chat.js';
-import { registerConfigMethods } from './rpc/methods/config.js';
 import { registerFinanceMethods, type FinanceRpcDeps } from './rpc/methods/finance.js';
 import { registerMemoryMethods, type MemoryRpcDeps } from './rpc/methods/memory.js';
 import { registerScheduleMethods, type ScheduleRpcDeps } from './rpc/methods/schedule.js';
@@ -142,7 +141,6 @@ export function createGatewayServer(
 
   // RPC 메서드 등록 (ctx가 생성된 후 deps + registry 주입)
   registerSystemMethods(ctx.methods);
-  registerConfigMethods(ctx.methods);
   registerChatMethods(
     {
       registry: ctx.registry,
