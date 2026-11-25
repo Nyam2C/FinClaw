@@ -4,7 +4,7 @@ import {
   type GatewayServerConfig,
 } from '@finclaw/gateway';
 import { resetEventBus } from '@finclaw/infra';
-import type { ConversationRecord, MemoryEntry, ModelRef, SearchResult } from '@finclaw/types';
+import type { ModelRef } from '@finclaw/types';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { RunnerExecutionAdapter } from './auto-reply/execution-adapter.js';
 import { MissingEnvError, requireEnv } from './main.js';
@@ -84,17 +84,6 @@ describe('main boot wiring (Phase 29 E)', () => {
     server = createGatewayServer(makeTestConfig(), {
       defaultModel: TEST_MODEL,
       adapter: makeStubAdapter(),
-      storage: {
-        saveConversation: async () => undefined,
-        upsertConversation: async () => undefined,
-        getConversation: async () => null as ConversationRecord | null,
-        deleteConversation: async () => false,
-        searchConversations: async () => [] as SearchResult[],
-        saveMemory: async () => undefined,
-        searchMemory: async () => [] as MemoryEntry[],
-        initialize: async () => undefined,
-        close: async () => undefined,
-      },
     });
     expect(server.ctx.rateLimiter).toBeDefined();
     expect(server.ctx.accessLogger).toBeDefined();

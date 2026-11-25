@@ -277,9 +277,6 @@ describe('RunnerExecutionAdapter + storage', () => {
     const storage: import('@finclaw/types').StorageAdapter = {
       async initialize() {},
       async close() {},
-      async saveConversation(record) {
-        records.set(record.sessionKey as string, record);
-      },
       async upsertConversation(record) {
         records.set(record.sessionKey as string, record);
       },
@@ -288,13 +285,6 @@ describe('RunnerExecutionAdapter + storage', () => {
       },
       async deleteConversation(key) {
         return records.delete(key as string);
-      },
-      async searchConversations() {
-        return [];
-      },
-      async saveMemory() {},
-      async searchMemory() {
-        return [];
       },
     };
     return { storage, records };

@@ -243,7 +243,6 @@ async function main(): Promise<void> {
   });
 
   const gateway = createGatewayServer(gatewayConfig, {
-    storage,
     defaultModel: DEFAULT_MODEL,
     adapter,
     toolRegistry, // Phase 40 A: /mcp in-process 호출용 (top-level — agentDeps.toolRegistry 와 동일 인스턴스)

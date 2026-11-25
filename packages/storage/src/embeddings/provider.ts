@@ -21,8 +21,8 @@ export interface EmbeddingConfig {
  * Create an embedding provider by mode.
  * 'auto' prefers voyage (voyage-finance-2, 1024D) > openai.
  *
- * NOTE: vec0 DDL declares float[1024]. Only voyage-finance-2 (1024D) fits.
- * OpenAI text-embedding-3-small (1536D) will NOT work with the current schema.
+ * NOTE: vec0 DDL declares float[1024]. OpenAI fits only via `config.dimensions`
+ * truncation (main passes storage.vectorDimension).
  */
 export async function createEmbeddingProvider(
   mode: EmbeddingMode,

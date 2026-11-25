@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { AgentId } from '@finclaw/types';
 import * as sqliteVec from 'sqlite-vec';
 import { describe, expect, it } from 'vitest';
-import { addAgentRun, getAgentRun, updateAgentRunCliSession } from './agent-runs.js';
+import { addAgentRun, getAgentRun } from './agent-runs.js';
 import { openDatabase } from './database.js';
 
 const AGENT = 'agent-cli' as AgentId;
@@ -90,7 +90,7 @@ describe('migration v10 → v11 (agent_runs.cli_session_id)', () => {
     }
   });
 
-  it('addAgentRun persists cliSessionId and updateAgentRunCliSession updates it', () => {
+  it('addAgentRun persists cliSessionId', () => {
     const db = openDatabase({ path: ':memory:' });
     try {
       const run = addAgentRun(db.db, {
@@ -100,13 +100,6 @@ describe('migration v10 → v11 (agent_runs.cli_session_id)', () => {
         cliSessionId: 'sess1',
       });
       expect(getAgentRun(db.db, run.id)?.cliSessionId).toBe('sess1');
-
-      const ok = updateAgentRunCliSession(db.db, run.id, 'sess2');
-      expect(ok).toBe(true);
-      expect(getAgentRun(db.db, run.id)?.cliSessionId).toBe('sess2');
-
-      const missing = updateAgentRunCliSession(db.db, 'no-such-id', 'sess3');
-      expect(missing).toBe(false);
     } finally {
       db.close();
     }

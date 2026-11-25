@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import {
-  addAccessLog,
-  listAccessLog,
-  openDatabase,
-  purgeAccessLog,
-  type Database,
-} from './index.js';
+import { addAccessLog, openDatabase, purgeAccessLog, type Database } from './index.js';
+
+function rows(db: Database): Array<Record<string, unknown>> {
+  return db.db.prepare('SELECT * FROM access_log ORDER BY ts DESC').all() as Array<
+    Record<string, unknown>
+  >;
+}
 
 describe('access_log storage', () => {
   let db: Database;
@@ -13,7 +13,7 @@ describe('access_log storage', () => {
     db = openDatabase({ path: ':memory:', enableWAL: false });
   });
 
-  it('inserts and lists rows by filter', () => {
+  it('inserts rows', () => {
     addAccessLog(db.db, {
       ts: 1000,
       method: 'system.ping',
@@ -23,21 +23,12 @@ describe('access_log storage', () => {
     });
     addAccessLog(db.db, {
       ts: 2000,
-      method: 'audit.list',
+      method: 'agent.run',
       paramsHash: 'h2',
       durationMs: 10,
       status: '200',
     });
-    expect(listAccessLog(db.db, { method: 'audit.list' })).toHaveLength(1);
-    expect(listAccessLog(db.db)).toHaveLength(2);
-  });
-
-  it('orders by ts DESC', () => {
-    addAccessLog(db.db, { ts: 1000, method: 'a', paramsHash: 'h', durationMs: 1, status: '200' });
-    addAccessLog(db.db, { ts: 3000, method: 'b', paramsHash: 'h', durationMs: 1, status: '200' });
-    addAccessLog(db.db, { ts: 2000, method: 'c', paramsHash: 'h', durationMs: 1, status: '200' });
-    const rows = listAccessLog(db.db);
-    expect(rows.map((r) => r.method)).toEqual(['b', 'c', 'a']);
+    expect(rows(db)).toHaveLength(2);
   });
 
   it('purges only rows older than retention', () => {
@@ -57,7 +48,7 @@ describe('access_log storage', () => {
       status: '200',
     });
     expect(purgeAccessLog(db.db, 30)).toBe(1);
-    const remaining = listAccessLog(db.db);
+    const remaining = rows(db);
     expect(remaining).toHaveLength(1);
     expect(remaining[0]?.method).toBe('recent');
   });
@@ -74,27 +65,12 @@ describe('access_log storage', () => {
       error: 'boom',
       traceId: 'aa'.repeat(16),
     });
-    const rows = listAccessLog(db.db);
-    expect(rows[0]).toMatchObject({
+    expect(rows(db)[0]).toMatchObject({
       method: 'm',
       actor: 'token',
       ip: '127.0.0.1',
       error: 'boom',
-      traceId: 'aa'.repeat(16),
+      trace_id: 'aa'.repeat(16),
     });
-  });
-
-  it('clamps limit to MAX_LIMIT (500)', () => {
-    for (let i = 0; i < 10; i++) {
-      addAccessLog(db.db, {
-        ts: i,
-        method: 'm',
-        paramsHash: 'h',
-        durationMs: 1,
-        status: '200',
-      });
-    }
-    expect(listAccessLog(db.db, { limit: 99999 })).toHaveLength(10);
-    expect(listAccessLog(db.db, { limit: 5 })).toHaveLength(5);
   });
 });

@@ -9,7 +9,7 @@ import {
 import { createServer as createHttpsServer } from 'node:https';
 import type { ChatExecutionPort } from '@finclaw/agent';
 import { getEventBus } from '@finclaw/infra';
-import type { ModelRef, StorageAdapter } from '@finclaw/types';
+import type { ModelRef } from '@finclaw/types';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { createAccessLogger } from './access-log.js';
 import { AuthRateLimiter } from './auth/rate-limit.js';
@@ -40,7 +40,6 @@ import { handleWsConnection } from './ws/connection.js';
 import { startHeartbeat } from './ws/heartbeat.js';
 
 export interface GatewayServerDeps {
-  readonly storage: StorageAdapter;
   readonly defaultModel: ModelRef;
   readonly adapter: ChatExecutionPort;
   /** Phase 23: finance.* RPC 배선용 의존성 (생략 시 해당 메서드는 provider_unavailable 에러) */
