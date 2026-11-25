@@ -94,6 +94,17 @@ describe('agent_runs CRUD', () => {
     });
     expect(getAgentRun(database.db, run.id)?.error).toBe('rate limited');
   });
+
+  it('addAgentRun — id 지정 시 그 값을 PK 로 쓴다 (phase46 D1)', () => {
+    const run = addAgentRun(database.db, {
+      id: 'run-fixed-id',
+      agentId: AGENT_A,
+      prompt: 'q',
+      output: 'a',
+    });
+    expect(run.id).toBe('run-fixed-id');
+    expect(getAgentRun(database.db, 'run-fixed-id')?.prompt).toBe('q');
+  });
 });
 
 describe('listAgentRuns', () => {
