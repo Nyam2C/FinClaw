@@ -1,7 +1,7 @@
 // packages/server/src/composition/local-auth.ts
 // Phase 46 M10 (B6/B10): gateway JWT secret 해석·영속 + 로컬 토큰 파일 발급. 토큰·secret 은 로그에 남기지 않는다.
 import { randomBytes } from 'node:crypto';
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { signToken } from '@finclaw/gateway';
@@ -53,6 +53,9 @@ function readOptional(path: string): string | undefined {
 
 function writePrivate(path: string, content: string): void {
   mkdirSync(finclawDir(), { recursive: true });
+  // 이미 있던 파일은 writeFileSync 의 mode 가 적용되지 않는다 → 내용을 쓰기 전에 좁힌다 (느슨한 권한으로 새 값이 보이는 창 없음)
+  if (existsSync(path)) {
+    chmodSync(path, 0o600);
+  }
   writeFileSync(path, content, { mode: 0o600 });
-  chmodSync(path, 0o600); // 이미 있던 파일은 writeFileSync 의 mode 가 적용되지 않는다
 }

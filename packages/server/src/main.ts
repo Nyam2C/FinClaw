@@ -99,9 +99,8 @@ async function main(): Promise<void> {
   const finclawConfig = loadConfig({ logger });
   validateConfigStrict(finclawConfig);
 
-  // Phase 46 M10 (B6/B10): JWT secret (env → ~/.finclaw/gateway.secret) + 로컬 토큰 파일. 값은 로그 금지.
+  // Phase 46 M10 (B6/B10): JWT secret (env → ~/.finclaw/gateway.secret). 로컬 토큰 파일은 포트 검사 뒤(8). 값은 로그 금지.
   const jwtSecret = resolveJwtSecret();
-  issueLocalToken(jwtSecret);
 
   const dbPath = process.env.FINCLAW_DB_PATH ?? join(homedir(), '.finclaw', 'db.sqlite');
   const storage = createStorage({ dbPath });
@@ -243,6 +242,8 @@ async function main(): Promise<void> {
     }
     throw err;
   }
+  // 포트 검사 뒤 — 이미 떠 있는 서버가 있으면 그 서버의 토큰 파일을 덮어쓰지 않고 종료한다
+  issueLocalToken(jwtSecret);
   const alertHandleForRpc = alertHandle;
   const agentRunLane = new ConcurrencyLane({
     maxConcurrent: 1,

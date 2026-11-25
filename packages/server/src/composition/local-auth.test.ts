@@ -1,7 +1,7 @@
 // packages/server/src/composition/local-auth.test.ts
 // Phase 46 M10: secret 0600·재사용·env 우선, 토큰 0600·검증 가능, defaultConfig loopback.
 import { createHmac } from 'node:crypto';
-import { existsSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -45,6 +45,17 @@ describe('issueLocalToken / readLocalToken', () => {
     const payload = JSON.parse(Buffer.from(p ?? '', 'base64url').toString('utf8'));
     expect(payload).toEqual({ sub: 'local', exp: now / 1000 + 30 * 24 * 60 * 60 });
     expect(readFileSync(path, 'utf8')).toBe(token);
+  });
+
+  it('기존 0644 토큰 파일 → 0600 으로 좁히고 내용 갱신', () => {
+    const path = join(dir(), 'gateway.token');
+    mkdirSync(dir(), { recursive: true });
+    writeFileSync(path, 'stale', { mode: 0o644 });
+    expect(mode(path)).toBe(0o644);
+    issueLocalToken('s3cret');
+    expect(mode(path)).toBe(0o600);
+    expect(readLocalToken()).not.toBe('stale');
+    expect(readLocalToken()?.split('.')).toHaveLength(3);
   });
 
   it('파일이 없으면 undefined', () => {
