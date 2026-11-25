@@ -127,6 +127,36 @@ describe('ChatRegistry', () => {
       shortRegistry.dispose();
       vi.useRealTimers();
     });
+
+    it('activity (run start/end) extends the idle TTL', () => {
+      vi.useFakeTimers();
+      const r = new ChatRegistry(90_000);
+      const { sessionId } = r.startSession(sessionParams({ agentId: 'a', connectionId: 'c1' }));
+      vi.advanceTimersByTime(50_000);
+      r.runStarted(sessionId);
+      r.runEnded(sessionId);
+      vi.advanceTimersByTime(71_000); // t=121s — startedAt 기준이면 만료(>90s), 활동(50s) 기준 71s 유휴
+      expect(r.getSession(sessionId)).toBeDefined();
+      vi.advanceTimersByTime(60_000); // t=181s — 131s 유휴
+      expect(r.getSession(sessionId)).toBeUndefined();
+      r.dispose();
+      vi.useRealTimers();
+    });
+
+    it('never expires a session with an in-progress run, expires once idle after it ends', () => {
+      vi.useFakeTimers();
+      const r = new ChatRegistry(1_000);
+      const session = r.startSession(sessionParams({ agentId: 'a', connectionId: 'c1' }));
+      r.runStarted(session.sessionId);
+      vi.advanceTimersByTime(10 * 60_000);
+      expect(r.getSession(session.sessionId)).toBe(session);
+      expect(session.abortController.signal.aborted).toBe(false);
+      r.runEnded(session.sessionId);
+      vi.advanceTimersByTime(61_000);
+      expect(r.getSession(session.sessionId)).toBeUndefined();
+      r.dispose();
+      vi.useRealTimers();
+    });
   });
 
   describe('dispose', () => {

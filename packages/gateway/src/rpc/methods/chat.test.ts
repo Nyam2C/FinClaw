@@ -327,6 +327,59 @@ describe('chat.* RPC methods', () => {
       await rpc('chat.abort', { sessionId }); // 정리
     });
 
+    function signalRuntime() {
+      const signals: AbortSignal[] = [];
+      const runtime: AgentRunPort = {
+        async *run(req) {
+          signals.push(req.signal);
+          await new Promise((resolve) =>
+            req.signal.addEventListener('abort', resolve, { once: true }),
+          );
+          yield { type: 'error', runId: req.runId ?? '', reason: 'aborted', message: 'aborted' };
+        },
+        reset: vi.fn().mockResolvedValue(true),
+      };
+      return { runtime, signals };
+    }
+
+    const sendTwice = async (sessionId: string) => {
+      const ids: string[] = [];
+      for (const message of ['첫 질문', '두 번째 질문']) {
+        const res = (await rpc('chat.send', { sessionId, message })) as {
+          result: { runId: string };
+        };
+        ids.push(res.result.runId);
+      }
+      return ids;
+    };
+
+    it('연속 send 2개 → runId 지정 abort 는 그 run 만', async () => {
+      const { runtime, signals } = signalRuntime();
+      const sessionId = await startSession(runtime, mockConn());
+      const [first] = await sendTwice(sessionId);
+      await vi.waitFor(() => expect(signals).toHaveLength(2));
+      const res = (await rpc('chat.abort', { sessionId, runId: first })) as {
+        result: { aborted: boolean };
+      };
+      expect(res.result.aborted).toBe(true);
+      expect(signals.map((s) => s.aborted)).toEqual([true, false]);
+      await rpc('chat.abort', { sessionId }); // 정리
+    });
+
+    it('연속 send 2개 → runId 생략 abort 는 둘 다, 종료 후 맵에서 제거', async () => {
+      const { runtime, signals } = signalRuntime();
+      const sessionId = await startSession(runtime, mockConn());
+      await sendTwice(sessionId);
+      await vi.waitFor(() => expect(signals).toHaveLength(2));
+      const res = (await rpc('chat.abort', { sessionId })) as { result: { aborted: boolean } };
+      expect(res.result.aborted).toBe(true);
+      expect(signals.map((s) => s.aborted)).toEqual([true, true]);
+      await vi.waitFor(async () => {
+        const again = (await rpc('chat.abort', { sessionId })) as { result: { aborted: boolean } };
+        expect(again.result.aborted).toBe(false);
+      });
+    });
+
     it('진행 중 run 이 없으면 {aborted:false}', async () => {
       const { runtime } = abortableRuntime();
       const sessionId = await startSession(runtime, mockConn());

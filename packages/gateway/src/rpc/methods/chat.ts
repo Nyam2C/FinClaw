@@ -23,9 +23,10 @@ export interface ChatMethodsDeps {
   readonly logger?: FinClawLogger;
 }
 
-/** D9: sessionId 당 최근 run 1개 (실행 직렬화는 runtime per-session lane). chat.abort(M6)가 controller 를 쓴다. */
+/** D9: 진행 중·대기 중 run (실행 직렬화는 runtime per-session lane). chat.abort(M6)가 controller 를 쓴다. */
 interface ActiveRun {
   readonly runId: string;
+  readonly sessionId: string;
   readonly controller: AbortController;
 }
 
@@ -39,7 +40,7 @@ function deriveTuiSessionKey(userId: string | undefined, agentId: string): Sessi
 }
 
 export function createChatMethods(deps: ChatMethodsDeps): readonly RpcMethodHandler[] {
-  const activeRuns = new Map<string, ActiveRun>();
+  const activeRuns = new Map<string, ActiveRun>(); // key = runId
 
   /** run 을 끝까지 소비하며 WS 로 중계. 연결은 이벤트마다 조회 — 끊겨도 run 은 끝까지 돌아 저장된다 (S9). */
   async function streamRun(session: ActiveSession, message: string, run: ActiveRun): Promise<void> {
@@ -66,9 +67,8 @@ export function createChatMethods(deps: ChatMethodsDeps): readonly RpcMethodHand
         error: err instanceof Error ? err.message : String(err),
       });
     } finally {
-      if (activeRuns.get(session.sessionId) === run) {
-        activeRuns.delete(session.sessionId);
-      }
+      activeRuns.delete(run.runId);
+      deps.registry.runEnded(session.sessionId);
     }
   }
 
@@ -117,8 +117,13 @@ export function createChatMethods(deps: ChatMethodsDeps): readonly RpcMethodHand
       if (!session) {
         throw new Error('session not found');
       }
-      const run: ActiveRun = { runId: randomUUID(), controller: new AbortController() };
-      activeRuns.set(session.sessionId, run);
+      const run: ActiveRun = {
+        runId: randomUUID(),
+        sessionId: session.sessionId,
+        controller: new AbortController(),
+      };
+      activeRuns.set(run.runId, run);
+      deps.registry.runStarted(session.sessionId);
       // D9: 즉시 반환 — Web/TUI 는 chat.send 를 30s 요청 타임아웃으로 await 한다 (app-gateway.ts:177, gateway-client.ts:153)
       void streamRun(session, params.message, run);
       return { runId: run.runId };
@@ -135,12 +140,18 @@ export function createChatMethods(deps: ChatMethodsDeps): readonly RpcMethodHand
     authLevel: 'token',
     schema: z.object({ sessionId: z.string(), runId: z.string().optional() }),
     async execute(params) {
-      const active = activeRuns.get(params.sessionId);
-      if (!active || (params.runId !== undefined && params.runId !== active.runId)) {
-        return { aborted: false };
+      // runId 지정 시 그 run, 생략 시 그 세션의 진행 중·대기 중 run 전부
+      let aborted = false;
+      for (const run of activeRuns.values()) {
+        if (
+          run.sessionId === params.sessionId &&
+          (params.runId === undefined || params.runId === run.runId)
+        ) {
+          run.controller.abort(); // → driver SIGINT → 2s → SIGKILL → runtime 이 error{aborted} 1회 (I11)
+          aborted = true;
+        }
       }
-      active.controller.abort(); // → driver SIGINT → 2s → SIGKILL → runtime 이 error{aborted} 1회 (I11)
-      return { aborted: true };
+      return { aborted };
     },
   };
 
