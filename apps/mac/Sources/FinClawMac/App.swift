@@ -12,8 +12,7 @@ import SwiftUI
       dispatchMain()
     }
     if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
-      MainActor.assumeIsolated { Snapshot.run(to: URL(fileURLWithPath: args[i + 1], isDirectory: true)) }
-      exit(0)
+      MainActor.assumeIsolated { Snapshot.run(to: URL(fileURLWithPath: args[i + 1], isDirectory: true)) }; exit(0)
     }
     MainActor.assumeIsolated { FinClawMacApp.main() }
   }
@@ -41,8 +40,7 @@ struct FinClawMacApp: App {
   func applicationDidFinishLaunching(_ n: Notification) {
     NSApp.setActivationPolicy(.accessory)
     let p = CharacterPanel(rootView: RootView(model: model))
-    model.panel = p
-    p.orderFrontRegardless()
+    model.panel = p; p.orderFrontRegardless()
     NotificationCenter.default.addObserver(
       forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
     ) { [weak p] _ in MainActor.assumeIsolated { p?.ensureOnScreen() } }
@@ -56,17 +54,29 @@ struct RootView: View {
   var body: some View {
     let s = model.state
     VStack(alignment: .trailing, spacing: 6) {
-      if let b = s.bubble { BubbleView(bubble: b, running: s.runId != nil, toolLabel: s.toolLabel, onAbort: model.abort) }
+      if model.expanded {
+        let live: String? = if s.runId != nil, case .answer(let t, _)? = s.bubble { t } else { nil }
+        ChatPanelView(
+          history: model.history, streaming: live, detail: model.detail, tab: $model.tab, onCollapse: model.collapse,
+          onCloseDetail: { model.detail = nil },
+          alerts: AlertFormView(
+            rows: model.alerts, error: model.alertError, onCreate: model.createAlert, onDelete: model.deleteAlert))
+      } else if let b = s.bubble {
+        BubbleView(
+          bubble: b, running: s.runId != nil, toolLabel: s.toolLabel, onAbort: model.abort, onMore: model.more,
+          onDeleteAlert: model.deleteShownAlert, onExplain: model.explain)
+      }
       if model.inputOpen {
         InputBar(
-          text: $model.input, disabled: s.runId != nil, onSubmit: model.send, onCancel: model.closeInput, onExpand: {},
-          onFocus: { model.apply(.inputFocused($0)) })
+          text: $model.input, disabled: s.runId != nil, onSubmit: model.send, onCancel: model.closeInput,
+          onExpand: model.expand, onFocus: { model.apply(.inputFocused($0)) })
       }
       CharacterView(state: s, onTap: model.openInput, onBadge: { model.apply(.dismiss) })
     }
     .padding(6)
     .fixedSize()
     .onHover { model.hovering = $0 }
+    .onChange(of: model.tab) { if $1 == .alerts { model.listAlerts() } }
     .onGeometryChange(for: CGSize.self) { $0.size } action: { model.panel?.fit($0) }
   }
 }

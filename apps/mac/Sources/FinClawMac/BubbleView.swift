@@ -3,11 +3,8 @@ import SwiftUI
 
 /// 말풍선 (plan §4-3 B1~B6). 값 + 클로저만 받는다 (D3).
 struct BubbleView: View {
-  let bubble: Bubble
-  let running: Bool
-  let toolLabel: String?
-  var onAbort: () -> Void = {}
-  var onMore: () -> Void = {}
+  let bubble: Bubble, running: Bool, toolLabel: String?
+  var onAbort = {}, onMore = {}, onDeleteAlert = {}, onExplain = {}
   @State private var lingering: String?  // 도구 문구 최소 유지 0.4s
 
   var body: some View {
@@ -18,11 +15,16 @@ struct BubbleView: View {
         if let label = toolLabel ?? lingering { Text(label).font(.callout).foregroundStyle(.secondary).help(label) }
         if running { Button("중지", action: onAbort).keyboardShortcut(".", modifiers: .command).buttonStyle(Pill()) }
       case .proactive(let p, _):
-        HStack(spacing: 4) {
-          Text(p.title).bold()
-          if p.count >= 2 { Text("×\(p.count)").foregroundStyle(.secondary) }
-        }
+        HStack(spacing: 4) { Text(p.title).bold(); if p.count >= 2 { Text("×\(p.count)").foregroundStyle(.secondary) } }
         Clamped(text: p.body, onMore: onMore)
+        HStack(spacing: 6) {
+          if p.kind == .alert {
+            TwoStepButton(title: "이 알림 삭제", action: onDeleteAlert)
+            Button("설명 물어보기", action: onExplain).buttonStyle(Pill())
+          } else if p.detail != nil {
+            Button("자세히 ▸", action: onMore).buttonStyle(Pill())
+          }
+        }
       case .notice(let text, _), .error(let text, _): Clamped(text: text, onMore: onMore)
       }
     }
@@ -38,13 +40,10 @@ struct BubbleView: View {
 
 /// B1·B3: 폭 300pt 로 줄바꿈, 6줄이 넘으면 앞 6줄 + 24pt 페이드 + "자세히 ▸". 마크다운은 인라인만.
 struct Clamped: View {
-  let text: String
-  let onMore: () -> Void
+  let text: String, onMore: () -> Void
 
   var body: some View {
-    let md =
-      (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-      ?? AttributedString(text)
+    let md = inlineMarkdown(text)
     SixLines {
       Text("가").lineLimit(6, reservesSpace: true).hidden()  // 6줄 높이 기준
       ViewThatFits(in: .vertical) {
@@ -60,6 +59,10 @@ struct Clamped: View {
       }
     }
   }
+}
+
+func inlineMarkdown(_ t: String) -> AttributedString {
+  (try? AttributedString(markdown: t, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(t)
 }
 
 /// 첫 subview(숨긴 6줄 기준)의 높이를 둘째(ViewThatFits)에 높이 제안으로 준다. 폭은 최대 300.
@@ -78,22 +81,32 @@ struct SixLines: Layout {
   }
 }
 
-/// SwiftUI 가 직접 그리는 버튼 (말풍선 위에서 가볍고, 스냅샷에도 그대로 나온다).
+/// SwiftUI 가 직접 그리는 버튼 (말풍선 위에서 가볍고, 스냅샷에도 그대로 나온다). on = 세그먼트 선택 상태.
 struct Pill: ButtonStyle {
+  var on = false
   func makeBody(configuration: Configuration) -> some View {
-    configuration.label.font(.callout).padding(.horizontal, 9).padding(.vertical, 3)
-      .background(Capsule().fill(.primary.opacity(configuration.isPressed ? 0.2 : 0.1)))
+    configuration.label.font(.callout.weight(on ? .semibold : .regular)).padding(.horizontal, 9).padding(.vertical, 3)
+      .background(Capsule().fill(.primary.opacity(on || configuration.isPressed ? 0.22 : 0.1)))
+      .accessibilityAddTraits(on ? .isSelected : [])
+  }
+}
+
+/// B6 2단계 삭제: 첫 클릭 → 경고 라벨, 3s 안에 두 번째 클릭 → action.
+struct TwoStepButton: View {
+  let title: String, action: () -> Void
+  @State private var armed = false
+
+  var body: some View {
+    Button(armed ? "한 번 더 누르면 기록까지 삭제돼요" : title) { if armed { action() }; armed.toggle() }
+      .buttonStyle(Pill())
+      .task(id: armed) { if armed { try? await Task.sleep(for: .seconds(3)); armed = false } }
   }
 }
 
 /// B8 입력창. Enter = 전송 후 포커스 해제, Esc = 닫기. run 중 비활성 (D4).
 struct InputBar: View {
   @Binding var text: String
-  let disabled: Bool
-  let onSubmit: () -> Void
-  let onCancel: () -> Void
-  let onExpand: () -> Void
-  let onFocus: (Bool) -> Void
+  let disabled: Bool, onSubmit: () -> Void, onCancel: () -> Void, onExpand: () -> Void, onFocus: (Bool) -> Void
   @FocusState private var focused: Bool
 
   var body: some View {

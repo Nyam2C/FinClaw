@@ -43,7 +43,7 @@ import Foundation
         print("reason=\(reason)")
         return 1
       case .server(.alertTriggered(let a)):
-        print("event alert.triggered alertId=\(a.alertId) title=\"\(a.name)\"")
+        print("event alert.triggered alertId=\(a.alertId) title=\"\(Copy.alertTitle(a.name))\"")
       case .server(.scheduleCompleted(let c)):
         print("event schedule.completed scheduleId=\(c.scheduleId) error=\(c.error != nil)")
       default: break

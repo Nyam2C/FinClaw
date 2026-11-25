@@ -12,16 +12,13 @@ extension Color {
 struct CharacterView: View {
   let state: CharacterState
   var frozenAt: Date?
-  var onTap: () -> Void = {}
-  var onBadge: () -> Void = {}
+  var onTap = {}, onBadge = {}
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var drag: (mouse: NSPoint, origin: NSPoint, moved: Bool)?
 
   var body: some View {
     Group {
-      if let t = frozenAt {
-        canvas(t)
-      } else {
+      if let t = frozenAt { canvas(t) } else {
         TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion || state.mood == .offline)) { canvas($0.date) }
       }
     }
@@ -34,7 +31,8 @@ struct CharacterView: View {
           Text("\(state.queue.count)").font(.system(size: 11, weight: .bold)).foregroundStyle(Color(hex: Palette.ink))
             .frame(minWidth: 18, minHeight: 18).background(Circle().fill(Color(hex: Palette.amber)))
         }
-        .buttonStyle(.plain).accessibilityLabel("알림 \(state.queue.count)개 더 있어요")
+        .buttonStyle(.plain).offset(x: 6, y: -6)  // 소품("!")과 겹치지 않게
+        .accessibilityLabel("알림 \(state.queue.count)개 더 있어요")
       }
     }
     .accessibilityElement(children: .contain)
@@ -46,10 +44,7 @@ struct CharacterView: View {
   private var alertTitle: String? { if case .proactive(let p, _)? = state.bubble { p.title } else { nil } }
 
   private func canvas(_ now: Date) -> some View {
-    CharacterCanvas(
-      params: FaceParams.at(
-        mood: state.mood, since: state.moodSince, now: now, lastDeltaAt: state.lastDeltaAt,
-        reduceMotion: reduceMotion))
+    CharacterCanvas(params: .at(mood: state.mood, since: state.moodSince, now: now, lastDeltaAt: state.lastDeltaAt, reduceMotion: reduceMotion))
   }
 
   /// agentpet #55: onTapGesture 금지 — 단일 DragGesture 로 5pt 이상 = 창 이동, 미만 = 탭. 화면 좌표라 y 반전 불필요.
@@ -64,10 +59,7 @@ struct CharacterView: View {
         if moved { w.setFrameOrigin(NSPoint(x: d.origin.x + dx, y: d.origin.y + dy)) }
         drag = (d.mouse, d.origin, moved)
       }
-      .onEnded { _ in
-        if drag?.moved != true { onTap() }
-        drag = nil
-      }
+      .onEnded { _ in if drag?.moved != true { onTap() }; drag = nil }
   }
 }
 
