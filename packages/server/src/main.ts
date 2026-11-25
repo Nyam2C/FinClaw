@@ -6,6 +6,7 @@ import { createCliDriver, ProfileHealthMonitor } from '@finclaw/agent';
 import { DiscordAccountSchema, DiscordAdapter } from '@finclaw/channel-discord';
 import { ConfigValidationError, loadConfig, validateConfigStrict } from '@finclaw/config';
 import { createGatewayServer, type GatewayServerConfig } from '@finclaw/gateway';
+import type { FinClawLogger } from '@finclaw/infra';
 import {
   assertPortAvailable,
   assertSupportedRuntime,
@@ -36,23 +37,26 @@ import { ProcessLifecycle } from './process/lifecycle.js';
 import { MessageRouter } from './process/message-router.js';
 import { loadPrompt, requireFrontmatterKeys } from './prompts/loader.js';
 
-export class MissingEnvError extends Error {
-  constructor(public readonly envName: string) {
-    super(`Missing required env: ${envName}`);
-    this.name = 'MissingEnvError';
-  }
-}
-
 /**
- * 환경 변수 조회 (테스트 가능한 형태).
- * 값이 없으면 MissingEnvError throw.
+ * Phase 46 M11 (I8): DISCORD_BOT_TOKEN 이 없으면 Discord 만 비활성 — gateway·scheduler·Web/TUI 는 그대로.
+ * 테스트 가능하도록 export (main() 은 VITEST 에서 실행되지 않음).
  */
-export function requireEnv(name: string, env: NodeJS.ProcessEnv = process.env): string {
-  const value = env[name];
-  if (!value) {
-    throw new MissingEnvError(name);
+export async function setupDiscord(
+  token: string | undefined,
+  deps: { readonly logger: FinClawLogger; readonly lifecycle: Pick<ProcessLifecycle, 'register'> },
+): Promise<DiscordAdapter | undefined> {
+  if (!token) {
+    deps.logger.warn('discord.disabled', {
+      event: 'discord.disabled',
+      reason: 'DISCORD_BOT_TOKEN not set',
+    });
+    return undefined;
   }
-  return value;
+  const adapter = new DiscordAdapter();
+  const cleanup = await adapter.setup(DiscordAccountSchema.parse({ botToken: token }));
+  deps.lifecycle.register(cleanup);
+  deps.logger.info('Discord adapter logged in');
+  return adapter;
 }
 
 async function main(): Promise<void> {
@@ -76,9 +80,6 @@ async function main(): Promise<void> {
       description: systemPromptDoc.frontmatter.description,
     },
   ];
-
-  // 1. env 검증
-  const discordToken = requireEnv('DISCORD_BOT_TOKEN');
 
   // 1a. GATEWAY_PORT 검증
   const gatewayPortRaw = process.env.GATEWAY_PORT;
@@ -136,12 +137,8 @@ async function main(): Promise<void> {
   // 2b. 채널 도크 자동 등록 (discord)
   initChannels(logger);
 
-  // 3. Discord 클라이언트 먼저 로그인 (alerts가 DM 전달 핸들을 필요로 함)
-  const discordAdapter = new DiscordAdapter();
-  const discordAccount = DiscordAccountSchema.parse({ botToken: discordToken });
-  const cleanup = await discordAdapter.setup(discordAccount);
-  lifecycle.register(cleanup);
-  logger.info('Discord adapter logged in');
+  // 3. Discord (선택) — alerts DM 핸들 때문에 skills 등록 전에 로그인
+  const discordAdapter = await setupDiscord(process.env.DISCORD_BOT_TOKEN, { logger, lifecycle });
 
   // 4. Agent 레이어 (툴 레지스트리)
   const { toolRegistry } = buildProviders({ logger });
@@ -173,7 +170,7 @@ async function main(): Promise<void> {
       toolRegistry,
       storage,
       logger,
-      discordAdapter,
+      discordClient: discordAdapter?.getClient() ?? undefined,
       lifecycle,
       driver,
     });
@@ -216,12 +213,14 @@ async function main(): Promise<void> {
     onProcess: (ctx) => pipeline.process(ctx),
   });
 
-  // 7. Discord onMessage 등록 (client는 이미 위에서 로그인 완료)
-  channelPluginRegistry.set(discordAdapter.id as string, discordAdapter);
-  discordAdapter.onMessage(async (msg) => {
-    await router.route(msg);
-  });
-  logger.info('Discord adapter connected');
+  // 7. Discord onMessage 등록 — 토큰이 있을 때만
+  if (discordAdapter) {
+    channelPluginRegistry.set(discordAdapter.id as string, discordAdapter);
+    discordAdapter.onMessage(async (msg) => {
+      await router.route(msg);
+    });
+    logger.info('Discord adapter connected');
+  }
 
   // 8. Gateway — FINCLAW_API_KEY 환경변수로 API 키 기반 인증 활성화
   const gatewayConfig: GatewayServerConfig = {
@@ -345,7 +344,7 @@ async function main(): Promise<void> {
   setDeliveryHook((args) =>
     deliverScheduleResult(
       {
-        discordClient: discordAdapter.getClient() ?? undefined,
+        discordClient: discordAdapter?.getClient() ?? undefined,
         broadcaster: gateway.ctx.broadcaster,
         connections: gateway.ctx.connections,
         logger,
@@ -362,9 +361,7 @@ async function main(): Promise<void> {
 
 if (!process.env.VITEST) {
   main().catch((err) => {
-    if (err instanceof MissingEnvError) {
-      console.error(`[fatal] Missing required env: ${err.envName}`);
-    } else if (err instanceof ConfigValidationError) {
+    if (err instanceof ConfigValidationError) {
       console.error('[fatal] Invalid configuration:');
       const issues = (err.details?.issues as ConfigValidationIssue[] | undefined) ?? [];
       for (const issue of issues) {
