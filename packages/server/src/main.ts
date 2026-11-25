@@ -264,6 +264,7 @@ async function main(): Promise<void> {
   const gateway = createGatewayServer(gatewayConfig, {
     defaultModel: DEFAULT_MODEL,
     runtime,
+    storage, // phase47: chat.history
     toolRegistry, // Phase 40 A: /mcp in-process 호출용 (top-level — agentDeps.toolRegistry 와 동일 인스턴스)
     financeDeps: {
       quoteService: marketHandle?.quoteService,

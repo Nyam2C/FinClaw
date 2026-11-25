@@ -352,6 +352,37 @@ describe('finance.* RPC methods', () => {
     });
   });
 
+  describe('finance.alert.delete (phase47)', () => {
+    it('있음 → {deleted:true}, store.delete(alertId)', async () => {
+      const store = { delete: vi.fn().mockReturnValue(true) } as unknown as AlertStore;
+      registerFinanceMethods({ alertStore: store }, methods);
+      const res = await call('finance.alert.delete', { alertId: 'a1' });
+      expect((res as { result: unknown }).result).toEqual({ deleted: true });
+      expect(store.delete).toHaveBeenCalledWith('a1');
+    });
+
+    it('없는 id → {deleted:false}', async () => {
+      const store = { delete: vi.fn().mockReturnValue(false) } as unknown as AlertStore;
+      registerFinanceMethods({ alertStore: store }, methods);
+      const res = await call('finance.alert.delete', { alertId: 'nope' });
+      expect((res as { result: unknown }).result).toEqual({ deleted: false });
+    });
+
+    it('store 없음 → provider_unavailable', async () => {
+      registerFinanceMethods({}, methods);
+      const res = await call('finance.alert.delete', { alertId: 'a1' });
+      expect((res as { error: { message: string } }).error.message).toContain(
+        'provider_unavailable',
+      );
+    });
+
+    it('빈 alertId → INVALID_PARAMS', async () => {
+      registerFinanceMethods({ alertStore: {} as AlertStore }, methods);
+      const res = await call('finance.alert.delete', { alertId: '' });
+      expect((res as { error: { code: number } }).error.code).toBe(RpcErrors.INVALID_PARAMS);
+    });
+  });
+
   describe('finance.portfolio.get', () => {
     it('returns holdings from first portfolio', async () => {
       const portfolioStore = {

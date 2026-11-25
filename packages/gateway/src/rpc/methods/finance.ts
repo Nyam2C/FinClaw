@@ -348,6 +348,20 @@ export function registerFinanceMethods(deps: FinanceRpcDeps, registry: MethodReg
     },
   };
 
+  // ── finance.alert.delete ── (phase47: alert_history 도 ON DELETE CASCADE 로 함께 삭제 — storage/database.ts:122)
+  const alertDeleteHandler: RpcMethodHandler<{ alertId: string }, { deleted: boolean }> = {
+    method: 'finance.alert.delete',
+    description: '알림을 삭제합니다 (발화 기록 alert_history 도 함께 삭제)',
+    authLevel: 'token',
+    schema: z.object({ alertId: z.string().min(1) }),
+    async execute(params) {
+      if (!deps.alertStore) {
+        throw new Error('provider_unavailable: alert store not initialized');
+      }
+      return { deleted: deps.alertStore.delete(params.alertId) };
+    },
+  };
+
   // ── finance.portfolio.get ──
   const portfolioGetHandler: RpcMethodHandler<Record<string, never>, unknown> = {
     method: 'finance.portfolio.get',
@@ -589,6 +603,7 @@ export function registerFinanceMethods(deps: FinanceRpcDeps, registry: MethodReg
   registry.register(newsHandler);
   registry.register(alertCreateHandler);
   registry.register(alertListHandler);
+  registry.register(alertDeleteHandler);
   registry.register(portfolioGetHandler);
   registry.register(transactionAddHandler);
   registry.register(transactionListHandler);
