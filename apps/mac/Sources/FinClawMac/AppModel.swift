@@ -9,6 +9,7 @@ import SwiftUI
   var hovering = false; var expanded = false; var inputOpen = false; var hidden = false; var input = ""
   var tab = PanelTab.chat; var history: [HistoryLine] = []; var detail: String?  // 브리핑 전문 (U2)
   var alerts: [AlertRow] = []; var alertError: String?
+  var historyError: String?
   @ObservationIgnored weak var panel: CharacterPanel?
   @ObservationIgnored private var client: GatewayClient!  // init 안에서 self 캡처 때문에 지연 대입
   @ObservationIgnored private var timer: Timer?
@@ -87,9 +88,17 @@ import SwiftUI
   func expand() {
     expanded = true
     if tab == .alerts { listAlerts() }
-    guard let sid = client.sessionId else { return }
-    Task {  // limit 생략 = 서버 기본 20
-      if let r = try? await client.call("chat.history", ["sessionId": sid], as: [String: [HistoryLine]].self) { history = r["messages"] ?? [] }
+    loadHistory()
+  }
+
+  func loadHistory() {
+    Task {
+      do {
+        history = try await client.history()
+        historyError = nil
+      } catch {
+        historyError = Copy.historyFailed
+      }
     }
   }
 
@@ -113,15 +122,13 @@ import SwiftUI
     Task {
       do {
         try await work()
-        alerts = try await client.call("finance.alert.list", [String: String](), as: [String: [AlertRow]].self)["alerts"] ?? []
+        alerts = try await client.call("finance.alert.list", [String: String](), as: AlertList.self).alerts
         alertError = nil
       } catch {
-        let r = error as? RpcError
-        let msg = r?.message.hasPrefix("provider_unavailable") == true ? Copy.alertsUnavailable : r?.message ?? Copy.requestFailed
-        alertError = msg; if !expanded { apply(.notice(msg)) }
+        let msg = Copy.alertError(error)
+        alertError = msg
+        if !expanded { apply(.notice(msg)) }
       }
     }
   }
 }
-
-private struct Ack: Decodable {}

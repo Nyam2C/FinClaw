@@ -1,11 +1,12 @@
+import FinClawMacCore
 import SwiftUI
 
-struct HistoryLine: Decodable, Hashable { let role: String; let text: String }  // 서버 {role,text} 그대로
 enum PanelTab: Hashable { case chat, alerts }
 
 /// 펼친 패널 340×460 (§4-5). 대화 = chat.history + 진행 중 run, 알림 = 폼. 브리핑 상세(U2)는 같은 자리에 전문.
 struct ChatPanelView: View {
   let history: [HistoryLine], streaming: String?, detail: String?
+  var note: String?  // 이력 조회 실패 안내
   @Binding var tab: PanelTab
   let onCollapse: () -> Void, onCloseDetail: () -> Void, alerts: AlertFormView
   var scrolls = true  // 스냅샷: ImageRenderer 는 ScrollView 를 그리지 않는다
@@ -26,6 +27,7 @@ struct ChatPanelView: View {
         alerts
         Spacer(minLength: 0)
       } else {
+        if let note { Text(note).font(.callout).foregroundStyle(.secondary) }
         let list = VStack(spacing: 8) {
           ForEach(Array(lines.enumerated()), id: \.offset) { i, l in
             Text(inlineMarkdown(l.text)).textSelection(.enabled).padding(8)

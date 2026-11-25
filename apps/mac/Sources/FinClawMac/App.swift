@@ -57,8 +57,8 @@ struct RootView: View {
       if model.expanded {
         let live: String? = if s.runId != nil, case .answer(let t, _)? = s.bubble { t } else { nil }
         ChatPanelView(
-          history: model.history, streaming: live, detail: model.detail, tab: $model.tab, onCollapse: model.collapse,
-          onCloseDetail: { model.detail = nil },
+          history: model.history, streaming: live, detail: model.detail, note: model.historyError, tab: $model.tab,
+          onCollapse: model.collapse, onCloseDetail: { model.detail = nil },
           alerts: AlertFormView(
             rows: model.alerts, error: model.alertError, onCreate: model.createAlert, onDelete: model.deleteAlert))
       } else if let b = s.bubble {

@@ -155,6 +155,12 @@ public func backoffDelay(attempt: Int) -> Duration {
     }
   }
 
+  /// chat.history (limit 생략 = 서버 기본 20)
+  public func history() async throws -> [HistoryLine] {
+    guard let sid = sessionId else { throw RpcError(code: -1, message: "disconnected") }
+    return try await call("chat.history", ["sessionId": sid], as: ChatHistory.self).messages
+  }
+
   public func abort(runId: String) async throws {
     guard let sid = sessionId else { throw RpcError(code: -1, message: "disconnected") }
     _ = try await call("chat.abort", ["sessionId": sid, "runId": runId], as: Aborted.self)

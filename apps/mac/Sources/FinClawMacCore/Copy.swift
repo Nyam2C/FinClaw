@@ -43,6 +43,12 @@ public enum Copy {
     }
   }
 
+  /// 알림 RPC 실패 → 폼·말풍선 문구. 키가 없어 alert store 가 없으면 안내, 그 외 서버 message 그대로.
+  public static func alertError(_ error: Error) -> String {
+    guard let e = error as? RpcError else { return requestFailed }
+    return e.message.hasPrefix("provider_unavailable") ? alertsUnavailable : e.message
+  }
+
   public static func briefingTitle(_ name: String) -> String { "브리핑 · \(name)" }
   public static func briefingFailed(_ name: String) -> String { "브리핑 '\(name)'을 만들지 못했어요" }
   public static func firstLines(_ s: String, _ n: Int) -> String {
@@ -67,6 +73,7 @@ public enum Copy {
   public static let reconnected = "다시 연결됐어요"
   public static let lostRun = "연결이 끊겨서 답을 못 받았어요. 자세히에서 확인해 주세요"
   public static let resetDone = "새 대화를 시작했어요"
+  public static let historyFailed = "대화 기록을 불러오지 못했어요"
   public static let alertsUnavailable = "알림 기능이 꺼져 있어요 — 시세·뉴스 API 키가 필요해요"
   public static let inputPlaceholder = "핀에게 물어보기"
 }

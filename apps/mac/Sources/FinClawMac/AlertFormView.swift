@@ -1,18 +1,16 @@
+import FinClawMacCore
 import SwiftUI
 
-struct AlertCreate: Encodable { let symbol: String; let condition: String; let threshold: Double?; let keyword: String? }
-struct AlertRow: Decodable, Identifiable { let id, symbol, condition: String; let threshold: Double?; let keyword: String? }
-
-/// 알림 탭: 목록(행마다 2단계 삭제) + 만들기 폼. 조건 값은 서버 enum 그대로 (nil 필드는 인코드 생략).
+/// 알림 탭: 목록(행마다 2단계 삭제) + 만들기 폼. 요청 모델·조건 값은 Core `AlertCreate` (서버 enum 그대로).
 struct AlertFormView: View {
   let rows: [AlertRow], error: String?, onCreate: (AlertCreate) -> Void, onDelete: (String) -> Void
   @State private var symbol = ""
   @State private var value = ""
   @State private var condition = "price_above"
-  static let conditions = [("price_above", "이상"), ("price_below", "이하"), ("change_percent", "등락률"), ("news_match", "뉴스")]
 
   var body: some View {
-    let news = condition == "news_match", number = Double(value)
+    let news = condition == "news_match"
+    let request = AlertCreate(symbol: symbol, condition: condition, value: value)
     VStack(alignment: .leading, spacing: 8) {
       ForEach(rows) { r in
         HStack {
@@ -25,22 +23,23 @@ struct AlertFormView: View {
       Divider()
       TextField("종목 (예: AAPL)", text: $symbol)
       HStack(spacing: 4) {
-        ForEach(Self.conditions, id: \.0) { c in Button(c.1) { condition = c.0 }.buttonStyle(Pill(on: condition == c.0)) }
+        ForEach(AlertCreate.conditions, id: \.0) { c in
+          Button(c.1) { condition = c.0 }.buttonStyle(Pill(on: condition == c.0))
+        }
       }
       TextField(news ? "키워드" : condition == "change_percent" ? "등락률 (%)" : "가격", text: $value)
       Button("만들기") {
-        onCreate(
-          AlertCreate(
-            symbol: symbol.trimmingCharacters(in: .whitespaces), condition: condition, threshold: news ? nil : number,
-            keyword: news ? value : nil))
+        if let request { onCreate(request) }
         value = ""
       }
       .buttonStyle(Pill())
-      .disabled(symbol.trimmingCharacters(in: .whitespaces).isEmpty || (news ? value.isEmpty : number == nil))
+      .disabled(request == nil)
       if let error { Text(error).font(.callout).foregroundStyle(.secondary) }
     }
     .textFieldStyle(.roundedBorder)
   }
 
-  static func label(_ condition: String) -> String { conditions.first { $0.0 == condition }?.1 ?? condition }
+  static func label(_ condition: String) -> String {
+    AlertCreate.conditions.first { $0.0 == condition }?.1 ?? condition
+  }
 }
