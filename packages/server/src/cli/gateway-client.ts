@@ -1,4 +1,5 @@
 // packages/server/src/cli/gateway-client.ts
+import { readLocalToken } from '../composition/local-auth.js';
 
 export interface RpcResult<T> {
   readonly ok: boolean;
@@ -9,6 +10,8 @@ export interface RpcResult<T> {
 export interface GatewayClientOptions {
   readonly baseUrl?: string;
   readonly timeoutMs?: number;
+  /** 미지정 시 ~/.finclaw/gateway.token */
+  readonly token?: string;
 }
 
 const DEFAULT_BASE_URL = 'http://127.0.0.1:3000';
@@ -43,11 +46,15 @@ export async function callGateway<T = unknown>(
 ): Promise<RpcResult<T>> {
   const baseUrl = opts?.baseUrl ?? DEFAULT_BASE_URL;
   const timeoutMs = opts?.timeoutMs ?? 30_000;
+  const token = opts?.token ?? readLocalToken();
 
   try {
     const res = await fetch(`${baseUrl}/rpc`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify({
         jsonrpc: '2.0',
         id: 1,

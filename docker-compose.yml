@@ -14,6 +14,7 @@ services:
     environment:
       - NODE_ENV=production
       - GATEWAY_PORT=3000
+      - GATEWAY_HOST=0.0.0.0
       - FINCLAW_DB_PATH=/data/db.sqlite
     ports:
       - '${GATEWAY_PORT:-3000}:3000'

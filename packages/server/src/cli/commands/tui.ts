@@ -1,5 +1,6 @@
 // packages/server/src/cli/commands/tui.ts
 import type { Command } from 'commander';
+import { readLocalToken } from '../../composition/local-auth.js';
 import type { CliDeps } from '../deps.js';
 import { EXIT } from '../exit-codes.js';
 import { theme } from '../terminal/theme.js';
@@ -15,7 +16,7 @@ export function register(program: Command, deps: CliDeps): void {
 
       try {
         const config = await deps.loadConfig();
-        const token = config.gateway?.auth?.token ?? '';
+        const token = config.gateway?.auth?.token ?? readLocalToken() ?? '';
 
         const { runTui } = await import('@finclaw/tui');
         await runTui({

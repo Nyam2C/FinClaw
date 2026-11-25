@@ -28,6 +28,7 @@ import type { ChannelPlugin, ConfigValidationIssue } from '@finclaw/types';
 import { deliverScheduleResult } from './automation/delivery.js';
 import { initChannels } from './channels/index.js';
 import { DEFAULT_MODEL, defaultConfig } from './composition/constants.js';
+import { issueLocalToken, resolveJwtSecret } from './composition/local-auth.js';
 import { buildProviders } from './composition/providers.js';
 import { buildAutomation, buildExecution, buildPipeline } from './composition/runtime.js';
 import { registerSkills } from './composition/skills.js';
@@ -96,6 +97,10 @@ async function main(): Promise<void> {
   // 2a. 전체 config 로드 + strict 재검증
   const finclawConfig = loadConfig({ logger });
   validateConfigStrict(finclawConfig);
+
+  // Phase 46 M10 (B6/B10): JWT secret (env → ~/.finclaw/gateway.secret) + 로컬 토큰 파일. 값은 로그 금지.
+  const jwtSecret = resolveJwtSecret();
+  issueLocalToken(jwtSecret);
 
   const dbPath = process.env.FINCLAW_DB_PATH ?? join(homedir(), '.finclaw', 'db.sqlite');
   const storage = createStorage({ dbPath });
@@ -185,7 +190,7 @@ async function main(): Promise<void> {
     finclawConfig,
     mcp: {
       url: `http://127.0.0.1:${gatewayPort}/mcp`,
-      jwtSecret: defaultConfig.auth.jwtSecret, // M10 에서 resolveJwtSecret() 로 교체
+      jwtSecret,
     },
   });
   lifecycle.register(async () => runtime.abortAll());
@@ -221,9 +226,11 @@ async function main(): Promise<void> {
   // 8. Gateway — FINCLAW_API_KEY 환경변수로 API 키 기반 인증 활성화
   const gatewayConfig: GatewayServerConfig = {
     ...defaultConfig,
+    host: process.env.GATEWAY_HOST || defaultConfig.host,
     port: gatewayPort,
     auth: {
       ...defaultConfig.auth,
+      jwtSecret,
       apiKeys: process.env.FINCLAW_API_KEY ? [process.env.FINCLAW_API_KEY] : [],
     },
   };
