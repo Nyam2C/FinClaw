@@ -293,6 +293,35 @@ describe('finance.* RPC methods', () => {
       const r = (result as { result: { immediateTrigger: boolean } }).result;
       expect(r.immediateTrigger).toBe(false);
     });
+
+    it('기본 channels = [log, websocket] (phase47 D5)', async () => {
+      const store = makeStore();
+      registerFinanceMethods({ alertStore: store }, methods);
+      await call('finance.alert.create', {
+        symbol: 'AAPL',
+        condition: 'price_above',
+        threshold: 200,
+      });
+      expect(store.create).toHaveBeenCalledWith(
+        expect.objectContaining({ channels: ['log', 'websocket'] }),
+      );
+    });
+
+    it('alertChannels 주입 시 그 값', async () => {
+      const store = makeStore();
+      registerFinanceMethods(
+        { alertStore: store, alertChannels: ['log', 'websocket', 'discord'] },
+        methods,
+      );
+      await call('finance.alert.create', {
+        symbol: 'AAPL',
+        condition: 'price_above',
+        threshold: 200,
+      });
+      expect(store.create).toHaveBeenCalledWith(
+        expect.objectContaining({ channels: ['log', 'websocket', 'discord'] }),
+      );
+    });
   });
 
   describe('finance.alert.list', () => {
@@ -320,6 +349,37 @@ describe('finance.* RPC methods', () => {
       expect(r.total).toBe(1);
       expect(r.alerts[0].id).toBe('a2');
       expect(r.alerts[0].symbol).toBe('TSLA');
+    });
+  });
+
+  describe('finance.alert.delete (phase47)', () => {
+    it('있음 → {deleted:true}, store.delete(alertId)', async () => {
+      const store = { delete: vi.fn().mockReturnValue(true) } as unknown as AlertStore;
+      registerFinanceMethods({ alertStore: store }, methods);
+      const res = await call('finance.alert.delete', { alertId: 'a1' });
+      expect((res as { result: unknown }).result).toEqual({ deleted: true });
+      expect(store.delete).toHaveBeenCalledWith('a1');
+    });
+
+    it('없는 id → {deleted:false}', async () => {
+      const store = { delete: vi.fn().mockReturnValue(false) } as unknown as AlertStore;
+      registerFinanceMethods({ alertStore: store }, methods);
+      const res = await call('finance.alert.delete', { alertId: 'nope' });
+      expect((res as { result: unknown }).result).toEqual({ deleted: false });
+    });
+
+    it('store 없음 → provider_unavailable', async () => {
+      registerFinanceMethods({}, methods);
+      const res = await call('finance.alert.delete', { alertId: 'a1' });
+      expect((res as { error: { message: string } }).error.message).toContain(
+        'provider_unavailable',
+      );
+    });
+
+    it('빈 alertId → INVALID_PARAMS', async () => {
+      registerFinanceMethods({ alertStore: {} as AlertStore }, methods);
+      const res = await call('finance.alert.delete', { alertId: '' });
+      expect((res as { error: { code: number } }).error.code).toBe(RpcErrors.INVALID_PARAMS);
     });
   });
 

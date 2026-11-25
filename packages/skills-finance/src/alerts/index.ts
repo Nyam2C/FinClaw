@@ -2,6 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { ToolRegistry } from '@finclaw/agent';
 import type { FinClawLogger } from '@finclaw/infra';
 import { ConcurrencyLane, createCircuitBreaker } from '@finclaw/infra';
+import type { AlertTriggeredData } from '@finclaw/types';
 import type { MarketCache } from '../market/cache.js';
 import type { ProviderRegistry } from '../market/provider-registry.js';
 import type { NewsAggregator } from '../news/types.js';
@@ -13,6 +14,7 @@ import {
   createDeliveryDispatcher,
   createDiscordDeliveryHandler,
   createLogDeliveryHandler,
+  createWebSocketDeliveryHandler,
   type DeliveryHandler,
   type DiscordClientPort,
 } from './delivery.js';
@@ -40,6 +42,8 @@ export { createAlertStore } from './store.js';
 export interface AlertSkillHandle {
   readonly monitor: AlertMonitor;
   readonly store: import('./types.js').AlertStore;
+  /** phase47: gateway 생성 뒤 main 이 호출 (scheduler setDeliveryHook 과 같은 late-bind — alerts 가 gateway 보다 먼저 생성됨). */
+  setBroadcast(fn: (data: AlertTriggeredData) => number): void;
 }
 
 export interface AlertSkillConfig {
@@ -49,6 +53,8 @@ export interface AlertSkillConfig {
   readonly newsAggregator: NewsAggregator;
   readonly logger: FinClawLogger;
   readonly discordClient?: DiscordClientPort;
+  /** phase47 Q6: Discord DM 수신자 (DISCORD_ALERT_USER_ID). */
+  readonly discordUserId?: string;
   readonly monitorConfig?: Partial<AlertMonitorConfig>;
 }
 
@@ -73,9 +79,15 @@ export async function registerAlertTools(
     news: createNewsConditionEvaluator(config.newsAggregator, newsCB),
   } satisfies Record<AlertConditionType, AlertConditionEvaluator>;
 
-  const handlers: DeliveryHandler[] = [createLogDeliveryHandler({ logger: config.logger })];
+  let broadcast: ((data: AlertTriggeredData) => number) | undefined;
+  const handlers: DeliveryHandler[] = [
+    createLogDeliveryHandler({ logger: config.logger }),
+    createWebSocketDeliveryHandler({ getBroadcast: () => broadcast }),
+  ];
   if (config.discordClient) {
-    handlers.push(createDiscordDeliveryHandler({ client: config.discordClient }));
+    handlers.push(
+      createDiscordDeliveryHandler({ client: config.discordClient, userId: config.discordUserId }),
+    );
   }
 
   const deliveryDispatcher = createDeliveryDispatcher({ handlers, logger: config.logger });
@@ -105,5 +117,11 @@ export async function registerAlertTools(
   registerGetAlertHistoryTool(toolRegistry, { store });
 
   monitor.start();
-  return { monitor, store };
+  return {
+    monitor,
+    store,
+    setBroadcast(fn) {
+      broadcast = fn;
+    },
+  };
 }

@@ -45,3 +45,12 @@ export interface ChatStreamToolParams {
   readonly phase: 'start' | 'end';
   readonly isError?: boolean; // end 만
 }
+
+/** notification.alert.triggered params.data — 본문은 evaluator 가 만든 결정적 문자열 그대로 (phase47 M2 불변식). */
+export interface AlertTriggeredData {
+  readonly alertId: string;
+  readonly name: string; // "{SYMBOL} {condition}" (gateway finance.alert.create)
+  readonly message: string; // evaluation.message
+  readonly currentValue: string;
+  readonly triggeredAt: number; // epoch ms
+}

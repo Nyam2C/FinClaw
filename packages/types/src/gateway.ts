@@ -18,6 +18,7 @@ export type RpcMethod =
   | 'finance.news'
   | 'finance.alert.create'
   | 'finance.alert.list'
+  | 'finance.alert.delete'
   | 'finance.portfolio.get'
   | 'finance.transaction.add'
   | 'finance.transaction.list'
@@ -30,6 +31,7 @@ export type RpcMethod =
   | 'chat.send'
   | 'chat.abort'
   | 'chat.reset'
+  | 'chat.history'
   | 'system.health'
   | 'system.info'
   | 'system.ping';

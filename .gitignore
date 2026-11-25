@@ -24,6 +24,10 @@ data/
 Thumbs.db
 Desktop.ini
 
+# Swift (apps/mac) — 번들 출력 apps/mac/dist/ 는 위 dist/ 규칙으로 무시
+apps/mac/.build/
+apps/mac/.swiftpm/
+
 # Coverage
 coverage/
 *.lcov

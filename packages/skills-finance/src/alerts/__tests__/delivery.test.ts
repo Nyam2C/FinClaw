@@ -5,6 +5,7 @@ import {
   createDiscordDeliveryHandler,
   createLogDeliveryHandler,
   createDeliveryDispatcher,
+  createWebSocketDeliveryHandler,
 } from '../delivery.js';
 import type { AlertDefinition, ConditionEvaluation } from '../types.js';
 
@@ -64,6 +65,18 @@ describe('DiscordDeliveryHandler', () => {
     expect(createDM).toHaveBeenCalled();
     expect(send).toHaveBeenCalled();
   });
+
+  it('userId 주입 시 alert.userId 대신 그 값으로 fetch (phase47 Q6)', async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    const createDM = vi.fn().mockResolvedValue({ send });
+    const fetch = vi.fn().mockResolvedValue({ createDM });
+    const handler = createDiscordDeliveryHandler({
+      client: { users: { fetch } },
+      userId: '123456789',
+    });
+    await handler.deliver(mockAlert(), mockEvaluation);
+    expect(fetch).toHaveBeenCalledWith('123456789');
+  });
 });
 
 describe('LogDeliveryHandler', () => {
@@ -111,5 +124,54 @@ describe('DeliveryDispatcher', () => {
     expect(results[0]?.success).toBe(false);
     expect(results[0]?.error).toContain('fail');
     expect(results[1]?.success).toBe(true);
+  });
+});
+
+describe('WebSocketDeliveryHandler (phase47)', () => {
+  it('바인딩된 broadcast 에 AlertTriggeredData shape 로 호출 (userId·type 없음)', async () => {
+    const broadcast = vi.fn().mockReturnValue(1);
+    const handler = createWebSocketDeliveryHandler({ getBroadcast: () => broadcast });
+    await handler.deliver(mockAlert(), mockEvaluation);
+    expect(handler.channel).toBe('websocket');
+    expect(broadcast).toHaveBeenCalledWith({
+      alertId: 'alert-1',
+      name: 'AAPL 가격 알림',
+      message: mockEvaluation.message,
+      currentValue: '210',
+      triggeredAt: expect.any(Number),
+    });
+  });
+
+  it('받은 연결 0 → reject', async () => {
+    const handler = createWebSocketDeliveryHandler({ getBroadcast: () => () => 0 });
+    await expect(handler.deliver(mockAlert(), mockEvaluation)).rejects.toThrow(
+      'no websocket subscribers',
+    );
+  });
+
+  it('바인딩 전 → reject', async () => {
+    const handler = createWebSocketDeliveryHandler({ getBroadcast: () => undefined });
+    await expect(handler.deliver(mockAlert(), mockEvaluation)).rejects.toThrow(
+      'websocket broadcast not bound',
+    );
+  });
+
+  it('dispatcher 결과에 websocket 실패가 success:false 로 남는다 (log 는 성공)', async () => {
+    const dispatcher = createDeliveryDispatcher({
+      handlers: [
+        createLogDeliveryHandler({ logger: mockLogger() }),
+        createWebSocketDeliveryHandler({ getBroadcast: () => undefined }),
+      ],
+      logger: mockLogger(),
+    });
+    const results = await dispatcher.dispatch(
+      mockAlert({ channels: ['log', 'websocket'] }),
+      mockEvaluation,
+    );
+    expect(results.map((r) => [r.channel, r.success])).toEqual([
+      ['log', true],
+      ['websocket', false],
+    ]);
+    expect(results[1]?.error).toContain('websocket broadcast not bound');
   });
 });

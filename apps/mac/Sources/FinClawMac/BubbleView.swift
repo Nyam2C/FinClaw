@@ -1,0 +1,178 @@
+import FinClawMacCore
+import SwiftUI
+
+/// 말풍선 (plan §4-3 B1~B6). 값 + 클로저만 받는다 (D3).
+struct BubbleView: View {
+  let bubble: Bubble
+  let running: Bool
+  let toolLabel: String?
+  var onAbort = {}
+  var onMore = {}
+  var onDeleteAlert = {}
+  var onExplain = {}
+  @State private var lingering: String?  // 도구 문구 최소 유지 0.4s
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      switch bubble {
+      case .answer(let text, _):
+        if !text.isEmpty { Clamped(text: text, onMore: onMore) }
+        if let label = toolLabel ?? lingering {
+          Text(label).font(.callout).foregroundStyle(.secondary).help(label)
+        }
+        if running {
+          // ⌘. 는 패널이 키 창일 때만 먹는다(보낸 뒤엔 키를 내려놓는다) — 기본 경로는 버튼 클릭
+          Button("중지", action: onAbort).keyboardShortcut(".", modifiers: .command).buttonStyle(Pill())
+        }
+      case .proactive(let p, _):
+        HStack(spacing: 4) {
+          Text(p.title).bold()
+          if p.count >= 2 { Text("×\(p.count)").foregroundStyle(.secondary) }
+        }
+        Clamped(text: p.body, onMore: nil)  // 브리핑은 아래 "자세히" 하나만
+        HStack(spacing: 6) {
+          if p.kind == .alert {
+            TwoStepButton(title: "이 알림 삭제", action: onDeleteAlert)
+            Button("설명 물어보기", action: onExplain).buttonStyle(Pill())
+          } else if p.detail != nil {
+            Button("자세히 ▸", action: onMore).buttonStyle(Pill())
+          }
+        }
+      case .notice(let text, _), .error(let text, _): Clamped(text: text, onMore: onMore)
+      }
+    }
+    .foregroundStyle(.primary)
+    .frame(minWidth: 170, alignment: .leading)  // 짧은 답 + 도구 문구도 납작해 보이지 않게
+    .padding(10)
+    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.separator))
+    .task(id: toolLabel) {
+      if toolLabel != nil {
+        lingering = toolLabel
+      } else {
+        try? await Task.sleep(for: .seconds(0.4))
+        lingering = nil
+      }
+    }
+  }
+}
+
+/// B1·B3: 폭 300pt 로 줄바꿈, 6줄이 넘으면 앞 6줄 + 24pt 페이드 + "자세히 ▸". 마크다운은 인라인만.
+struct Clamped: View {
+  let text: String
+  let onMore: (() -> Void)?
+
+  var body: some View {
+    let md = inlineMarkdown(text)
+    SixLines {
+      Text("가").lineLimit(6, reservesSpace: true).hidden()  // 6줄 높이 기준
+      ViewThatFits(in: .vertical) {
+        Text(md)
+        VStack(alignment: .leading, spacing: 2) {
+          let fade = LinearGradient(
+            stops: [.init(color: .black, location: 0.75), .init(color: .clear, location: 1)],
+            startPoint: .top, endPoint: .bottom)
+          Text(md).lineLimit(6).mask(fade)
+          if let onMore {
+            Button("자세히 ▸", action: onMore).buttonStyle(.plain).foregroundStyle(.tint)
+          }
+        }
+        .fixedSize(horizontal: false, vertical: true)  // 제안 높이(6줄)에 눌려 5줄로 줄지 않게
+      }
+    }
+  }
+}
+
+func inlineMarkdown(_ t: String) -> AttributedString {
+  let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+  return (try? AttributedString(markdown: t, options: options)) ?? AttributedString(t)
+}
+
+/// 첫 subview(숨긴 6줄 기준)의 높이를 둘째(ViewThatFits)에 높이 제안으로 준다. 폭은 최대 300.
+/// 부모가 크기를 제안하지 않아도(fixedSize 루트·ImageRenderer) 줄바꿈과 6줄 판정이 성립한다.
+struct SixLines: Layout {
+  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    subviews[1].sizeThatFits(offer(proposal, subviews))
+  }
+  func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    let o = offer(proposal, subviews)
+    for v in subviews { v.place(at: bounds.origin, proposal: o) }
+  }
+  private func offer(_ p: ProposedViewSize, _ s: Subviews) -> ProposedViewSize {
+    let w = min(p.width ?? 300, 300)
+    let sixLines = s[0].sizeThatFits(ProposedViewSize(width: w, height: nil)).height
+    return ProposedViewSize(width: w, height: sixLines + 1)
+  }
+}
+
+/// SwiftUI 가 직접 그리는 버튼 (말풍선 위에서 가볍고, 스냅샷에도 그대로 나온다). on = 세그먼트 선택 상태.
+struct Pill: ButtonStyle {
+  var on = false
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .font(.callout.weight(on ? .semibold : .regular))
+      .padding(.horizontal, 9)
+      .padding(.vertical, 3)
+      .background(Capsule().fill(.primary.opacity(on || configuration.isPressed ? 0.22 : 0.1)))
+      .accessibilityAddTraits(on ? .isSelected : [])
+  }
+}
+
+/// B6 2단계 삭제: 첫 클릭 → 경고 라벨, 3s 안에 두 번째 클릭 → action.
+struct TwoStepButton: View {
+  let title: String
+  let action: () -> Void
+  @State private var armed = false
+
+  var body: some View {
+    Button(armed ? "한 번 더 누르면 기록까지 삭제돼요" : title) {
+      if armed { action() }
+      armed.toggle()
+    }
+    .buttonStyle(Pill())
+    .task(id: armed) {
+      guard armed else { return }
+      try? await Task.sleep(for: .seconds(3))
+      armed = false
+    }
+  }
+}
+
+/// B8 입력창. Enter = 전송 후 포커스 해제, Esc = 닫기. run 중 비활성 (D4).
+struct InputBar: View {
+  @Binding var text: String
+  let disabled: Bool
+  let hint: String?  // 있으면 Enter 로 보내지 않는다 (입력은 그대로)
+  let onSubmit: () -> Void
+  let onCancel: () -> Void
+  let onExpand: () -> Void
+  let onFocus: (Bool) -> Void
+  @FocusState private var focused: Bool
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      HStack(spacing: 6) {
+        TextField(Copy.inputPlaceholder, text: $text)
+          .textFieldStyle(.plain)
+          .focused($focused)
+          .disabled(disabled)
+          .onSubmit {
+            guard hint == nil else { return }
+            onSubmit()
+            focused = false
+          }
+          .onExitCommand {
+            focused = false
+            onCancel()
+          }
+        Button("▸", action: onExpand).buttonStyle(.plain).help("대화 펼치기")
+      }
+      if let hint { Text(hint).font(.caption).foregroundStyle(.secondary) }
+    }
+    .padding(8)
+    .frame(width: 260)
+    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+    .onAppear { focused = true }
+    .onChange(of: focused) { onFocus($1) }
+  }
+}

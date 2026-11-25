@@ -24,6 +24,8 @@ describe('finclaw.system.ko.md (golden)', () => {
       '## 작업 위임 — `route_task`',
       '## 도구 결과 처리',
       'market_analysis',
+      '## 캐릭터 — 핀',
+      '해요체',
     ]) {
       expect(body).toContain(kw);
     }

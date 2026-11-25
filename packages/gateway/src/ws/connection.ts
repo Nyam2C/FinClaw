@@ -44,8 +44,8 @@ export async function handleWsConnection(
     auth: authResult.info,
     connectedAt: Date.now(),
     lastPongAt: Date.now(),
-    // Phase 26 E + Phase 28: portfolio.changed / schedule.completed 자동 구독.
-    subscriptions: new Set(['portfolio.changed', 'schedule.completed']),
+    // Phase 26 E + Phase 28: portfolio.changed / schedule.completed 자동 구독. phase47: alert.triggered.
+    subscriptions: new Set(['portfolio.changed', 'schedule.completed', 'alert.triggered']),
   };
 
   // DI 컨테이너에 등록

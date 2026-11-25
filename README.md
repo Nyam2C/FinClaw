@@ -2,7 +2,7 @@
 
 > 본인 1인이 읽고 감사할 수 있는 금융 특화 AI 비서.
 
-FinClaw 는 사용자 본인의 투자 판단·시장 조사·포트폴리오 관리를 보조하기 위한 개인용 AI 비서다. Anthropic Claude 를 코어로, Discord·Web UI·TUI 세 채널에서 동시에 호출할 수 있고, 시세·뉴스·알림·거래 이력·기억(RAG)·cron 자동화를 SQLite 단일 파일에 영속화한다. 프로덕트 출시·다인 사용·자동 매매를 목표로 하지 않으며, "전체 코드를 한 사람이 읽고 수정할 수 있는 크기" 와 "감사 가능성·환각 방지" 가 설계 우선순위다.
+FinClaw 는 사용자 본인의 투자 판단·시장 조사·포트폴리오 관리를 보조하기 위한 개인용 AI 비서다. Anthropic Claude 를 코어로, Discord·Web UI·TUI 와 macOS 캐릭터 앱(핀)에서 동시에 호출할 수 있고, 시세·뉴스·알림·거래 이력·기억(RAG)·cron 자동화를 SQLite 단일 파일에 영속화한다. 프로덕트 출시·다인 사용·자동 매매를 목표로 하지 않으며, "전체 코드를 한 사람이 읽고 수정할 수 있는 크기" 와 "감사 가능성·환각 방지" 가 설계 우선순위다.
 
 ## 왜 FinClaw 인가
 
@@ -99,32 +99,41 @@ Web Settings 또는 `schedule.create` RPC 로 cron 표현식과 prompt 를 등�
 
 ### 4. 운영 인터페이스
 
-| 인터페이스              | 진입점               | 주요 기능                                                                                                                 |
-| ----------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| **Web UI** (Lit + Vite) | 브라우저, gateway WS | 5 탭 — Chat / Market / Portfolio (보유종목 + 거래 이력 + 거래 추가 모달) / Alerts / Settings (기억 / 자동화 / agent_runs) |
-| **TUI** (Ink + React)   | `finclaw tui`        | 4 탭 — chat / market / portfolio / alerts                                                                                 |
-| **CLI** (commander)     | `finclaw <cmd>`      | `start` / `health` / `status` / `agent {list,status}` / `market quote` / `news` / `alert {add,list}` / `tui`              |
+| 인터페이스                    | 진입점                                 | 주요 기능                                                                                                                 |
+| ----------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **Web UI** (Lit + Vite)       | 브라우저, gateway WS                   | 5 탭 — Chat / Market / Portfolio (보유종목 + 거래 이력 + 거래 추가 모달) / Alerts / Settings (기억 / 자동화 / agent_runs) |
+| **TUI** (Ink + React)         | `finclaw tui`                          | 4 탭 — chat / market / portfolio / alerts                                                                                 |
+| **CLI** (commander)           | `finclaw <cmd>`                        | `start` / `health` / `status` / `agent {list,status}` / `market quote` / `news` / `alert {add,list}` / `tui`              |
+| **macOS 캐릭터 앱** (SwiftUI) | `apps/mac` → `FinClaw.app`, gateway WS | 데스크톱 캐릭터 "핀" — 대화 · 가격 알림/브리핑 먼저 알림 · 알림 만들기/삭제 ([`apps/mac/README.md`](apps/mac/README.md))  |
 
-### 5. Gateway JSON-RPC (36 개 메서드)
+#### macOS 캐릭터 앱 (핀)
+
+macOS 14+ 와 Swift 6 툴체인이 있으면 서버(`pnpm dev`)를 띄운 뒤 `bash apps/mac/scripts/bundle.sh && open apps/mac/dist/FinClaw.app` 으로 실행한다. 토큰은 `~/.finclaw/gateway.token` 을 자동으로 읽는다. 시스템 알림 권한은 첫 알림이 올 때 묻는다. 알림은 대화 패널의 "알림" 탭에서 직접 만든다(시세·뉴스 API 키 필요). Discord 는 선택 채널이라 없어도 맥 앱의 알림·브리핑은 동작한다.
+
+개발 중 에이전트 환경에서는 스냅샷(`--snapshot`)과 헤드리스 스모크(`--smoke`)만 검증했다. 알림 권한·배너, 입력창 타이핑·포커스, 드래그, 투명도·Spaces·전체 화면, 메뉴바 5항목, 실제 알림 생성/삭제(시세 키 필요)는 사람이 확인해야 한다 — 체크리스트는 [`apps/mac/README.md`](apps/mac/README.md#사람이-직접-확인해야-하는-것).
+
+### 5. Gateway JSON-RPC (38 개 메서드)
 
 HTTP `POST /rpc` + WebSocket `ws://…/ws` 에서 동일 JSON-RPC 2.0 스키마로 호출 가능. Zod v4 스키마 검증, 3 단계 권한 (`none / api_key / token`). 같은 서버의 `/mcp` 는 `claude` CLI 용 MCP 엔드포인트다.
 
-| 그룹           | 메서드                                                                                                 |
-| -------------- | ------------------------------------------------------------------------------------------------------ |
-| `system.*`     | `health`, `info`, `ping`                                                                               |
-| `chat.*`       | `start`, `send`, `abort`, `reset`                                                                      |
-| `session.*`    | `get`                                                                                                  |
-| `agent.*`      | `list`, `status`, `run`                                                                                |
-| `agent.runs.*` | `list`, `get` (감사 이력)                                                                              |
-| `memory.*`     | `list`, `delete`, `search` (hybrid/FTS)                                                                |
-| `finance.*`    | `quote`, `news`, `alert.create`, `alert.list`, `portfolio.get`, `transaction.{add,list,update,delete}` |
-| `schedule.*`   | `create`, `list`, `update`, `delete`, `runNow`, `history`, `enable`, `disable`                         |
-| `brokerage.*`  | `sync.run`, `health.get` (KIS read-only 잔고 동기화)                                                   |
+| 그룹           | 메서드                                                                                                                 |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `system.*`     | `health`, `info`, `ping`                                                                                               |
+| `chat.*`       | `start`, `send`, `abort`, `reset`, `history`                                                                           |
+| `session.*`    | `get`                                                                                                                  |
+| `agent.*`      | `list`, `status`, `run`                                                                                                |
+| `agent.runs.*` | `list`, `get` (감사 이력)                                                                                              |
+| `memory.*`     | `list`, `delete`, `search` (hybrid/FTS)                                                                                |
+| `finance.*`    | `quote`, `news`, `alert.create`, `alert.list`, `alert.delete`, `portfolio.get`, `transaction.{add,list,update,delete}` |
+| `schedule.*`   | `create`, `list`, `update`, `delete`, `runNow`, `history`, `enable`, `disable`, `testCron`                             |
+| `brokerage.*`  | `sync.run`, `health.get` (KIS read-only 잔고 동기화)                                                                   |
 
-WebSocket notification: `chat.stream.{delta,tool,end,error}` (모두 `runId` 포함), `portfolio.changed`, `schedule.completed`.
+WebSocket notification: `chat.stream.{delta,tool,end,error}` (모두 `runId` 포함), `portfolio.changed`, `schedule.completed`, `alert.triggered`.
 
-- `chat.send` 는 실행을 기다리지 않고 즉시 `{runId}` 를 돌려준다. 진행·결과는 `chat.stream.*` 로 온다 — `delta` N 회 뒤 `end`(확정 텍스트) 또는 `error` 가 정확히 1 회.
+- `chat.send` 는 실행을 기다리지 않고 즉시 `{runId}` 를 돌려준다. `runId`(UUID)를 넘기면 그 값을 쓴다(진행 중 같은 값이면 `duplicate runId`). 진행·결과는 `chat.stream.*` 로 온다 — `delta` N 회 뒤 `end`(확정 텍스트) 또는 `error` 가 정확히 1 회.
 - `chat.stream.tool` 은 도구 시작/끝(`phase: start|end`, 도구 이름·`toolCallId`)만 알린다 — 입력·결과 내용은 싣지 않는다.
+- `chat.history {sessionId, limit?}` 는 그 대화의 최근 user/assistant 메시지(`{role, text}`, 기본 20·최대 40)를 돌려준다.
+- `finance.alert.create` 의 기본 전달 채널은 `['log', 'websocket']`(발동 시 `alert.triggered` 로 WS 클라이언트에 전달)이고, `DISCORD_BOT_TOKEN` 과 `DISCORD_ALERT_USER_ID` 가 둘 다 있을 때만 `'discord'` 가 붙는다. `finance.alert.delete {alertId}` 는 발동 기록까지 함께 지운다.
 - `chat.abort {sessionId, runId?}` 는 진행 중 실행을 끊는다(종료 신호는 `chat.stream.error{reason:'aborted'}`). `chat.reset {sessionId}` 는 그 대화의 CLI 세션 바인딩을 지워 다음 턴을 새 세션으로 시작한다.
 
 ### 6. 기억 / RAG (Phase 26)
@@ -261,6 +270,8 @@ sequenceDiagram
 | `@finclaw/tui`             | Ink + React 기반 터미널 UI (gateway WS 클라이언트)                                          | `types`                                                                                                                 |
 | `@finclaw/web`             | Lit + Vite 기반 웹 UI (gateway WS 클라이언트 + 마크다운)                                    | `types`                                                                                                                 |
 
+`apps/mac/` — SwiftPM 패키지(외부 의존성 0, pnpm 워크스페이스 밖). `FinClawMacCore`(프로토콜·리듀서, `swift test`) + `FinClawMac`(실행 파일).
+
 신규 컨트리뷰터를 위한 코드 읽기 순서:
 
 1. `packages/server/src/main.ts` — `main()` 한 곳에서 모든 wiring (env → 로거 → config → storage → discord → agent/tools → 파이프라인 → router → gateway → scheduler).
@@ -278,9 +289,10 @@ sequenceDiagram
 
 ### 선택 — Discord (필수 env 없음)
 
-| 변수                | 설명                                                                 |
-| ------------------- | -------------------------------------------------------------------- |
-| `DISCORD_BOT_TOKEN` | Discord 봇 로그인 토큰. 없으면 Discord 만 비활성(`discord.disabled`) |
+| 변수                    | 설명                                                                                                                                                                          |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DISCORD_BOT_TOKEN`     | Discord 봇 로그인 토큰. 없으면 Discord 만 비활성(`discord.disabled`)                                                                                                          |
+| `DISCORD_ALERT_USER_ID` | 가격·뉴스 알림 DM 수신자(Discord 사용자 id). `DISCORD_BOT_TOKEN` 과 함께 있을 때만 새 알림에 discord 채널이 붙는다. 설정하면 예전 `['log','discord']` 알림도 이 id 로 DM 된다 |
 
 추론은 env 키가 아니라 `claude login` 구독 인증을 쓴다 (`ANTHROPIC_API_KEY` 는 CLI 자식 env 에서 제거됨).
 

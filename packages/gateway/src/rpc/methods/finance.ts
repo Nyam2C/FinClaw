@@ -41,6 +41,8 @@ export interface FinanceRpcDeps {
   readonly broadcaster?: GatewayBroadcaster;
   /** Phase 26 A: broadcast 대상 WebSocket 연결 맵 (broadcaster 와 함께 주입) */
   readonly connections?: Map<string, WsConnection>;
+  /** phase47 D5: create 시 채널 (생략 시 ['log','websocket']). main 이 Discord client + DISCORD_ALERT_USER_ID 일 때만 'discord' 추가 */
+  readonly alertChannels?: CreateAlertInput['channels']; // [TQ2] DeliveryChannel 은 패키지 barrel 미export
 }
 
 // ─── Phase 26 A: 헬퍼 ───
@@ -281,7 +283,7 @@ export function registerFinanceMethods(deps: FinanceRpcDeps, registry: MethodReg
         userId: params.userId ?? 'default',
         name: `${params.symbol.toUpperCase()} ${params.condition}`,
         condition,
-        channels: ['log', 'discord'],
+        channels: deps.alertChannels ?? ['log', 'websocket'],
         cooldownMs: params.cooldownMs ?? 900_000,
         enabled: true,
       };
@@ -343,6 +345,20 @@ export function registerFinanceMethods(deps: FinanceRpcDeps, registry: MethodReg
         })),
         total: alerts.length,
       };
+    },
+  };
+
+  // ── finance.alert.delete ── (phase47: alert_history 도 ON DELETE CASCADE 로 함께 삭제 — storage/database.ts:122)
+  const alertDeleteHandler: RpcMethodHandler<{ alertId: string }, { deleted: boolean }> = {
+    method: 'finance.alert.delete',
+    description: '알림을 삭제합니다 (발화 기록 alert_history 도 함께 삭제)',
+    authLevel: 'token',
+    schema: z.object({ alertId: z.string().min(1) }),
+    async execute(params) {
+      if (!deps.alertStore) {
+        throw new Error('provider_unavailable: alert store not initialized');
+      }
+      return { deleted: deps.alertStore.delete(params.alertId) };
     },
   };
 
@@ -587,6 +603,7 @@ export function registerFinanceMethods(deps: FinanceRpcDeps, registry: MethodReg
   registry.register(newsHandler);
   registry.register(alertCreateHandler);
   registry.register(alertListHandler);
+  registry.register(alertDeleteHandler);
   registry.register(portfolioGetHandler);
   registry.register(transactionAddHandler);
   registry.register(transactionListHandler);

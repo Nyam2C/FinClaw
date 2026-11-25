@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import type { AgentRunPort } from '@finclaw/agent';
 import type { FinClawLogger } from '@finclaw/infra';
-import type { ModelRef, SessionKey } from '@finclaw/types';
+import type { ModelRef, SessionKey, StorageAdapter } from '@finclaw/types';
 import { createAgentId, createSessionKey } from '@finclaw/types';
 import { z } from 'zod/v4';
 import type { GatewayBroadcaster } from '../../broadcaster.js';
@@ -21,6 +21,8 @@ export interface ChatMethodsDeps {
   /** Phase 46: ChatExecutionPort 대체 — AgentRuntime 포트. */
   readonly runtime: AgentRunPort;
   readonly logger?: FinClawLogger;
+  /** phase47: chat.history 용 (생략 시 provider_unavailable). */
+  readonly storage?: Pick<StorageAdapter, 'getConversation'>;
 }
 
 /** D9: 진행 중·대기 중 run (실행 직렬화는 runtime per-session lane). chat.abort(M6)가 controller 를 쓴다. */
@@ -100,7 +102,7 @@ export function createChatMethods(deps: ChatMethodsDeps): readonly RpcMethodHand
     };
 
   const sendHandler: RpcMethodHandler<
-    { sessionId: string; message: string; idempotencyKey?: string },
+    { sessionId: string; message: string; idempotencyKey?: string; runId?: string },
     { runId: string }
   > = {
     method: 'chat.send',
@@ -111,14 +113,20 @@ export function createChatMethods(deps: ChatMethodsDeps): readonly RpcMethodHand
       // argv 단일 인자 한도(Linux 128KiB) 안쪽: 한글 3B × 20,000 = 60KB + <context>·recap 여유
       message: z.string().min(1).max(20_000),
       idempotencyKey: z.string().optional(),
+      // phase47 §2-3: 클라이언트가 runId 를 먼저 정한다 — 응답보다 먼저 온 즉시 실패 이벤트도 짝지을 수 있게
+      runId: z.uuid().optional(),
     }),
     async execute(params) {
       const session = deps.registry.getSession(params.sessionId);
       if (!session) {
         throw new Error('session not found');
       }
+      const runId = params.runId ?? randomUUID();
+      if (activeRuns.has(runId)) {
+        throw new Error('duplicate runId');
+      }
       const run: ActiveRun = {
-        runId: randomUUID(),
+        runId,
         sessionId: session.sessionId,
         controller: new AbortController(),
       };
@@ -170,7 +178,46 @@ export function createChatMethods(deps: ChatMethodsDeps): readonly RpcMethodHand
     },
   };
 
-  return [startHandler, sendHandler, abortHandler, resetHandler];
+  // phase47 Q5/U1: 맥 패널 이력. 세션 없음 문구는 send 와 같다 → 클라이언트의 재-start 경로 재사용.
+  const historyHandler: RpcMethodHandler<
+    { sessionId: string; limit?: number },
+    { messages: Array<{ role: 'user' | 'assistant'; text: string }> }
+  > = {
+    method: 'chat.history',
+    description: '세션 대화의 최근 user/assistant 메시지를 조회합니다',
+    authLevel: 'token',
+    schema: z.object({
+      sessionId: z.string(),
+      limit: z.number().int().min(1).max(40).optional(),
+    }),
+    async execute(params) {
+      const session = deps.registry.getSession(params.sessionId);
+      if (!session) {
+        throw new Error('session not found');
+      }
+      if (!deps.storage) {
+        throw new Error('provider_unavailable: storage not initialized');
+      }
+      const record = await deps.storage.getConversation(session.sessionKey);
+      // ConversationMessage 에 시각 필드가 없다 → {role, text} 만 (plan 머리말 6)
+      const messages = (record?.messages ?? []).flatMap((m) =>
+        m.role === 'user' || m.role === 'assistant'
+          ? [
+              {
+                role: m.role,
+                text:
+                  typeof m.content === 'string'
+                    ? m.content
+                    : m.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join(''),
+              },
+            ]
+          : [],
+      );
+      return { messages: messages.slice(-(params.limit ?? 20)) };
+    },
+  };
+
+  return [startHandler, sendHandler, abortHandler, resetHandler, historyHandler];
 }
 
 /** chat.* 메서드 일괄 등록 */

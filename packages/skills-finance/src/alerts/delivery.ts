@@ -1,4 +1,5 @@
 import type { FinClawLogger } from '@finclaw/infra';
+import type { AlertTriggeredData } from '@finclaw/types';
 import type {
   AlertDefinition,
   ConditionEvaluation,
@@ -42,13 +43,43 @@ export interface DiscordClientPort {
 }
 
 // ─── Discord Delivery ───
-export function createDiscordDeliveryHandler(deps: { client: DiscordClientPort }): DeliveryHandler {
+export function createDiscordDeliveryHandler(deps: {
+  client: DiscordClientPort;
+  /** phase47 Q6: DISCORD_ALERT_USER_ID. RPC 로 만든 알림의 userId 는 'default' 라 DM 대상이 될 수 없다. */
+  userId?: string;
+}): DeliveryHandler {
   return {
     channel: 'discord',
     async deliver(alert, evaluation) {
-      const user = await deps.client.users.fetch(alert.userId);
+      const user = await deps.client.users.fetch(deps.userId ?? alert.userId);
       const dmChannel = await user.createDM();
       await dmChannel.send(formatAlertMessage(alert, evaluation));
+    },
+  };
+}
+
+// ─── WebSocket Delivery (phase47: late-bind — alerts 가 gateway 보다 먼저 생성된다) ───
+export function createWebSocketDeliveryHandler(deps: {
+  getBroadcast: () => ((data: AlertTriggeredData) => number) | undefined;
+}): DeliveryHandler {
+  return {
+    channel: 'websocket',
+    async deliver(alert, evaluation) {
+      const broadcast = deps.getBroadcast();
+      if (!broadcast) {
+        throw new Error('websocket broadcast not bound');
+      }
+      const sent = broadcast({
+        alertId: alert.id,
+        name: alert.name,
+        message: evaluation.message,
+        currentValue: evaluation.currentValue,
+        triggeredAt: Date.now(),
+      });
+      // 받은 연결이 0 이면 실패로 기록 — alert_history 가 "아무도 못 받음" 을 정직하게 남긴다 (Q7)
+      if (sent === 0) {
+        throw new Error('no websocket subscribers');
+      }
     },
   };
 }

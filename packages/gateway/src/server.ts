@@ -63,6 +63,8 @@ export interface GatewayServerDeps {
   readonly getTraceId?: () => string | undefined;
   /** Phase 40 A: /mcp 라우트가 in-process 호출할 라이브 ToolRegistry (생략 시 /mcp 비활성). */
   readonly toolRegistry?: import('@finclaw/agent').ToolRegistry;
+  /** phase47: chat.history 가 읽는 대화 저장소 (생략 시 chat.history 는 provider_unavailable). */
+  readonly storage?: Pick<import('@finclaw/types').StorageAdapter, 'getConversation'>;
 }
 
 export interface GatewayServer {
@@ -148,6 +150,7 @@ export function createGatewayServer(
       runtime: deps.runtime,
       // Phase 24 D: ModelFloorExhaustedError 구조화 로그용 — agent.* 와 logger 공유
       logger: deps.agentDeps?.logger,
+      storage: deps.storage,
     },
     ctx.methods,
   );

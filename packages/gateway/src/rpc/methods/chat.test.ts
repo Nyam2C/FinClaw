@@ -1,6 +1,6 @@
 import type { AgentEvent, AgentRunPort, AgentRunRequest } from '@finclaw/agent';
 import { resetEventBus } from '@finclaw/infra';
-import type { ModelRef, RpcMethod } from '@finclaw/types';
+import type { ConversationMessage, ModelRef, RpcMethod } from '@finclaw/types';
 import { createSessionKey } from '@finclaw/types';
 // packages/server/src/gateway/rpc/methods/chat.test.ts
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -10,7 +10,7 @@ import { ChatRegistry } from '../../registry.js';
 import { RpcErrors } from '../errors.js';
 import { dispatchRpc, MethodRegistry } from '../index.js';
 import type { GatewayServerConfig, WsConnection } from '../types.js';
-import { registerChatMethods } from './chat.js';
+import { registerChatMethods, type ChatMethodsDeps } from './chat.js';
 
 const TEST_MODEL: ModelRef = {
   provider: 'anthropic',
@@ -189,7 +189,11 @@ describe('chat.* RPC methods', () => {
     });
   });
 
-  async function startSession(runtime: AgentRunPort, conn?: WsConnection) {
+  async function startSession(
+    runtime: AgentRunPort,
+    conn?: WsConnection,
+    storage?: ChatMethodsDeps['storage'],
+  ) {
     ctx = makeServerCtx();
     registerChatMethods(
       {
@@ -198,6 +202,7 @@ describe('chat.* RPC methods', () => {
         broadcaster: ctx.broadcaster,
         defaultModel: TEST_MODEL,
         runtime,
+        storage,
       },
       ctx.methods,
     );
@@ -393,6 +398,159 @@ describe('chat.* RPC methods', () => {
       const res = (await rpc('chat.reset', { sessionId })) as { result: { reset: boolean } };
       expect(res.result.reset).toBe(true);
       expect(reset).toHaveBeenCalledWith('tui:local:default');
+    });
+  });
+
+  const call = (method: string, params: Record<string, unknown>) =>
+    dispatchRpc(
+      { jsonrpc: '2.0', id: 1, method: method as RpcMethod, params },
+      { auth: { level: 'token' }, remoteAddress: '127.0.0.1' },
+      ctx,
+    );
+
+  describe('chat.history (phase47)', () => {
+    const storageWith = (messages: ConversationMessage[] | null) =>
+      ({
+        getConversation: vi.fn().mockResolvedValue(
+          messages === null
+            ? null
+            : {
+                sessionKey: 'tui:local:default',
+                agentId: 'default',
+                messages,
+                createdAt: 0,
+                updatedAt: 0,
+              },
+        ),
+      }) as unknown as NonNullable<ChatMethodsDeps['storage']>;
+    const turns = (n: number): ConversationMessage[] =>
+      Array.from({ length: n }, (_, i) => ({
+        role: i % 2 === 0 ? ('user' as const) : ('assistant' as const),
+        content: `m${i}`,
+      }));
+    type History = { result: { messages: Array<{ role: string; text: string }> } };
+
+    it('기본 limit 20 — 최근 20개', async () => {
+      const sessionId = await startSession(
+        gatedRuntime().runtime,
+        undefined,
+        storageWith(turns(25)),
+      );
+      const res = (await call('chat.history', { sessionId })) as History;
+      expect(res.result.messages).toHaveLength(20);
+      expect(res.result.messages.at(-1)).toEqual({ role: 'user', text: 'm24' });
+    });
+
+    it('limit 3 → 최근 3개', async () => {
+      const sessionId = await startSession(
+        gatedRuntime().runtime,
+        undefined,
+        storageWith(turns(10)),
+      );
+      const res = (await call('chat.history', { sessionId, limit: 3 })) as History;
+      expect(res.result.messages.map((m) => m.text)).toEqual(['m7', 'm8', 'm9']);
+    });
+
+    it('블록 content 는 text 블록만 이어 붙인다', async () => {
+      const storage = storageWith([
+        {
+          role: 'assistant',
+          content: [
+            { type: 'text', text: 'a' },
+            { type: 'tool_use', id: 't', name: 'x', input: {} },
+            { type: 'text', text: 'b' },
+          ],
+        },
+      ]);
+      const sessionId = await startSession(gatedRuntime().runtime, undefined, storage);
+      const res = (await call('chat.history', { sessionId })) as History;
+      expect(res.result.messages).toEqual([{ role: 'assistant', text: 'ab' }]);
+    });
+
+    it('system / tool role 은 제외', async () => {
+      const storage = storageWith([
+        { role: 'system', content: 's' },
+        { role: 'user', content: 'q' },
+        { role: 'tool', content: 't' },
+        { role: 'assistant', content: 'a' },
+      ]);
+      const sessionId = await startSession(gatedRuntime().runtime, undefined, storage);
+      const res = (await call('chat.history', { sessionId })) as History;
+      expect(res.result.messages.map((m) => m.role)).toEqual(['user', 'assistant']);
+    });
+
+    it('세션의 sessionKey 로 조회', async () => {
+      const storage = storageWith([]);
+      const sessionId = await startSession(gatedRuntime().runtime, undefined, storage);
+      await call('chat.history', { sessionId });
+      expect(storage.getConversation).toHaveBeenCalledWith('tui:local:default');
+    });
+
+    it('대화 기록 없음 → 빈 배열', async () => {
+      const sessionId = await startSession(gatedRuntime().runtime, undefined, storageWith(null));
+      const res = (await call('chat.history', { sessionId })) as History;
+      expect(res.result.messages).toEqual([]);
+    });
+
+    it('없는 세션 → session not found', async () => {
+      await startSession(gatedRuntime().runtime, undefined, storageWith([]));
+      const res = (await call('chat.history', { sessionId: 'nope' })) as {
+        error: { message: string };
+      };
+      expect(res.error.message).toBe('session not found');
+    });
+
+    it('storage 없음 → provider_unavailable', async () => {
+      const sessionId = await startSession(gatedRuntime().runtime);
+      const res = (await call('chat.history', { sessionId })) as { error: { message: string } };
+      expect(res.error.message).toContain('provider_unavailable');
+    });
+
+    it('limit 0 · 41 → INVALID_PARAMS', async () => {
+      const sessionId = await startSession(gatedRuntime().runtime, undefined, storageWith([]));
+      for (const limit of [0, 41]) {
+        const res = (await call('chat.history', { sessionId, limit })) as {
+          error: { code: number };
+        };
+        expect(res.error.code).toBe(RpcErrors.INVALID_PARAMS);
+      }
+    });
+  });
+
+  describe('chat.send runId (phase47)', () => {
+    const RUN = '3f2b8c1e-9a4d-4c7e-8b1a-2d6e5f7a9c0b'; // v4 UUID
+
+    it('runId 지정 → 응답·runtime·스트림이 그 값', async () => {
+      const g = gatedRuntime();
+      const conn = mockConn();
+      const sessionId = await startSession(g.runtime, conn);
+      const res = (await call('chat.send', { sessionId, message: '안녕', runId: RUN })) as {
+        result: { runId: string };
+      };
+      expect(res.result.runId).toBe(RUN);
+      expect(g.calls[0]?.runId).toBe(RUN);
+      g.open();
+      await vi.waitFor(() => expect(conn.sent.map((m) => m.method)).toContain('chat.stream.end'));
+      expect(conn.sent.every((m) => m.params.runId === RUN)).toBe(true);
+    });
+
+    it('진행 중 같은 runId → duplicate runId', async () => {
+      const g = gatedRuntime();
+      const sessionId = await startSession(g.runtime, mockConn());
+      await call('chat.send', { sessionId, message: '1', runId: RUN });
+      const dup = (await call('chat.send', { sessionId, message: '2', runId: RUN })) as {
+        error: { message: string };
+      };
+      expect(dup.error.message).toBe('duplicate runId');
+      g.open();
+    });
+
+    it('비-UUID runId → INVALID_PARAMS', async () => {
+      const sessionId = await startSession(gatedRuntime().runtime, mockConn());
+      const res = (await call('chat.send', { sessionId, message: 'x', runId: 'abc' })) as {
+        error: { code: number };
+      };
+      expect(res.error.code).toBe(RpcErrors.INVALID_PARAMS);
     });
   });
 });
