@@ -79,3 +79,15 @@ export interface AgentRunLog {
   error?: string;
   createdAt: Timestamp;
 }
+
+/** 에이전트 run 종료 오류 분류 (phase46 AgentEvent error.reason · chat.stream.error reason). */
+export type AgentErrorReason =
+  | 'aborted'
+  | 'timeout' // 무출력/overall 워치독, lane 대기 실패
+  | 'auth'
+  | 'rate_limit' // rate_limit_event.status === 'rejected' 일 때만
+  | 'max_turns' // result.subtype === 'error_max_turns'
+  | 'session_not_found' // runtime 이 잡아 1회 재시도. 재시도도 실패할 때만 바깥으로 나감
+  | 'mcp_unavailable' // init.mcp_servers 의 finclaw.status !== 'connected'
+  | 'spawn' // ENOENT 등 프로세스 시작 실패
+  | 'unknown';

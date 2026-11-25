@@ -1,17 +1,9 @@
 // packages/agent/src/runtime/types.ts
 // Phase 46 M1: 채널 무관 에이전트 런타임의 이벤트·드라이버·포트 계약 (plan §3-1).
-import type { AgentId, SessionKey } from '@finclaw/types';
+import type { AgentErrorReason, AgentId, SessionKey } from '@finclaw/types';
 
-export type AgentErrorReason =
-  | 'aborted'
-  | 'timeout' // 무출력/overall 워치독, lane 대기 실패
-  | 'auth'
-  | 'rate_limit' // rate_limit_event.status === 'rejected' 일 때만
-  | 'max_turns' // result.subtype === 'error_max_turns'
-  | 'session_not_found' // runtime 이 잡아 1회 재시도. 재시도도 실패할 때만 바깥으로 나감
-  | 'mcp_unavailable' // init.mcp_servers 의 finclaw.status !== 'connected'
-  | 'spawn' // ENOENT 등 프로세스 시작 실패
-  | 'unknown';
+// 정의는 @finclaw/types (ChatStreamErrorParams.reason 이 공유) — 기존 import 경로 유지용 re-export
+export type { AgentErrorReason };
 
 export interface AgentUsage {
   readonly input: number;
@@ -60,6 +52,8 @@ export type AgentEvent =
       readonly message: string; // 드라이버가 만든 짧은 요약. raw stderr 는 로그에만
       readonly usage?: AgentUsage;
     };
+
+export type TerminalEvent = Extract<AgentEvent, { type: 'done' | 'error' }>;
 
 export interface DriverRequest {
   readonly runId: string;

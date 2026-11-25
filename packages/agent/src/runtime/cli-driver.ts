@@ -13,6 +13,7 @@ import type {
   AgentEvent,
   AgentUsage,
   DriverRequest,
+  TerminalEvent,
 } from './types.js';
 
 export interface CliDriverOptions {
@@ -31,8 +32,6 @@ const STDERR_TAIL_CHARS = 4_096;
 /** [TQ1] 구 backends.ts 의 비항등 alias 1개 보존 (DEFAULT_MODEL id → CLI alias). 그 외 id 는 그대로 전달. */
 const MODEL_ALIASES: Readonly<Record<string, string>> = { 'claude-sonnet-4-6': 'sonnet' };
 const ZERO_USAGE: AgentUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-
-type Terminal = Extract<AgentEvent, { type: 'done' | 'error' }>;
 
 /** mapStreamEvent 가 읽고 쓰는 run 단위 상태. stderr 는 드라이버가 채운다 (session_not_found 판정용). */
 export interface StreamState {
@@ -170,7 +169,7 @@ function mapInit(raw: Record<string, unknown>, state: StreamState): AgentEvent[]
   ];
 }
 
-function mapResult(raw: Record<string, unknown>, state: StreamState): Terminal {
+function mapResult(raw: Record<string, unknown>, state: StreamState): TerminalEvent {
   const usage = toUsage(raw.usage);
   if (raw.subtype === 'success' && raw.is_error !== true) {
     return {
@@ -263,7 +262,7 @@ async function* runCli(opts: CliDriverOptions, req: DriverRequest): AsyncGenerat
     });
   });
 
-  let terminal: Terminal | undefined;
+  let terminal: TerminalEvent | undefined;
   let stopReason: 'aborted' | 'timeout' | undefined;
   let killTimer: ReturnType<typeof setTimeout> | undefined;
   const halt = (reason: 'aborted' | 'timeout'): void => {
@@ -322,7 +321,7 @@ async function* runCli(opts: CliDriverOptions, req: DriverRequest): AsyncGenerat
     }
   }
 
-  let final: Terminal;
+  let final: TerminalEvent;
   if (stopReason) {
     final = fail(
       req.runId,
@@ -356,7 +355,7 @@ function childEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
-function fail(runId: string, reason: AgentErrorReason, message: string): Terminal {
+function fail(runId: string, reason: AgentErrorReason, message: string): TerminalEvent {
   return { type: 'error', runId, reason, message };
 }
 

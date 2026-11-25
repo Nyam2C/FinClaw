@@ -24,4 +24,5 @@ export type {
   AgentRunRequest,
   AgentUsage,
   DriverRequest,
+  TerminalEvent,
 } from './runtime/types.js';

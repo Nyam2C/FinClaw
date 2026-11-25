@@ -10,6 +10,7 @@ import type {
   AgentRunRequest,
   DriverRequest,
   ProfileHealthMonitor,
+  TerminalEvent,
 } from '@finclaw/agent';
 import { ConcurrencyLane, FinClawError, type FinClawLogger, type LaneHandle } from '@finclaw/infra';
 import { addAgentRun } from '@finclaw/storage';
@@ -32,8 +33,6 @@ const MAIN_OVERALL_TIMEOUT_MS = 300_000;
 const MAIN_MAX_TURNS = 10;
 const GLOBAL_LANE_KEY = 'agent';
 const PROFILE_ID = 'default';
-
-type TerminalEvent = Extract<AgentEvent, { type: 'done' | 'error' }>;
 
 /** conversations.metadata 의 CLI 세션 바인딩 (plan §3-3, 마이그레이션 0). */
 interface CliSessionBinding {

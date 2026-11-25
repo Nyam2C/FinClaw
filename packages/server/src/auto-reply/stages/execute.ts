@@ -1,4 +1,4 @@
-import type { AgentErrorReason, AgentEvent, AgentRunPort } from '@finclaw/agent';
+import type { AgentErrorReason, AgentRunPort, TerminalEvent } from '@finclaw/agent';
 import { createAgentId } from '@finclaw/types';
 import { extractControlTokens, type ControlTokenResult } from '../control-tokens.js';
 // packages/server/src/auto-reply/stages/execute.ts
@@ -7,8 +7,6 @@ import type { StageResult } from '../pipeline.js';
 
 /** 구 실행 어댑터의 defaultAgentId 와 동일. */
 const DISCORD_AGENT_ID = createAgentId('default');
-
-type TerminalEvent = Extract<AgentEvent, { type: 'done' | 'error' }>;
 
 /** Q10: raw message 는 보내지 않는다(credential 섞임 위험). aborted 는 무응답. 문구 = plan §3-8 그대로. */
 const ERROR_REPLY: Partial<Record<AgentErrorReason, string>> = {

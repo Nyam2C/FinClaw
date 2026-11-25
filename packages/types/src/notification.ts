@@ -1,4 +1,5 @@
 // packages/types/src/notification.ts
+import type { AgentErrorReason } from './agent.js';
 
 /** JSON-RPC 2.0 알림 (서버 → 클라이언트, id 없음) */
 export interface JsonRpcNotification<T = Record<string, unknown>> {
@@ -32,7 +33,7 @@ export interface ChatStreamErrorParams {
   readonly sessionId: string;
   readonly runId: string;
   readonly error: string;
-  readonly reason: string;
+  readonly reason: AgentErrorReason;
 }
 
 /** chat.stream.tool — 도구 진행 (입력/결과 내용 미포함 — S14). tool_use→start, tool_result→end. */

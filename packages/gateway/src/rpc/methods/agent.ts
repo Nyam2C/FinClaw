@@ -1,14 +1,17 @@
 // packages/server/src/gateway/rpc/methods/agent.ts
 import { randomUUID } from 'node:crypto';
-import type { AgentEvent, AgentRunPort, ProfileHealthMonitor, ToolRegistry } from '@finclaw/agent';
+import type {
+  AgentRunPort,
+  ProfileHealthMonitor,
+  TerminalEvent,
+  ToolRegistry,
+} from '@finclaw/agent';
 import type { ConcurrencyLane, FinClawLogger } from '@finclaw/infra';
 import type { AttachMemoryInput, AttachMemoryPort, TracerPort } from '@finclaw/types';
 import { createAgentId, createSessionKey } from '@finclaw/types';
 import { z } from 'zod/v4';
 import type { MethodRegistry } from '../index.js';
 import type { RpcMethodHandler } from '../types.js';
-
-type TerminalEvent = Extract<AgentEvent, { type: 'done' | 'error' }>;
 
 /** agent.* RPC 메서드 의존성 (main.ts 에서 주입) */
 export interface AgentRpcDeps {
