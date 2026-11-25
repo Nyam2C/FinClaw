@@ -16,7 +16,7 @@ struct BubbleView: View {
         if running { Button("중지", action: onAbort).keyboardShortcut(".", modifiers: .command).buttonStyle(Pill()) }
       case .proactive(let p, _):
         HStack(spacing: 4) { Text(p.title).bold(); if p.count >= 2 { Text("×\(p.count)").foregroundStyle(.secondary) } }
-        Clamped(text: p.body, onMore: onMore)
+        Clamped(text: p.body, onMore: nil)  // 브리핑은 아래 "자세히" 하나만
         HStack(spacing: 6) {
           if p.kind == .alert {
             TwoStepButton(title: "이 알림 삭제", action: onDeleteAlert)
@@ -29,6 +29,7 @@ struct BubbleView: View {
       }
     }
     .foregroundStyle(.primary)
+    .frame(minWidth: 170, alignment: .leading)  // 짧은 답 + 도구 문구도 납작해 보이지 않게
     .padding(10)
     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
     .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.separator))
@@ -40,7 +41,7 @@ struct BubbleView: View {
 
 /// B1·B3: 폭 300pt 로 줄바꿈, 6줄이 넘으면 앞 6줄 + 24pt 페이드 + "자세히 ▸". 마크다운은 인라인만.
 struct Clamped: View {
-  let text: String, onMore: () -> Void
+  let text: String, onMore: (() -> Void)?
 
   var body: some View {
     let md = inlineMarkdown(text)
@@ -53,7 +54,7 @@ struct Clamped: View {
             LinearGradient(
               stops: [.init(color: .black, location: 0.75), .init(color: .clear, location: 1)], startPoint: .top,
               endPoint: .bottom))
-          Button("자세히 ▸", action: onMore).buttonStyle(.plain).foregroundStyle(.tint)
+          if let onMore { Button("자세히 ▸", action: onMore).buttonStyle(.plain).foregroundStyle(.tint) }
         }
         .fixedSize(horizontal: false, vertical: true)  // 제안 높이(6줄)에 눌려 5줄로 줄지 않게
       }

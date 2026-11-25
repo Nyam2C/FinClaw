@@ -5,16 +5,17 @@ import SwiftUI
 /// `--snapshot <dir>` (D3·G8): 샘플 상태 → ImageRenderer(scale 2) → PNG. 한 장에 밝은/어두운 데스크톱 배경을 병치.
 @MainActor enum Snapshot {
   static let t0 = Date(timeIntervalSinceReferenceDate: 1000)  // 고정 시각 — 깜빡임 밖, 입 열림 구간 (+0.06)
-  static let longAnswer = (1...10).map { "\($0). **삼성전자** 외국인 순매수 \($0 * 120)억 원, 기관은 관망했어요." }.joined(separator: "\n")
+  // 샘플 문구는 핀이 실제로 하는 일만 — 지어낸 시세·뉴스 수치를 쓰지 않는다 (시스템 프롬프트 원칙 2·3)
+  static let longAnswer = "제가 할 수 있는 일을 정리했어요.\n1. **시세** 조회 — 주식·암호화폐·환율 (시세 API 키 필요)\n2. **차트** 데이터 조회\n3. **뉴스** 검색·요약 (뉴스 API 키 필요)\n4. 뉴스를 모은 시장 분석\n5. 포트폴리오 손익 계산\n6. 등록된 알림 목록과 발동 기록 확인\n7. 지금 날짜·시각 확인\n8. 수치에는 출처와 기준 시각을 함께 적어요\n9. 사고팔지는 판단하지 않아요"
+  static let shortAnswer = "지금은 **오전 9시 30분**이에요(서울 기준)."
   static let alertBody = "AAPL 현재가 210이(가) 목표가 200 이상 조건을 충족했습니다."  // conditions/price.ts 문구 형식
   static let priceAlert = Proactive(kind: .alert, key: "a1", title: Copy.alertTitle("AAPL price_above"), body: alertBody, detail: nil)
-  static let briefingText = "오늘 보유 종목 요약이에요.\n- AAPL 210달러, 어제보다 1.2% 올랐어요\n- 삼성전자 7만 1천 원, 보합이에요\n- 환율 1,380원\n- 미국 CPI 발표는 내일 밤이에요\n- 실적 발표 예정 없음\n- 출처: 시세 API"
+  static let briefingText = "알림 2개를 확인했어요(알림 목록 조회, 09:00 기준).\n- AAPL 이상 200: 지난 24시간 발동 없음\n- 005930 뉴스 '실적': 지난 24시간 발동 없음\n- 발동 기록은 알림 기록 조회로 확인했어요\n- 시세는 넣지 않았어요(시세 API 키 없음)\n- 새 알림은 '알림' 탭에서 만들 수 있어요\n- 이 브리핑은 조회만 했어요"
   static let briefing = Proactive(
-    kind: .briefing, key: "sched-1", title: Copy.briefingTitle("아침 브리핑"), body: Copy.firstLines(briefingText, 6),
-    detail: briefingText)
+    kind: .briefing, key: "s1", title: Copy.briefingTitle("아침 브리핑"), body: Copy.firstLines(briefingText, 6), detail: briefingText)
   static let chat = [
-    HistoryLine(role: "user", text: "AAPL 지금 얼마야?"), HistoryLine(role: "assistant", text: "지금 **AAPL** 은 210달러예요."),
-    HistoryLine(role: "user", text: "200 넘으면 알려줘"), HistoryLine(role: "assistant", text: "AAPL 이 200달러 이상이면 알려드릴게요."),
+    HistoryLine(role: "user", text: "지금 몇 시야?"), HistoryLine(role: "assistant", text: shortAnswer),
+    HistoryLine(role: "user", text: "AAPL 200 넘으면 알려줘"), HistoryLine(role: "assistant", text: "알림은 제가 직접 만들 수 없어요. '알림' 탭에서 AAPL · 이상 · 200 으로 만들어 주세요."),
   ]
 
   static func run(to dir: URL) {
@@ -25,9 +26,9 @@ import SwiftUI
       ("mood-idle", sample(.idle), 0.06),
       ("mood-listening", sample(.listening), 0.06),
       ("mood-thinking-run", sample(.thinking, .answer(text: "", closesAt: nil), run: true), 0.06),
-      ("mood-working-tool-label", sample(.working, .answer(text: "AAPL 시세를", closesAt: nil), tool: "알아보는 중…", run: true), 0.06),
-      ("mood-talking-streaming", sample(.talking, .answer(text: "지금 **AAPL** 은 210달러예요.", closesAt: nil), run: true), 0.06),
-      ("mood-happy-short-answer", sample(.happy, .answer(text: "지금 **AAPL** 은 210달러예요.", closesAt: later)), 0.06),
+      ("mood-working-tool-label", sample(.working, .answer(text: "AAPL 시세를 확인해 볼게요.", closesAt: nil), tool: Copy.toolLabel("route_task"), run: true), 0.06),
+      ("mood-talking-streaming", sample(.talking, .answer(text: "지금은 오전 9시", closesAt: nil), run: true), 0.06),
+      ("mood-happy-short-answer", sample(.happy, .answer(text: shortAnswer, closesAt: later)), 0.06),
       ("mood-alert-price", sample(.alert, .proactive(priceAlert, closesAt: later)), 0.15),
       ("mood-error", sample(.error, .error(Copy.reason("rate_limit"), closesAt: later)), 0.06),
       ("bubble-answer-long-clamped", sample(.happy, .answer(text: longAnswer, closesAt: later)), 0.06),
