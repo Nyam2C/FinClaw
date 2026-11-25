@@ -56,7 +56,6 @@ export function validateConfigStrict(raw: unknown): FinClawConfig {
 interface ErrorTree {
   errors: string[];
   properties?: Record<string, ErrorTree>;
-  items?: Record<string, ErrorTree>;
 }
 
 /** z.treeifyError 결과를 ConfigValidationIssue[]로 평탄화 */
@@ -76,13 +75,6 @@ function collectIssues(tree: ErrorTree, path = ''): ConfigValidationIssue[] {
   if (tree.properties) {
     for (const [key, subtree] of Object.entries(tree.properties)) {
       const childPath = path ? `${path}.${key}` : key;
-      issues.push(...collectIssues(subtree, childPath));
-    }
-  }
-
-  if (tree.items) {
-    for (const [index, subtree] of Object.entries(tree.items)) {
-      const childPath = path ? `${path}[${index}]` : `[${index}]`;
       issues.push(...collectIssues(subtree, childPath));
     }
   }

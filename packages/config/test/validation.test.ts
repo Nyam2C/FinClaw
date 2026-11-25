@@ -5,10 +5,10 @@ import { validateConfig, validateConfigStrict } from '../src/validation.js';
 
 describe('validateConfig', () => {
   it('유효한 설정에 valid: true를 반환한다', () => {
-    const result = validateConfig({ gateway: { port: 8080 } });
+    const result = validateConfig({ accessLog: { retentionDays: 7 } });
     expect(result.valid).toBe(true);
     expect(result.issues).toHaveLength(0);
-    expect(result.config).toEqual({ gateway: { port: 8080 } });
+    expect(result.config).toEqual({ accessLog: { retentionDays: 7 } });
   });
 
   it('빈 객체에 valid: true를 반환한다', () => {
@@ -24,26 +24,22 @@ describe('validateConfig', () => {
   });
 
   it('중첩된 에러의 경로를 포함한다', () => {
-    const result = validateConfig({ gateway: { port: -1 } });
+    const result = validateConfig({ accessLog: { retentionDays: 1.5 } });
     expect(result.valid).toBe(false);
-    const portIssue = result.issues.find((i) => i.path.includes('port'));
-    expect(portIssue).toBeDefined();
+    const issue = result.issues.find((i) => i.path === 'accessLog.retentionDays');
+    expect(issue).toBeDefined();
   });
 
-  it('배열 내부 에러를 수집한다', () => {
-    const result = validateConfig({
-      finance: { portfolios: { main: { name: 'M', holdings: [{ symbol: 123 }] } } },
-    });
-    expect(result.valid).toBe(false);
-    const arrayIssue = result.issues.find((i) => i.path.includes('[0]'));
-    expect(arrayIssue).toBeDefined();
+  it('제거된 레거시 섹션(gateway.port, agents 등)을 거부한다', () => {
+    expect(validateConfig({ gateway: { port: 3000 } }).valid).toBe(false);
+    expect(validateConfig({ agents: {} }).valid).toBe(false);
   });
 });
 
 describe('validateConfigStrict', () => {
   it('유효한 설정에 config를 반환한다', () => {
-    const config = validateConfigStrict({ logging: { level: 'debug' } });
-    expect(config).toEqual({ logging: { level: 'debug' } });
+    const config = validateConfigStrict({ provider: 'claude-cli' });
+    expect(config).toEqual({ provider: 'claude-cli' });
   });
 
   it('잘못된 설정에 ConfigValidationError를 throw한다', () => {

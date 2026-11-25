@@ -77,14 +77,15 @@ async function main(): Promise<void> {
 
   // 1. env 검증
   const discordToken = requireEnv('DISCORD_BOT_TOKEN');
-  const discordAppId = requireEnv('DISCORD_APPLICATION_ID');
 
-  // 1a. GATEWAY_PORT strict 검증 (config 전면 도입 전 과도기)
+  // 1a. GATEWAY_PORT 검증
   const gatewayPortRaw = process.env.GATEWAY_PORT;
   const gatewayPort = gatewayPortRaw ? Number(gatewayPortRaw) : defaultConfig.port;
-  validateConfigStrict({
-    gateway: { host: defaultConfig.host, port: gatewayPort },
-  });
+  if (!Number.isInteger(gatewayPort) || gatewayPort < 1 || gatewayPort > 65535) {
+    throw new ConfigValidationError(`Invalid GATEWAY_PORT: ${gatewayPortRaw}`, {
+      issues: [{ path: 'GATEWAY_PORT', message: 'must be an integer 1-65535', severity: 'error' }],
+    });
+  }
 
   // 2. 기반 (로거, 라이프사이클, 스토리지)
   const logger = createLogger({ name: 'finclaw', level: 'info' });
@@ -131,10 +132,7 @@ async function main(): Promise<void> {
 
   // 3. Discord 클라이언트 먼저 로그인 (alerts가 DM 전달 핸들을 필요로 함)
   const discordAdapter = new DiscordAdapter();
-  const discordAccount = DiscordAccountSchema.parse({
-    botToken: discordToken,
-    applicationId: discordAppId,
-  });
+  const discordAccount = DiscordAccountSchema.parse({ botToken: discordToken });
   const cleanup = await discordAdapter.setup(discordAccount);
   lifecycle.register(cleanup);
   logger.info('Discord adapter logged in');

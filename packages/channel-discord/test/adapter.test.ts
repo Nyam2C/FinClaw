@@ -53,13 +53,6 @@ vi.mock('@finclaw/infra', () => ({
 function makeConfig() {
   return {
     botToken: 'test-token',
-    applicationId: 'app-123',
-    allowDMs: true,
-    typingIntervalMs: 5000,
-    maxChunkLength: 2000,
-    maxChunkLines: 17,
-    approvalRequired: false,
-    approvalTimeoutMs: 300_000,
   };
 }
 

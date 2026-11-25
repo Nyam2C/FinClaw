@@ -1,26 +1,21 @@
 import * as fs from 'node:fs';
 import { homedir as osHomedir } from 'node:os';
-import { writeFileAtomic } from '@finclaw/infra';
 // packages/config/src/io.ts
 import type { FinClawConfig } from '@finclaw/types';
 import * as JSON5 from 'json5';
 import { createConfigCache } from './cache-utils.js';
-import { applyDefaults } from './defaults.js';
 import { resolveEnvVars } from './env-substitution.js';
 import { ConfigError } from './errors.js';
 import { resolveIncludes } from './includes.js';
 import { normalizePaths } from './normalize-paths.js';
 import { resolveConfigPath } from './paths.js';
-import { applyOverrides } from './runtime-overrides.js';
 import type { ConfigCache, ConfigDeps } from './types.js';
 import { validateConfig } from './validation.js';
 
 /** ConfigIO — 설정 읽기/쓰기 파사드 */
 export interface ConfigIO {
-  /** 8단계 파이프라인으로 설정 로드 */
+  /** 5단계 파이프라인으로 설정 로드 */
   loadConfig(): FinClawConfig;
-  /** 설정 파일 원자적 쓰기 (async — writeFileAtomic 사용) */
-  writeConfigFile(config: FinClawConfig): Promise<void>;
   /** 캐시 무효화 */
   invalidateCache(): void;
   /** 현재 설정 파일 경로 */
@@ -30,15 +25,12 @@ export interface ConfigIO {
 /**
  * ConfigIO 팩토리
  *
- * 8단계 파이프라인:
+ * 5단계 파이프라인:
  *   1. 파일 읽기 (JSON5)
- *   2. $include 해석
+ *   2. $include 해석 (병합 포함)
  *   3. 환경변수 치환
  *   4. 경로 정규화 (~/)
- *   5. Zod 검증
- *   6. 병합 (includes)
- *   7. 기본값 적용
- *   8. 런타임 오버라이드
+ *   5. Zod 검증 (실패 시 경고 후 raw 사용)
  */
 export function createConfigIO(deps: ConfigDeps = {}): ConfigIO {
   const fsModule = deps.fs ?? fs;
@@ -69,7 +61,7 @@ export function createConfigIO(deps: ConfigDeps = {}): ConfigIO {
       raw = readJsonFile(configPath);
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-        logger?.debug?.(`Config file not found: ${configPath}, using defaults`);
+        logger?.debug?.(`Config file not found: ${configPath}, using empty config`);
         raw = {};
       } else {
         throw new ConfigError(`Failed to read config: ${configPath}`, {
@@ -95,28 +87,15 @@ export function createConfigIO(deps: ConfigDeps = {}): ConfigIO {
       }
     }
 
-    // 6. 유저 설정 (검증 통과 시 validated, 실패 시 raw를 그대로 사용)
-    const userConfig = valid ? validated : (raw as unknown as FinClawConfig);
-
-    // 7. 기본값 적용
-    const withDefaults = applyDefaults(userConfig);
-
-    // 8. 런타임 오버라이드
-    const final = applyOverrides(withDefaults);
+    // 검증 통과 시 validated, 실패 시 raw를 그대로 사용 (main 이 validateConfigStrict 로 재검증)
+    const final = valid ? validated : (raw as unknown as FinClawConfig);
 
     cache.set(final);
     return final;
   }
 
-  async function writeConfigFile(config: FinClawConfig): Promise<void> {
-    const content = JSON.stringify(config, null, 2);
-    await writeFileAtomic(configPath, content);
-    cache.invalidate();
-  }
-
   return {
     loadConfig: loadConfigInternal,
-    writeConfigFile,
     invalidateCache: () => cache.invalidate(),
     get configPath() {
       return configPath;
