@@ -5,7 +5,7 @@ import { extractControlTokens, type ControlTokenResult } from '../control-tokens
 import type { PipelineMsgContext } from '../pipeline-context.js';
 import type { StageResult } from '../pipeline.js';
 
-/** 구 RunnerExecutionAdapter.defaultAgentId 와 동일. */
+/** 구 실행 어댑터의 defaultAgentId 와 동일. */
 const DISCORD_AGENT_ID = createAgentId('default');
 
 type TerminalEvent = Extract<AgentEvent, { type: 'done' | 'error' }>;

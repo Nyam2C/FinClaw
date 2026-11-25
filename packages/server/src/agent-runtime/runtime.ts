@@ -390,7 +390,7 @@ function errorMessage(err: unknown): string {
 
 /**
  * Phase 29 B: 응답 텍스트의 `[mem:xxxxxx]` 마커 (id 첫 6-8자, 또는 콤마 구분 다중)
- * 를 추출하여 candidates 의 실제 id 와 prefix-match. (phase46 M5: execution-adapter.ts 에서 이동)
+ * 를 추출하여 candidates 의 실제 id 와 prefix-match. (phase46 M5: 옛 실행 어댑터에서 이동)
  *
  * - 마커가 없으면 빈 배열.
  * - 같은 id 가 여러 마커에 매칭돼도 한 번만 결과에 포함.
