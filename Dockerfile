@@ -12,6 +12,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/agent/package.json ./packages/agent/
 COPY packages/channel-discord/package.json ./packages/channel-discord/
 COPY packages/config/package.json ./packages/config/
+COPY packages/gateway/package.json ./packages/gateway/
 COPY packages/infra/package.json ./packages/infra/
 COPY packages/server/package.json ./packages/server/
 COPY packages/skills-finance/package.json ./packages/skills-finance/
@@ -46,16 +47,13 @@ RUN mkdir -p /data && chown -R node:node /data
 USER node
 
 # builder에서 필요한 파일만 복사
+# NOTE: claude CLI 는 이미지에 포함되지 않는다 (추론하려면 별도 설치·로그인 필요).
 COPY --from=builder --chown=node:node /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.yaml ./
 COPY --from=builder --chown=node:node /app/node_modules/ ./node_modules/
 COPY --from=builder --chown=node:node /app/packages/ ./packages/
 
-# TODO (Phase 16-18): 스킬 파일 복사
-# COPY --chown=node:node skills/ ./skills/
-
 ENV NODE_ENV=production
-ENV FINCLAW_HOST=0.0.0.0
-ENV FINCLAW_PORT=3000
+ENV GATEWAY_PORT=3000
 
 EXPOSE 3000 5173
 

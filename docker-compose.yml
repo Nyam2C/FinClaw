@@ -13,11 +13,10 @@ services:
       - .env
     environment:
       - NODE_ENV=production
-      - FINCLAW_HOST=0.0.0.0
-      - FINCLAW_PORT=3000
+      - GATEWAY_PORT=3000
       - FINCLAW_DB_PATH=/data/db.sqlite
     ports:
-      - '${FINCLAW_PORT:-3000}:3000'
+      - '${GATEWAY_PORT:-3000}:3000'
     volumes:
       - finclaw-data:/data
     command: ['node', 'packages/server/dist/main.js']

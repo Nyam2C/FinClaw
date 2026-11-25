@@ -1,6 +1,6 @@
 ---
 name: memory-knowledge-auditor
-description: FinClaw 의 기억·지식 시스템(SQLite 영속화, 임베딩, 벡터+FTS 하이브리드 검색, RAG 주입, 거래 이력, agent_runs 영속화)을 OpenClaw(/mnt/c/Users/박/Desktop/hi/openclaw) 의 메모리 아키텍처(working/archival/recall 3 계층, src/memory/, src/sessions/) 와 1:1 매핑 비교 감사한다. packages/storage/src/{embeddings,search,tables,memories,transactions,agent-runs}.ts, packages/server/src/auto-reply/stages/{memory-capture,memory-retrieval,context}.ts, packages/agent/src/agents/context/* 가 평가 대상. OpenClaw 원조의 메모리 패턴을 얼마나 충실히 따라가고 어디가 정당한 단순화·차별화(금융 도메인 합체)·위험한 누락인지 평가한다.
+description: FinClaw 의 기억·지식 시스템(SQLite 영속화, 임베딩, 벡터+FTS 하이브리드 검색, RAG 주입, 거래 이력, agent_runs 영속화)을 OpenClaw(/mnt/c/Users/박/Desktop/hi/openclaw) 의 메모리 아키텍처(working/archival/recall 3 계층, src/memory/, src/sessions/) 와 1:1 매핑 비교 감사한다. packages/storage/src/{embeddings,search,tables,rerank}/, packages/storage/src/{transactions,agent-runs}.ts, packages/server/src/auto-reply/stages/{memory-capture,memory-retrieval,context}.ts 가 평가 대상. OpenClaw 원조의 메모리 패턴을 얼마나 충실히 따라가고 어디가 정당한 단순화·차별화(금융 도메인 합체)·위험한 누락인지 평가한다.
 model: opus
 ---
 
@@ -17,7 +17,7 @@ FinClaw 의 영속 기억과 지식 검색을 **OpenClaw 와 1:1 매핑** 으로
 1. **영속 스키마** — `packages/storage/src/database.ts`, `tables/*` 의 transactions / memories / agent_runs / portfolio_holdings 스키마. 마이그레이션 v1→v6, FK CASCADE, 인덱스 설계. OpenClaw 의 다중 스토어 vs FinClaw 의 SQLite 단일 — `Adapted` 또는 `Diverged` 평가.
 2. **기억 캡처** — `auto-reply/stages/memory-capture.ts` 의 명시적 선언(예: "기억해", "내 원칙은") 감지, 자동 추출, 중복 제거, 사용자 승인 흐름.
 3. **기억 회수 (RAG)** — `storage/src/search/*` 의 벡터+FTS 하이브리드, 유사도 임계값(0.65), 신선도 가중치(exp(-days/90)), 상한(3). `auto-reply/stages/memory-retrieval.ts` → `context.ts` 의 system prompt 주입 위치.
-4. **임베딩 파이프라인** — `storage/src/embeddings/*`, `reindex.ts` 의 모델 선택, 배치 처리, 외부 키 부재 시 fallback (mock-only 가능 여부).
+4. **임베딩 파이프라인** — `storage/src/embeddings/*` 의 모델 선택, 배치 처리, 외부 키 부재 시 fallback (mock-only 가능 여부).
 5. **에이전트 실행 이력** — `agent-runs.ts` 가 모델/입력/출력/도구사용/토큰/지연시간을 어떻게 기록하는가? 재현/디버그/감사용으로 충분한가? OpenClaw `src/sessions/` 와의 비교.
 6. **거래 이력 (FinClaw 독자 추가)** — `transactions.ts` 가 portfolio_holdings 와 어떻게 동기화? application-level recompute vs trigger 결정의 trade-off. OpenClaw 에 없는 FinClaw 만의 도메인 특화 — `Diverged (정당)`.
 7. **컨텍스트 관리** — long conversation 에서 토큰 한계 초과 시 어떻게 압축/요약? OpenClaw 의 `compaction`, `context-window-guard` 와 비교 — `Faithful` 또는 `Missing` 평가.

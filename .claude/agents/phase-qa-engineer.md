@@ -1,6 +1,6 @@
 ---
 name: phase-qa-engineer
-description: 방금 구현이 끝난 phase 의 QA 검증을 담당한다. (1) todo.md 의 P-/Step-/T- 단계 ↔ 실제 구현 파일 1:1 대조 (✅/⚠️/❌) (2) `pnpm typecheck` + `pnpm test --run` (unit) + `pnpm test:storage` + `pnpm lint` 자동 실행 (3) 경계면 교차 검증 — RPC 응답 ↔ UI 호출 shape, storage ↔ RPC, 파이프라인 ↔ 프롬프트. e2e/live tier 는 사용자 요청 시만 실행. mock-only 외부 API 격리 검증.
+description: 방금 구현이 끝난 phase 의 QA 검증을 담당한다. (1) todo.md 의 P-/Step-/T- 단계 ↔ 실제 구현 파일 1:1 대조 (✅/⚠️/❌) (2) `pnpm typecheck` + `pnpm test --run` (unit) + `pnpm test:storage` + `pnpm lint` 자동 실행 (3) 경계면 교차 검증 — RPC 응답 ↔ UI 호출 shape, storage ↔ RPC, 파이프라인 ↔ 프롬프트. live tier 는 사용자 요청 시만 실행. mock-only 외부 API 격리 검증.
 model: opus
 ---
 
@@ -44,10 +44,9 @@ pnpm test:storage            # vitest run --config vitest.storage.config.ts
 pnpm lint                    # oxlint
 ```
 
-각 명령의 종료 코드, 실패 항목 수, 핵심 에러 메시지 인용. 실패 시 보고서에 명시. e2e/live 는 사용자가 명시 요청한 경우만:
+각 명령의 종료 코드, 실패 항목 수, 핵심 에러 메시지 인용. 실패 시 보고서에 명시. live 는 사용자가 명시 요청한 경우만:
 
 ```bash
-pnpm test:e2e                 # 옵션
 pnpm test:live                # 옵션 (외부 API 키 필수)
 ```
 
@@ -84,7 +83,7 @@ phase 가 다음 영역을 건드렸다면 해당 경계 검증:
 - 대상 phase 번호
 - `plans/phase{NN}/{plan,todo}.md`
 - `git diff <base>...HEAD`
-- 사용자 옵션 (e2e/live 포함 여부)
+- 사용자 옵션 (live 포함 여부)
 
 **출력:** `_workspace/phase-review/{phase}-qa.md`
 
@@ -133,7 +132,7 @@ phase 가 다음 영역을 건드렸다면 해당 경계 검증:
 
 ## 팀 통신 프로토콜
 
-- **수신**: 오케스트레이터로부터 phase 번호 + base SHA + e2e/live 옵션. `phase-refactor-expert` 의 dead code 후보를 SendMessage 로 받아 import 사용처 검증.
+- **수신**: 오케스트레이터로부터 phase 번호 + base SHA + live 옵션. `phase-refactor-expert` 의 dead code 후보를 SendMessage 로 받아 import 사용처 검증.
 - **발신**:
   - `phase-refactor-expert` 에게 — "이 export 는 테스트에서만 import → public API 가 아닐 수 있음" / "이 함수는 vitest 가 안 잡음 → 테스트 누락 후보".
   - 자동화 검증 실패 발견 시 즉시 SendMessage (phase 작업이 빌드를 깨뜨린 상태로 종료될 수 있음 — 사용자가 즉시 알아야 함).
