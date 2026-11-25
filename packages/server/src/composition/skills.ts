@@ -3,7 +3,7 @@
 
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import type { InMemoryToolRegistry } from '@finclaw/agent';
+import type { AgentDriver, InMemoryToolRegistry } from '@finclaw/agent';
 import type { DiscordAdapter } from '@finclaw/channel-discord';
 import type { FinClawLogger } from '@finclaw/infra';
 import {
@@ -34,6 +34,8 @@ export interface RegisterSkillsDeps {
   readonly logger: FinClawLogger;
   readonly discordAdapter: DiscordAdapter;
   readonly lifecycle: ProcessLifecycle;
+  /** Phase 46 M3: route_task market_analysis 서브에이전트 1-shot. */
+  readonly driver: AgentDriver;
 }
 
 export interface SkillsBundle {
@@ -45,7 +47,7 @@ export interface SkillsBundle {
 }
 
 export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBundle> {
-  const { toolRegistry, storage, logger, discordAdapter, lifecycle } = deps;
+  const { toolRegistry, storage, logger, discordAdapter, lifecycle, driver } = deps;
 
   registerDatetimeTool(toolRegistry);
 
@@ -111,6 +113,7 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
       chartService: marketHandle.chartService,
       newsAggregator: newsHandle?.aggregator,
       portfolioStore: newsHandle?.portfolioStore,
+      driver,
     });
     registerRouteTaskTool(toolRegistry, dispatcher);
     logger.info('route_task registered', {

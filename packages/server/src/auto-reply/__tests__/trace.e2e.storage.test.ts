@@ -64,11 +64,19 @@ describe('Phase 30 A15 — pipeline produces span tree', () => {
         timeoutMs: 10_000,
       },
       {
-        executionAdapter: {
-          execute: async () => ({
-            content: 'AI response',
-            usage: { inputTokens: 0, outputTokens: 0 },
-          }),
+        runtime: {
+          async *run() {
+            yield {
+              type: 'done',
+              runId: 'r1',
+              cliSessionId: 'c1',
+              text: 'AI response',
+              usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+              durationMs: 1,
+              numTurns: 1,
+            };
+          },
+          reset: async () => false,
         },
         commandRegistry: new InMemoryCommandRegistry(),
         logger: makeLogger(),

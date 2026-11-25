@@ -1,10 +1,11 @@
+import type { AgentDriver, DriverRequest } from '@finclaw/agent';
 import type {
   ChartService,
   NewsAggregator,
   PortfolioStore,
   QuoteService,
 } from '@finclaw/skills-finance';
-import type { Portfolio } from '@finclaw/types';
+import type { NewsItem, Portfolio } from '@finclaw/types';
 import { describe, it, expect } from 'vitest';
 import { buildRouteDispatcher, type DispatcherDeps } from './dispatch.js';
 
@@ -44,7 +45,17 @@ const portfolioStore = {
   getPortfolio: () => samplePortfolio,
 } as unknown as PortfolioStore;
 
-const deps: DispatcherDeps = { newsAggregator, quoteService, chartService, portfolioStore };
+const idleDriver: AgentDriver = async function* (req) {
+  yield { type: 'error', runId: req.runId, reason: 'unknown', message: 'not used' };
+};
+
+const deps: DispatcherDeps = {
+  newsAggregator,
+  quoteService,
+  chartService,
+  portfolioStore,
+  driver: idleDriver,
+};
 
 describe('route_task dispatcher — function intents', () => {
   it('price_lookup returns source=function with quote', async () => {
@@ -109,7 +120,7 @@ describe('route_task dispatcher — function intents', () => {
 });
 
 describe('route_task dispatcher — no news provider', () => {
-  const marketOnly: DispatcherDeps = { quoteService, chartService };
+  const marketOnly: DispatcherDeps = { quoteService, chartService, driver: idleDriver };
 
   it('price_lookup still works', async () => {
     const r = await buildRouteDispatcher(marketOnly)({
@@ -128,4 +139,27 @@ describe('route_task dispatcher — no news provider', () => {
       expect(r.content).toContain('news provider not configured');
     },
   );
+});
+
+describe('route_task dispatcher — market_analysis 서브에이전트 (D2)', () => {
+  it('dispatcher 의 signal 이 서브에이전트 드라이버까지 전달된다', async () => {
+    const seen: DriverRequest[] = [];
+    const driver: AgentDriver = async function* (req) {
+      seen.push(req);
+      yield { type: 'error', runId: req.runId, reason: 'aborted', message: 'aborted' };
+    };
+    const news = [
+      { title: 't', source: 's', publishedAt: '2026-11-26', summary: 'x' },
+    ] as unknown as NewsItem[];
+    const ac = new AbortController();
+    ac.abort();
+    const r = await buildRouteDispatcher({
+      ...deps,
+      driver,
+      newsAggregator: { fetchNews: async () => news },
+    })({ intent: 'market_analysis', query: 'x' }, ac.signal);
+    expect(seen[0]?.signal.aborted).toBe(true);
+    expect(seen[0]?.session).toEqual({ kind: 'none' });
+    expect(r.isError).toBe(true);
+  });
 });

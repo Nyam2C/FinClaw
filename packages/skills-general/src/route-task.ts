@@ -51,7 +51,7 @@ export function registerRouteTaskTool(registry: ToolRegistry, dispatcher: Dispat
     timeoutMs: 90_000,
   };
 
-  const executor: ToolExecutor = async (input) => {
+  const executor: ToolExecutor = async (input, ctx) => {
     const intent = input.intent as RouteIntent;
     const query = (input.query as string) ?? '';
     const symbol = input.symbol as string | undefined;
@@ -64,7 +64,7 @@ export function registerRouteTaskTool(registry: ToolRegistry, dispatcher: Dispat
     }
 
     try {
-      const result = await dispatcher({ intent, query, symbol });
+      const result = await dispatcher({ intent, query, symbol }, ctx.abortSignal);
       return {
         content: result.content,
         isError: result.isError,

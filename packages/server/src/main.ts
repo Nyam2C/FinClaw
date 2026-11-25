@@ -1,7 +1,8 @@
+import { execFile } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 // packages/server/src/main.ts
-import { ProfileHealthMonitor } from '@finclaw/agent';
+import { createCliDriver, ProfileHealthMonitor } from '@finclaw/agent';
 import { DiscordAccountSchema, DiscordAdapter } from '@finclaw/channel-discord';
 import { ConfigValidationError, loadConfig, validateConfigStrict } from '@finclaw/config';
 import { createGatewayServer, type GatewayServerConfig } from '@finclaw/gateway';
@@ -152,6 +153,24 @@ async function main(): Promise<void> {
   // 4a. 프로필 건강 모니터.
   const profileHealth = new ProfileHealthMonitor();
 
+  // Phase 46 M3: stream-json 드라이버 (격리 cwd 고정, Q12). 버전 로그는 스키마 drift(R1) 추적용 — 실패해도 부팅 계속.
+  const cliCommand = finclawConfig.cliBackend?.command ?? 'claude';
+  const driver = createCliDriver({
+    command: cliCommand,
+    cwd: join(homedir(), '.finclaw', 'agent'),
+    logger,
+  });
+  execFile(cliCommand, ['--version'], { timeout: 10_000 }, (err, stdout) => {
+    if (err) {
+      logger.warn('cli.version_unavailable', {
+        event: 'cli.version_unavailable',
+        error: err.message,
+      });
+      return;
+    }
+    logger.info('cli.version', { event: 'cli.version', version: stdout.trim() });
+  });
+
   // Phase 36: skills/tools/KIS/mcp/plugins 등록 (구 363-559 흡수)
   const { marketHandle, newsHandle, alertHandle, brokerageSyncService, kisEnv } =
     await registerSkills({
@@ -160,10 +179,11 @@ async function main(): Promise<void> {
       logger,
       discordAdapter,
       lifecycle,
+      driver,
     });
 
   // Phase 36: 실행 레이어 (tracer + runnerFactory + adapter) — 구 561-591
-  const { tracer, runnerFactory, adapter } = buildExecution({
+  const { tracer, runnerFactory, adapter, runtime, attachMemoryService } = buildExecution({
     storage,
     providerAdapter,
     lanes,
@@ -171,19 +191,25 @@ async function main(): Promise<void> {
     logger,
     defaultModel: DEFAULT_MODEL,
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
+    driver,
+    embeddingProvider,
+    finclawConfig,
+    mcp: {
+      url: `http://127.0.0.1:${gatewayPort}/mcp`,
+      jwtSecret: defaultConfig.auth.jwtSecret, // M10 에서 resolveJwtSecret() 로 교체
+    },
   });
+  lifecycle.register(async () => runtime.abortAll());
 
   // 5. 파이프라인 — 구 593-653. channelPluginRegistry 는 main 이 소유 (router/discord set).
   const channelPluginRegistry = new Map<string, ChannelPlugin>();
-  const { pipeline, attachMemoryService } = buildPipeline({
-    adapter,
+  const { pipeline } = buildPipeline({
+    runtime,
     toolRegistry,
     storage,
     profileHealth,
     marketHandle,
     newsHandle,
-    embeddingProvider,
-    finclawConfig,
     tracer,
     logger,
     defaultModel: DEFAULT_MODEL,

@@ -1,3 +1,4 @@
+import type { AgentDriver } from '@finclaw/agent';
 import {
   analyzeMarket,
   createPortfolioTracker,
@@ -32,9 +33,9 @@ export interface DispatcherDeps {
   /** 뉴스 키 미설정 시 undefined — 뉴스 의존 intent(news_summary·market_analysis·portfolio_calc)는 에러 결과. */
   readonly newsAggregator?: NewsAggregator;
   readonly portfolioStore?: PortfolioStore;
+  /** Phase 46: market_analysis 서브에이전트 1-shot 드라이버. */
+  readonly driver: AgentDriver;
 }
-
-const ANALYSIS_QUEUE_KEY = 'claude-sub-agent-analysis';
 
 const NEWS_UNAVAILABLE: RouteResult = {
   content: 'news provider not configured (set NEWSDATA_API_KEY, FINNHUB_KEY or ALPHA_VANTAGE_KEY)',
@@ -56,10 +57,10 @@ export function buildRouteDispatcher(deps: DispatcherDeps): Dispatcher {
     agentDir: 'prompts/sub-agents',
   };
 
-  return async (req: RouteRequest): Promise<RouteResult> => {
+  return async (req: RouteRequest, signal?: AbortSignal): Promise<RouteResult> => {
     switch (req.intent) {
       case 'market_analysis':
-        return dispatchMarketAnalysis(req, deps, marketAnalysisProfile);
+        return dispatchMarketAnalysis(req, deps, marketAnalysisProfile, signal);
       case 'price_lookup':
         return dispatchPriceLookup(req, deps);
       case 'chart_data':
@@ -76,6 +77,7 @@ async function dispatchMarketAnalysis(
   req: RouteRequest,
   deps: DispatcherDeps,
   profile: AgentProfile,
+  signal?: AbortSignal,
 ): Promise<RouteResult> {
   if (!deps.newsAggregator) {
     return NEWS_UNAVAILABLE;
@@ -96,16 +98,12 @@ async function dispatchMarketAnalysis(
 
   try {
     const analysis = await analyzeMarket(
-      async (runReq) => {
-        const res = await runSubAgent({
-          systemPrompt: runReq.systemPrompt,
-          query: runReq.prompt,
-          modelId: runReq.modelId,
-          timeoutMs: runReq.timeoutMs ?? 30_000,
-          queueKey: ANALYSIS_QUEUE_KEY,
-        });
-        return { text: res.text };
-      },
+      async (runReq) =>
+        runSubAgent(
+          deps.driver,
+          { systemPrompt: runReq.systemPrompt, query: runReq.prompt, modelId: runReq.modelId },
+          signal,
+        ),
       news,
       options,
       profile.model,
