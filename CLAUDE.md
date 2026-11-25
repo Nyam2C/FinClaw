@@ -71,6 +71,12 @@
 
 ---
 
+## Git 정책
+
+브랜치 · 커밋 · PR 은 [`CONTRIBUTING.md`](./CONTRIBUTING.md) 를 따른다. 요약: `main` 직접 커밋 금지(항상 PR), 브랜치 `<type>/<slug>` (phase 는 `feature/phaseNN-<slug>`), ASCII Conventional Commits 를 밀스톤 단위로, CI 초록 후 merge commit 으로 머지, 머지된 브랜치 삭제.
+
+---
+
 ## 하네스: FinClaw ↔ OpenClaw 1:1 유사도 비교
 
 **목표:** FinClaw 가 OpenClaw(`/mnt/c/Users/박/Desktop/hi/openclaw`, 256K LOC) 의 핵심 패턴을 얼마나 충실히 재현했고 어디가 정당한 단순화·차별화·위험한 누락인지를 4축(아키텍처/런타임/메모리/인터페이스)으로 1:1 매핑 비교(라벨 + 영역 유사도 %)하여 단일 종합 보고서로 답한다. 외부 빅테크 비서 비교(Claude.ai/ChatGPT/Letta)도, 다른 \*claw 변종 비교(miclaw/picoclaw)도 본 하네스에서 사용하지 않음 — 사용자가 OpenClaw 1:1 비교만을 비교 가치 있다고 명시.
