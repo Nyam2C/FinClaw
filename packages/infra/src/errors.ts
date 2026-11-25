@@ -54,38 +54,3 @@ export class PortInUseError extends FinClawError {
 //   AuthError      → packages/channel-discord/src/    (Phase 5)
 //   RateLimitError → packages/skills-finance/src/     (Phase 4)
 // ──────────────────────────────────────────────
-
-/** 타입 가드 */
-export function isFinClawError(err: unknown): err is FinClawError {
-  return err instanceof FinClawError;
-}
-
-/** 에러 래핑 유틸 — cause 체이닝 */
-export function wrapError(message: string, code: string, cause: unknown): FinClawError {
-  return new FinClawError(message, code, {
-    cause: cause instanceof Error ? cause : new Error(String(cause)),
-  });
-}
-
-/** 에러 객체에서 구조화된 정보 추출 */
-export function extractErrorInfo(err: unknown): {
-  code: string;
-  message: string;
-  isOperational?: boolean;
-  stack?: string;
-  cause?: string;
-} {
-  if (err instanceof FinClawError) {
-    return {
-      code: err.code,
-      message: err.message,
-      isOperational: err.isOperational,
-      stack: err.stack,
-      cause: err.cause instanceof Error ? err.cause.message : undefined,
-    };
-  }
-  if (err instanceof Error) {
-    return { code: 'UNKNOWN', message: err.message, stack: err.stack };
-  }
-  return { code: 'UNKNOWN', message: String(err) };
-}

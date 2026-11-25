@@ -4,7 +4,6 @@ import type {
   MsgContext,
   ReplyPayload,
   OutboundMessage,
-  GetReplyOptions,
   MediaAttachment,
 } from '@finclaw/types';
 import { describe, it, expectTypeOf } from 'vitest';
@@ -73,11 +72,5 @@ describe('MediaAttachment', () => {
     expectTypeOf<'audio'>().toMatchTypeOf<MediaAttachment['type']>();
     expectTypeOf<'video'>().toMatchTypeOf<MediaAttachment['type']>();
     expectTypeOf<'document'>().toMatchTypeOf<MediaAttachment['type']>();
-  });
-});
-
-describe('GetReplyOptions', () => {
-  it('runId가 필수이다', () => {
-    expectTypeOf<GetReplyOptions>().toHaveProperty('runId');
   });
 });

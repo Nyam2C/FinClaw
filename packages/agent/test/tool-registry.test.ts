@@ -70,13 +70,6 @@ describe('InMemoryToolRegistry', () => {
     expect(() => registry.register(makeDef(), okExecutor)).toThrow('already registered');
   });
 
-  it('등록 해제한다', () => {
-    registry.register(makeDef(), okExecutor);
-    expect(registry.unregister('test-tool')).toBe(true);
-    expect(registry.has('test-tool')).toBe(false);
-    expect(registry.unregister('nonexistent')).toBe(false);
-  });
-
   // ── execute ──
 
   it('등록되지 않은 도구 실행 시 에러 결과를 반환한다', async () => {

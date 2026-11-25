@@ -1,12 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  FinClawError,
-  SsrfBlockedError,
-  PortInUseError,
-  isFinClawError,
-  wrapError,
-  extractErrorInfo,
-} from '../src/errors.js';
+import { FinClawError, SsrfBlockedError, PortInUseError } from '../src/errors.js';
 
 describe('FinClawError', () => {
   it('기본값으로 생성된다', () => {
@@ -62,63 +55,5 @@ describe('PortInUseError', () => {
     const err = new PortInUseError(3000);
     expect(err.message).toContain('3000');
     expect(err.message).not.toContain('by');
-  });
-});
-
-describe('isFinClawError', () => {
-  it('FinClawError 인스턴스에 true', () => {
-    expect(isFinClawError(new FinClawError('test', 'CODE'))).toBe(true);
-  });
-
-  it('하위 클래스에도 true', () => {
-    expect(isFinClawError(new SsrfBlockedError('h', '1'))).toBe(true);
-  });
-
-  it('일반 Error에 false', () => {
-    expect(isFinClawError(new Error('test'))).toBe(false);
-  });
-
-  it('non-Error에 false', () => {
-    expect(isFinClawError('string')).toBe(false);
-    expect(isFinClawError(null)).toBe(false);
-  });
-});
-
-describe('wrapError', () => {
-  it('Error를 cause로 체이닝한다', () => {
-    const original = new Error('original');
-    const wrapped = wrapError('wrapped', 'WRAP', original);
-    expect(wrapped.cause).toBe(original);
-    expect(wrapped.code).toBe('WRAP');
-  });
-
-  it('non-Error를 Error로 변환하여 cause에 넣는다', () => {
-    const wrapped = wrapError('wrapped', 'WRAP', 'string cause');
-    expect(wrapped.cause).toBeInstanceOf(Error);
-    expect((wrapped.cause as Error).message).toBe('string cause');
-  });
-});
-
-describe('extractErrorInfo', () => {
-  it('FinClawError에서 구조화된 정보를 추출한다', () => {
-    const cause = new Error('root');
-    const err = new FinClawError('test', 'CODE', { cause });
-    const info = extractErrorInfo(err);
-    expect(info.code).toBe('CODE');
-    expect(info.message).toBe('test');
-    expect(info.isOperational).toBe(true);
-    expect(info.cause).toBe('root');
-  });
-
-  it('일반 Error에서 기본 정보를 추출한다', () => {
-    const info = extractErrorInfo(new Error('plain'));
-    expect(info.code).toBe('UNKNOWN');
-    expect(info.message).toBe('plain');
-  });
-
-  it('non-Error를 문자열로 변환한다', () => {
-    const info = extractErrorInfo(42);
-    expect(info.code).toBe('UNKNOWN');
-    expect(info.message).toBe('42');
   });
 });

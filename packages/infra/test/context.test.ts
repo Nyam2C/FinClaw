@@ -1,18 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { runWithContext, getContext, getRequestId } from '../src/context.js';
+import { runWithContext, getContext } from '../src/context.js';
 
 describe('RequestContext (ALS)', () => {
   it('runWithContext 내부에서 getContext로 조회된다', () => {
     const ctx = { requestId: 'req-1', startedAt: Date.now() };
     runWithContext(ctx, () => {
       expect(getContext()).toBe(ctx);
-      expect(getRequestId()).toBe('req-1');
     });
   });
 
   it('runWithContext 외부에서는 undefined이다', () => {
     expect(getContext()).toBeUndefined();
-    expect(getRequestId()).toBeUndefined();
   });
 
   it('중첩 runWithContext에서 내부 컨텍스트가 우선한다', () => {
@@ -20,11 +18,11 @@ describe('RequestContext (ALS)', () => {
     const inner = { requestId: 'inner', startedAt: 2 };
 
     runWithContext(outer, () => {
-      expect(getRequestId()).toBe('outer');
+      expect(getContext()?.requestId).toBe('outer');
       runWithContext(inner, () => {
-        expect(getRequestId()).toBe('inner');
+        expect(getContext()?.requestId).toBe('inner');
       });
-      expect(getRequestId()).toBe('outer');
+      expect(getContext()?.requestId).toBe('outer');
     });
   });
 
@@ -32,7 +30,7 @@ describe('RequestContext (ALS)', () => {
     const ctx = { requestId: 'async-req', startedAt: Date.now() };
     await runWithContext(ctx, async () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
-      expect(getRequestId()).toBe('async-req');
+      expect(getContext()?.requestId).toBe('async-req');
     });
   });
 });

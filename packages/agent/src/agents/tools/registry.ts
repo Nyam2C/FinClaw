@@ -67,7 +67,6 @@ export interface ToolRegistry {
     executor: ToolExecutor,
     source?: RegisteredTool['source'],
   ): void;
-  unregister(name: string): boolean;
   get(name: string): RegisteredTool | undefined;
   list(): readonly RegisteredTool[];
   has(name: string): boolean;
@@ -140,14 +139,6 @@ export class InMemoryToolRegistry implements ToolRegistry {
       source,
     });
     getEventBus().emit('tool:register', definition.name, definition.group, source);
-  }
-
-  unregister(name: string): boolean {
-    const deleted = this.tools.delete(name);
-    if (deleted) {
-      getEventBus().emit('tool:unregister', name);
-    }
-    return deleted;
   }
 
   get(name: string): RegisteredTool | undefined {
