@@ -53,6 +53,8 @@ export interface AlertSkillConfig {
   readonly newsAggregator: NewsAggregator;
   readonly logger: FinClawLogger;
   readonly discordClient?: DiscordClientPort;
+  /** phase47 Q6: Discord DM 수신자 (DISCORD_ALERT_USER_ID). */
+  readonly discordUserId?: string;
   readonly monitorConfig?: Partial<AlertMonitorConfig>;
 }
 
@@ -83,7 +85,9 @@ export async function registerAlertTools(
     createWebSocketDeliveryHandler({ getBroadcast: () => broadcast }),
   ];
   if (config.discordClient) {
-    handlers.push(createDiscordDeliveryHandler({ client: config.discordClient }));
+    handlers.push(
+      createDiscordDeliveryHandler({ client: config.discordClient, userId: config.discordUserId }),
+    );
   }
 
   const deliveryDispatcher = createDeliveryDispatcher({ handlers, logger: config.logger });

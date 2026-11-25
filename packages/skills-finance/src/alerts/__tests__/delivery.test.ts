@@ -65,6 +65,18 @@ describe('DiscordDeliveryHandler', () => {
     expect(createDM).toHaveBeenCalled();
     expect(send).toHaveBeenCalled();
   });
+
+  it('userId 주입 시 alert.userId 대신 그 값으로 fetch (phase47 Q6)', async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    const createDM = vi.fn().mockResolvedValue({ send });
+    const fetch = vi.fn().mockResolvedValue({ createDM });
+    const handler = createDiscordDeliveryHandler({
+      client: { users: { fetch } },
+      userId: '123456789',
+    });
+    await handler.deliver(mockAlert(), mockEvaluation);
+    expect(fetch).toHaveBeenCalledWith('123456789');
+  });
 });
 
 describe('LogDeliveryHandler', () => {

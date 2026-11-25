@@ -43,11 +43,15 @@ export interface DiscordClientPort {
 }
 
 // ─── Discord Delivery ───
-export function createDiscordDeliveryHandler(deps: { client: DiscordClientPort }): DeliveryHandler {
+export function createDiscordDeliveryHandler(deps: {
+  client: DiscordClientPort;
+  /** phase47 Q6: DISCORD_ALERT_USER_ID. RPC 로 만든 알림의 userId 는 'default' 라 DM 대상이 될 수 없다. */
+  userId?: string;
+}): DeliveryHandler {
   return {
     channel: 'discord',
     async deliver(alert, evaluation) {
-      const user = await deps.client.users.fetch(alert.userId);
+      const user = await deps.client.users.fetch(deps.userId ?? alert.userId);
       const dmChannel = await user.createDM();
       await dmChannel.send(formatAlertMessage(alert, evaluation));
     },

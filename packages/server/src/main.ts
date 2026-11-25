@@ -138,6 +138,8 @@ async function main(): Promise<void> {
 
   // 3. Discord (선택) — alerts DM 핸들 때문에 skills 등록 전에 로그인
   const discordAdapter = await setupDiscord(process.env.DISCORD_BOT_TOKEN, { logger, lifecycle });
+  // phase47 Q6/D5: 알림 DM 수신자 — skills(Discord 핸들러)와 financeDeps(새 알림 기본 채널)가 같은 값을 쓴다 (env 읽기 1곳)
+  const discordAlertUserId = process.env.DISCORD_ALERT_USER_ID || undefined;
 
   // 4. Agent 레이어 (툴 레지스트리)
   const { toolRegistry } = buildProviders({ logger });
@@ -170,6 +172,7 @@ async function main(): Promise<void> {
       storage,
       logger,
       discordClient: discordAdapter?.getClient() ?? undefined,
+      discordAlertUserId,
       lifecycle,
       driver,
     });
@@ -276,6 +279,9 @@ async function main(): Promise<void> {
         : undefined,
       // Phase 26 A: finance.transaction.* + finance.portfolio.get(recentTransactions) 용.
       db: storage.db,
+      // phase47 D5: Discord client 와 수신자 id 가 둘 다 있을 때만 새 알림에 'discord'
+      alertChannels:
+        discordAdapter && discordAlertUserId ? ['log', 'websocket', 'discord'] : undefined,
     },
     // Phase 26 B: memory.* RPC 용. embeddingProvider 가 없으면 memory.search 는 FTS-only.
     memoryDeps: {

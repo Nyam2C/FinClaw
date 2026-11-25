@@ -34,6 +34,8 @@ export interface RegisterSkillsDeps {
   readonly logger: FinClawLogger;
   /** Phase 46 M11: Discord 비활성이면 undefined — alerts 는 Discord DM 핸들러 없이 동작. */
   readonly discordClient?: NonNullable<ReturnType<DiscordAdapter['getClient']>>;
+  /** phase47 Q6: 가격·뉴스 알림 Discord DM 수신자 (main 이 DISCORD_ALERT_USER_ID 를 1회 읽어 전달). */
+  readonly discordAlertUserId?: string;
   readonly lifecycle: ProcessLifecycle;
   /** Phase 46 M3: route_task market_analysis 서브에이전트 1-shot. */
   readonly driver: AgentDriver;
@@ -132,6 +134,7 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
       newsAggregator: newsHandle.aggregator,
       logger,
       discordClient,
+      discordUserId: deps.discordAlertUserId,
     });
     const handle = alertHandle;
     lifecycle.register(async () => {
