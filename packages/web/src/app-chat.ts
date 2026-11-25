@@ -5,8 +5,6 @@ import type {
   ChatStreamDeltaParams,
   ChatStreamEndParams,
   ChatStreamErrorParams,
-  ChatStreamToolStartParams,
-  ChatStreamToolEndParams,
 } from '@finclaw/types';
 import type { AppGateway } from './app-gateway.js';
 
@@ -18,16 +16,8 @@ export interface ChatMessage {
   readonly timestamp: number;
 }
 
-export interface ToolActivity {
-  readonly name: string;
-  readonly input: unknown;
-  readonly result?: unknown;
-  readonly timestamp: number;
-}
-
 export interface ChatState {
   readonly messages: readonly ChatMessage[];
-  readonly tools: readonly ToolActivity[];
   readonly status: ChatStatus;
   readonly error: string | null;
   readonly streamBuffer: string;
@@ -50,7 +40,6 @@ export function createAppChat(gateway: AppGateway, sessionId: string): AppChat {
   let currentSessionId = sessionId;
   let state: ChatState = {
     messages: [],
-    tools: [],
     status: 'idle',
     error: null,
     streamBuffer: '',
@@ -102,28 +91,6 @@ export function createAppChat(gateway: AppGateway, sessionId: string): AppChat {
           streamBuffer: '',
         });
         processQueue();
-        break;
-      }
-      case 'chat.stream.tool_start': {
-        const toolParams = p as unknown as ChatStreamToolStartParams;
-        const tool: ToolActivity = {
-          name: toolParams.toolCall.name,
-          input: toolParams.toolCall.input,
-          timestamp: Date.now(),
-        };
-        setState({ tools: [...state.tools, tool] });
-        break;
-      }
-      case 'chat.stream.tool_end': {
-        // TODO: tool_end 매칭이 배열 마지막 기반 — 병렬 도구 호출 시 오매칭 위험.
-        // ChatStreamToolEndParams에 name 필드 추가 후 name 기반 매칭으로 개선 필요 (MEDIUM)
-        const toolEnd = p as unknown as ChatStreamToolEndParams;
-        const tools = [...state.tools];
-        const last = tools[tools.length - 1];
-        if (last) {
-          tools[tools.length - 1] = { ...last, result: toolEnd.result };
-          setState({ tools });
-        }
         break;
       }
     }

@@ -1,11 +1,6 @@
 // packages/tui/src/__tests__/chat.test.ts
 
-import type {
-  ChatStreamDeltaParams,
-  ChatStreamErrorParams,
-  ChatStreamToolStartParams,
-  ChatStreamToolEndParams,
-} from '@finclaw/types';
+import type { ChatStreamDeltaParams, ChatStreamErrorParams } from '@finclaw/types';
 import { describe, it, expect } from 'vitest';
 
 /**
@@ -43,20 +38,6 @@ function handleNotification(
       return {
         messages: [...state.messages, { role: 'system', content: `[Error] ${error}` }],
         streamText: '',
-      };
-    }
-    case 'chat.stream.tool_start': {
-      const { toolCall } = params as unknown as ChatStreamToolStartParams;
-      return {
-        ...state,
-        messages: [...state.messages, { role: 'system', content: `[Tool] ${toolCall.name}` }],
-      };
-    }
-    case 'chat.stream.tool_end': {
-      const { result } = params as unknown as ChatStreamToolEndParams;
-      return {
-        ...state,
-        messages: [...state.messages, { role: 'tool', content: JSON.stringify(result) }],
       };
     }
     default:
@@ -130,67 +111,6 @@ describe('chat notification routing', () => {
       role: 'system',
       content: '[Error] Model overloaded',
     });
-  });
-
-  it('chat.stream.tool_start — 도구 호출 표시', () => {
-    let state: ChatState = { messages: [], streamText: '' };
-
-    state = handleNotification(state, 'chat.stream.tool_start', {
-      sessionId: 'sess-1',
-      toolCall: { name: 'finance.quote', input: { symbol: 'AAPL' } },
-    });
-
-    expect(state.messages).toHaveLength(1);
-    expect(state.messages[0]).toEqual({
-      role: 'system',
-      content: '[Tool] finance.quote',
-    });
-  });
-
-  it('chat.stream.tool_end — 도구 결과 표시', () => {
-    let state: ChatState = { messages: [], streamText: '' };
-
-    state = handleNotification(state, 'chat.stream.tool_end', {
-      sessionId: 'sess-1',
-      result: { price: 150.0 },
-    });
-
-    expect(state.messages).toHaveLength(1);
-    expect(state.messages[0]).toEqual({
-      role: 'tool',
-      content: '{"price":150}',
-    });
-  });
-
-  it('전체 스트리밍 흐름: delta 누적 → tool → delta → end', () => {
-    let state: ChatState = { messages: [], streamText: '' };
-
-    state = handleNotification(state, 'chat.stream.delta', {
-      sessionId: 's1',
-      delta: 'AAPL 시세를 확인',
-    });
-    state = handleNotification(state, 'chat.stream.tool_start', {
-      sessionId: 's1',
-      toolCall: { name: 'finance.quote', input: { symbol: 'AAPL' } },
-    });
-    state = handleNotification(state, 'chat.stream.tool_end', {
-      sessionId: 's1',
-      result: { price: 150.0 },
-    });
-    state = handleNotification(state, 'chat.stream.delta', {
-      sessionId: 's1',
-      delta: '합니다. $150입니다.',
-    });
-    state = handleNotification(state, 'chat.stream.end', {
-      sessionId: 's1',
-      result: {},
-    });
-
-    expect(state.streamText).toBe('');
-    expect(state.messages).toHaveLength(3); // tool_start + tool_end + assistant
-    expect(state.messages[1]?.role).toBe('tool');
-    expect(state.messages[2]?.role).toBe('assistant');
-    expect(state.messages[2]?.content).toContain('$150');
   });
 
   it('미지원 method는 상태를 변경하지 않는다', () => {

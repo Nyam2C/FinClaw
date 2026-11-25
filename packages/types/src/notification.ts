@@ -27,17 +27,5 @@ export interface ChatStreamErrorParams {
   readonly error: string;
 }
 
-/** chat.stream.tool_start — 도구 호출 시작 */
-export interface ChatStreamToolStartParams {
-  readonly sessionId: string;
-  readonly toolCall: { readonly name: string; readonly input: unknown };
-}
-
-/** chat.stream.tool_end — 도구 호출 결과 */
-export interface ChatStreamToolEndParams {
-  readonly sessionId: string;
-  readonly result: unknown;
-}
-
 /** 브로드캐스트 채널 */
 export type BroadcastChannel = 'config.updated' | 'session.event' | 'system.status' | 'market.tick';

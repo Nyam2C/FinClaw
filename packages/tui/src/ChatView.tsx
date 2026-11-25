@@ -6,7 +6,7 @@ import React, { useState } from 'react';
 
 export interface ChatMessage {
   readonly id: string;
-  readonly role: 'user' | 'assistant' | 'system' | 'tool';
+  readonly role: 'user' | 'assistant' | 'system';
   readonly content: string;
 }
 
@@ -21,7 +21,6 @@ const ROLE_COLORS: Record<string, string> = {
   user: 'blue',
   assistant: 'green',
   system: 'gray',
-  tool: 'magenta',
 };
 
 export function ChatView({ messages, streamText, onSend, onCommand }: ChatViewProps) {

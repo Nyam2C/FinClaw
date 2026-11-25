@@ -97,25 +97,6 @@ describe('createAppChat', () => {
     expect(state.error).toBe('Something broke');
   });
 
-  it('should track tool start and end', async () => {
-    await chat.sendMessage('search');
-
-    gateway.fireNotification('chat.stream.tool_start', {
-      sessionId: SESSION,
-      toolCall: { name: 'web_search', input: { query: 'AAPL' } },
-    });
-
-    expect(chat.getState().tools).toHaveLength(1);
-    expect(chat.getState().tools[0]?.name).toBe('web_search');
-
-    gateway.fireNotification('chat.stream.tool_end', {
-      sessionId: SESSION,
-      result: { data: 'results' },
-    });
-
-    expect(chat.getState().tools[0]?.result).toEqual({ data: 'results' });
-  });
-
   it('should ignore notifications for different sessions', async () => {
     await chat.sendMessage('hi');
 
