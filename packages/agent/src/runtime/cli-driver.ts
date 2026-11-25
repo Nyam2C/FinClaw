@@ -255,8 +255,9 @@ async function* runCli(opts: CliDriverOptions, req: DriverRequest): AsyncGenerat
   let spawnError: Error | undefined;
   const exited = new Promise<void>((resolve) => {
     child.once('close', () => resolve());
-    child.once('error', (err) => {
-      spawnError = err; // ENOENT 등 — stdout 이 안 닫힐 수 있어 readline 을 직접 닫는다
+    // on: kill 실패 등 두 번째 'error' 가 리스너 없이 uncaught 로 프로세스를 죽이지 않게. 원인은 첫 오류 유지
+    child.on('error', (err) => {
+      spawnError ??= err; // ENOENT 등 — stdout 이 안 닫힐 수 있어 readline 을 직접 닫는다
       rl.close();
       resolve();
     });

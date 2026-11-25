@@ -119,13 +119,23 @@ describe('GatewayBroadcaster', () => {
   });
 
   describe('slow consumer protection', () => {
-    it('skips send when bufferedAmount > 1MB', () => {
+    it('bufferedAmount > 1MB: delta 만 버리고 tool/end 는 보낸다', () => {
       const conn = createMockConn();
       Object.defineProperty(conn.ws, 'bufferedAmount', { value: 2 * 1024 * 1024 });
 
-      broadcaster.send(conn, 'sess-1', 'run-1', ERROR);
+      broadcaster.send(conn, 'sess-1', 'run-1', { type: 'text_delta', text: 'dropped' });
+      broadcaster.send(conn, 'sess-1', 'run-1', {
+        type: 'tool_use',
+        id: 't1',
+        name: 'route_task',
+        input: {},
+      });
+      broadcaster.send(conn, 'sess-1', 'run-1', DONE);
 
-      expect(conn.ws.send).not.toHaveBeenCalled();
+      const methods = (conn.ws.send as ReturnType<typeof vi.fn>).mock.calls.map(
+        (c) => JSON.parse(c[0]).method,
+      );
+      expect(methods).toEqual(['chat.stream.tool', 'chat.stream.end']);
     });
 
     it('skips send when connection is not OPEN', () => {

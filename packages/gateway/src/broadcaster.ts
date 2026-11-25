@@ -109,7 +109,8 @@ export class GatewayBroadcaster {
     }
     clearTimeout(buf.timer);
     this.deltaBuffers.delete(key);
-    if (buf.text.length > 0) {
+    // slow consumer 보호: delta 만 버린다 — end.result.text 가 화면을 확정하므로 유실돼도 복구된다
+    if (buf.text.length > 0 && conn.ws.bufferedAmount <= GatewayBroadcaster.MAX_BUFFER) {
       this.sendImmediate(conn, 'chat.stream.delta', {
         sessionId,
         runId: buf.runId,
@@ -118,12 +119,9 @@ export class GatewayBroadcaster {
     }
   }
 
-  /** 즉시 전송 (slow consumer 보호: 1MB 이상 버퍼링 시 skip) */
+  /** 즉시 전송 (end/error/tool 은 임계와 무관하게 — 종료 신호 유실 시 클라이언트가 영구 대기) */
   private sendImmediate(conn: WsConnection, method: string, params: Record<string, unknown>): void {
     if (conn.ws.readyState !== conn.ws.OPEN) {
-      return;
-    }
-    if (conn.ws.bufferedAmount > GatewayBroadcaster.MAX_BUFFER) {
       return;
     }
 

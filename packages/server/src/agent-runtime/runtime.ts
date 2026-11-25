@@ -33,6 +33,7 @@ const MAIN_OVERALL_TIMEOUT_MS = 300_000;
 const MAIN_MAX_TURNS = 10;
 const GLOBAL_LANE_KEY = 'agent';
 const PROFILE_ID = 'default';
+const ABORT_DRAIN_MS = 3_000;
 
 /** conversations.metadata 의 CLI 세션 바인딩 (plan §3-3, 마이그레이션 0). */
 interface CliSessionBinding {
@@ -48,8 +49,7 @@ interface ToolCall {
 }
 
 interface Attempt {
-  started: boolean;
-  cliSessionId?: string;
+  cliSessionId?: string; // start 를 받았을 때만 설정
   model?: string;
   readonly tools: Map<string, ToolCall>;
 }
@@ -151,10 +151,15 @@ export class AgentRuntime implements AgentRunPort {
     }
   }
 
-  /** lifecycle 종료 훅 — 진행 중 run 의 내부 controller 일괄 abort. */
-  abortAll(): void {
+  /** lifecycle 종료 훅 — 진행 중 run 을 abort 하고 종료 기록(finish → agent_runs)까지 최대 3s 기다린다. */
+  async abortAll(): Promise<void> {
     for (const controller of this.inflight) {
       controller.abort();
+    }
+    // ponytail: 50ms 폴링 — 종료 시 1회라 drain promise 배선 불필요
+    const deadline = Date.now() + ABORT_DRAIN_MS;
+    while (this.inflight.size > 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
     }
   }
 
@@ -247,7 +252,6 @@ export class AgentRuntime implements AgentRunPort {
           return ev;
         }
         if (ev.type === 'start') {
-          attempt.started = true;
           attempt.cliSessionId = ev.cliSessionId;
           attempt.model = ev.model;
         } else if (ev.type === 'tool_use') {
@@ -290,12 +294,12 @@ export class AgentRuntime implements AgentRunPort {
         tokensInput: final.usage?.input,
         tokensOutput: final.usage?.output,
         durationMs: endedAt - ctx.startedAt,
-        modelUsed: attempt.model ?? req.model ?? this.deps.defaultModel,
+        modelUsed: attempt.model || req.model || this.deps.defaultModel,
         usedMemoryIds:
           final.type === 'done' && final.usedMemoryIds ? [...final.usedMemoryIds] : undefined,
         traceId: ctx.trace?.traceId,
         parentSpanId: ctx.trace?.spanId,
-        cliSessionId: attempt.started ? attempt.cliSessionId : undefined,
+        cliSessionId: attempt.cliSessionId,
         error: final.type === 'error' ? `${final.reason}: ${final.message}` : undefined,
       });
     } catch (err) {
@@ -320,7 +324,7 @@ export class AgentRuntime implements AgentRunPort {
     if (final.type === 'done' || final.reason !== 'aborted') {
       this.deps.profileHealth?.recordResult(PROFILE_ID, {
         success: final.type === 'done',
-        modelId: attempt.model ?? req.model ?? this.deps.defaultModel,
+        modelId: attempt.model || req.model || this.deps.defaultModel,
       });
     }
     return final;
@@ -338,10 +342,9 @@ export class AgentRuntime implements AgentRunPort {
       { role: 'user' as const, content: req.input },
       ...(final.type === 'done' ? [{ role: 'assistant' as const, content: final.text }] : []),
     ].slice(-TRANSCRIPT_KEEP);
-    const binding: CliSessionBinding | undefined =
-      attempt.started && attempt.cliSessionId
-        ? { cliSessionId: attempt.cliSessionId, lastTurnAt: endedAt }
-        : undefined;
+    const binding: CliSessionBinding | undefined = attempt.cliSessionId
+      ? { cliSessionId: attempt.cliSessionId, lastTurnAt: endedAt }
+      : undefined;
     try {
       await this.deps.storage.upsertConversation({
         sessionKey: req.sessionKey,
@@ -362,7 +365,7 @@ export class AgentRuntime implements AgentRunPort {
 }
 
 function newAttempt(): Attempt {
-  return { started: false, tools: new Map() };
+  return { tools: new Map() };
 }
 
 function readBinding(metadata: Record<string, unknown> | undefined): CliSessionBinding | undefined {

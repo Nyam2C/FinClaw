@@ -299,8 +299,21 @@ describe('AgentRuntime — 정확히 1 종료 (I11)', () => {
     const rt = makeRuntime(driver);
     const pending = collect(rt.run(chat('s1', 'q')));
     await settle();
-    rt.abortAll();
+    void rt.abortAll();
     expect(terminals(await pending)).toEqual([expect.objectContaining({ reason: 'aborted' })]);
+  });
+
+  it('abortAll() 은 진행 중 run 의 agent_runs 기록까지 기다린다 (종료 시 감사 행 보존)', async () => {
+    const { driver } = scripted(async (req) => {
+      await new Promise((resolve) => req.signal.addEventListener('abort', resolve, { once: true }));
+      return err(req, 'aborted');
+    });
+    const rt = makeRuntime(driver);
+    const pending = collect(rt.run(chat('s1', 'q', { runId: 'run-shutdown' })));
+    await settle();
+    await rt.abortAll();
+    expect(getAgentRun(storage.db, 'run-shutdown')).toMatchObject({ error: 'aborted: aborted' });
+    await pending;
   });
 });
 
@@ -356,6 +369,15 @@ describe('AgentRuntime — 동시성 (D6)', () => {
 });
 
 describe('AgentRuntime — 감사 · oneShot', () => {
+  it('init 에 model 이 없으면(start.model 빈 문자열) model_used 는 기본 모델', async () => {
+    const { driver } = scripted((req) => [
+      { type: 'start', runId: req.runId, cliSessionId: cliId(req), model: '' },
+      ...ok(req).slice(1),
+    ]);
+    await collect(makeRuntime(driver).run(chat('s1', 'q', { runId: 'run-nomodel' })));
+    expect(getAgentRun(storage.db, 'run-nomodel')?.modelUsed).toBe('claude-sonnet-4-6');
+  });
+
   it('agent_runs 1행(id=runId·tool_calls·used_memory_ids·cli_session_id)이 종료 이벤트 yield 전에 존재', async () => {
     const memId = 'abcdef12-0000-4000-8000-000000000000';
     const { driver, calls } = scripted((req) =>
