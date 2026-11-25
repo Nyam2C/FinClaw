@@ -129,13 +129,22 @@ describe('AutoReplyPipeline', () => {
     );
   });
 
-  it('명령어 메시지 시 command 스테이지에서 끝나고 AI 를 호출하지 않는다', async () => {
+  it('B4: 명령 결과를 채널로 보내고 AI 는 호출하지 않는다', async () => {
+    const channel = makeChannel();
     const runtime = fakeRuntime('AI response');
-    const pipeline = new AutoReplyPipeline(makeConfig(), makeDeps({ runtime }));
-
+    const pipeline = new AutoReplyPipeline(
+      makeConfig(),
+      makeDeps({ runtime, getChannel: () => channel }),
+    );
     await pipeline.process(makeCtx({ body: '/help' }));
-
-    expect(runtime.calls.length).toBe(0);
+    expect(runtime.calls).toHaveLength(0);
+    expect(channel.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payloads: [
+          expect.objectContaining({ text: expect.stringContaining('사용 가능한 명령어') }),
+        ],
+      }),
+    );
   });
 
   it('NO_REPLY 토큰 시 deliver 하지 않는다', async () => {
@@ -196,12 +205,30 @@ describe('AutoReplyPipeline', () => {
     expect(logger.warn).toHaveBeenCalledWith('Pipeline aborted', { stage: 'deliver' });
   });
 
-  it('runtime error 이벤트면 아무것도 전송하지 않는다 (M7 에서 고정 문구)', async () => {
+  it.each([
+    ['auth', 'Claude 로그인이 필요합니다'],
+    ['rate_limit', 'Claude 사용 한도에 도달했습니다'],
+    ['timeout', '응답 시간이 초과되었습니다'],
+    ['unknown', '응답 생성 중 오류가 발생했습니다'],
+  ] as const)('Q10: %s → 고정 문구, raw message 미포함', async (reason, phrase) => {
     const channel = makeChannel();
-    const deps = makeDeps({ runtime: errorRuntime('unknown'), getChannel: () => channel });
-    const pipeline = new AutoReplyPipeline(makeConfig(), deps);
+    const pipeline = new AutoReplyPipeline(
+      makeConfig(),
+      makeDeps({ runtime: errorRuntime(reason), getChannel: () => channel }),
+    );
+    await pipeline.process(makeCtx());
+    const text = vi.mocked(channel.send)?.mock.calls[0]?.[0].payloads[0]?.text ?? '';
+    expect(text).toContain(phrase);
+    expect(text).not.toContain('token=secret');
+  });
 
-    await expect(pipeline.process(makeCtx())).resolves.toBeUndefined();
+  it('Q10: aborted 는 무응답', async () => {
+    const channel = makeChannel();
+    const pipeline = new AutoReplyPipeline(
+      makeConfig(),
+      makeDeps({ runtime: errorRuntime('aborted'), getChannel: () => channel }),
+    );
+    await pipeline.process(makeCtx());
     expect(channel.send).not.toHaveBeenCalled();
   });
 

@@ -3,7 +3,7 @@ import type { AgentRunPort } from '@finclaw/agent';
 import type { FinClawLogger } from '@finclaw/infra';
 import type { ChannelPlugin, MsgContext } from '@finclaw/types';
 import type { FinclawTracer } from '../observability/tracer.js';
-import type { CommandRegistry } from './commands/registry.js';
+import type { CommandRegistry, CommandResult } from './commands/registry.js';
 import { ackStage, type TypingController } from './stages/ack.js';
 import { commandStage } from './stages/command.js';
 import { contextStage } from './stages/context.js';
@@ -115,7 +115,8 @@ export class AutoReplyPipeline {
         ),
       );
 
-      if (cmdResult.action !== 'continue') {
+      if (cmdResult.handled) {
+        await this.replyToCommand(ctx, cmdResult.commandResult);
         return;
       }
 
@@ -212,5 +213,22 @@ export class AutoReplyPipeline {
 
   private logAbort(stage: string): void {
     this.deps.logger.warn('Pipeline aborted', { stage });
+  }
+
+  /** B4: 명령 결과를 채널로 보낸다. 실패는 로그만 (명령 자체는 이미 실행됨). */
+  private async replyToCommand(ctx: MsgContext, result: CommandResult | undefined): Promise<void> {
+    const channel = this.deps.getChannel(ctx.channelId as string);
+    if (!result || !channel?.send) {
+      return;
+    }
+    try {
+      await channel.send({
+        channelId: ctx.channelId,
+        targetId: ctx.chatId ?? ctx.senderId,
+        payloads: [{ text: result.content, replyToId: ctx.messageThreadId }],
+      });
+    } catch (error) {
+      this.deps.logger.error('Command reply failed', { error });
+    }
   }
 }

@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentRunPort } from '@finclaw/agent';
+import type { AgentErrorReason, AgentEvent, AgentRunPort } from '@finclaw/agent';
 import { createAgentId } from '@finclaw/types';
 import { extractControlTokens, type ControlTokenResult } from '../control-tokens.js';
 // packages/server/src/auto-reply/stages/execute.ts
@@ -9,6 +9,14 @@ import type { StageResult } from '../pipeline.js';
 const DISCORD_AGENT_ID = createAgentId('default');
 
 type TerminalEvent = Extract<AgentEvent, { type: 'done' | 'error' }>;
+
+/** Q10: raw message 는 보내지 않는다(credential 섞임 위험). aborted 는 무응답. 문구 = plan §3-8 그대로. */
+const ERROR_REPLY: Partial<Record<AgentErrorReason, string>> = {
+  auth: 'Claude 로그인이 필요합니다. 서버에서 `claude login` 을 실행해 주세요.',
+  rate_limit: 'Claude 사용 한도에 도달했습니다. 잠시 후 다시 시도해 주세요.',
+  timeout: '응답 시간이 초과되었습니다. 질문을 나눠서 다시 시도해 주세요.',
+};
+const FALLBACK_ERROR_REPLY = '응답 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
 
 export interface ExecuteStageResult {
   readonly content: string;
@@ -41,10 +49,14 @@ export async function executeStage(
   }
 
   if (terminal?.type !== 'done') {
-    // M7 에서 reason 별 고정 한국어 문구 전송으로 바뀐다 (Q10).
+    const reason: AgentErrorReason = terminal?.reason ?? 'unknown';
+    if (reason === 'aborted') {
+      return { action: 'skip', reason: 'agent run aborted' };
+    }
+    const reply = ERROR_REPLY[reason] ?? FALLBACK_ERROR_REPLY;
     return {
-      action: 'abort',
-      reason: terminal ? `agent ${terminal.reason}` : 'agent ended without result',
+      action: 'continue',
+      data: { content: reply, controlTokens: extractControlTokens(reply) },
     };
   }
 

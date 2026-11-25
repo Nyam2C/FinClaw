@@ -24,54 +24,37 @@ function makeCtx(overrides: Partial<MsgContext> = {}): MsgContext {
 }
 
 describe('commandStage', () => {
-  it('명령어가 아닌 메시지는 continue를 반환한다', async () => {
-    const registry = new InMemoryCommandRegistry();
-    const result = await commandStage('hello world', registry, '/', makeCtx());
-
-    expect(result.action).toBe('continue');
+  it('명령어가 아닌 메시지는 handled=false', async () => {
+    const result = await commandStage('hello world', new InMemoryCommandRegistry(), '/', makeCtx());
+    expect(result).toEqual({ handled: false });
   });
 
-  it('등록된 명령어를 파싱하고 skip을 반환한다', async () => {
+  it('등록된 명령어를 실행하고 결과를 돌려준다 (B4)', async () => {
     const registry = new InMemoryCommandRegistry();
     registerBuiltInCommands(registry, { storage: {} as StorageAdapter });
-
     const result = await commandStage('/help', registry, '/', makeCtx());
-
-    expect(result.action).toBe('skip');
-    if (result.action !== 'skip') {
-      return;
-    }
-    expect(result.reason).toContain('help');
+    expect(result.handled).toBe(true);
+    expect(result.commandResult?.content).toContain('사용 가능한 명령어');
   });
 
-  it('등록되지 않은 명령어는 continue를 반환한다', async () => {
-    const registry = new InMemoryCommandRegistry();
-    const result = await commandStage('/unknown', registry, '/', makeCtx());
-
-    expect(result.action).toBe('continue');
+  it('등록되지 않은 명령어는 handled=false', async () => {
+    const result = await commandStage('/unknown', new InMemoryCommandRegistry(), '/', makeCtx());
+    expect(result).toEqual({ handled: false });
   });
 
   it('코드 펜스 내부의 명령어는 무시한다', async () => {
     const registry = new InMemoryCommandRegistry();
     registerBuiltInCommands(registry, { storage: {} as StorageAdapter });
-
-    const body = '```\n/help\n```';
-    const result = await commandStage(body, registry, '/', makeCtx());
-
-    expect(result.action).toBe('continue');
+    const result = await commandStage('```\n/help\n```', registry, '/', makeCtx());
+    expect(result).toEqual({ handled: false });
   });
 
   it('별칭으로 명령어를 실행한다', async () => {
     const registry = new InMemoryCommandRegistry();
     registerBuiltInCommands(registry, { storage: {} as StorageAdapter });
-
     const result = await commandStage('/h', registry, '/', makeCtx());
-
-    expect(result.action).toBe('skip');
-    if (result.action !== 'skip') {
-      return;
-    }
-    expect(result.reason).toContain('h');
+    expect(result.handled).toBe(true);
+    expect(result.commandResult?.content).toContain('사용 가능한 명령어');
   });
 });
 
