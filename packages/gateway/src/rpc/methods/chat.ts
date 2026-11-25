@@ -108,7 +108,8 @@ export function createChatMethods(deps: ChatMethodsDeps): readonly RpcMethodHand
     authLevel: 'token', // ← 'session' 에서 강등 (Phase 37 A: session 레벨은 부여 코드 부재 → 영구 도달 불가)
     schema: z.object({
       sessionId: z.string(),
-      message: z.string(),
+      // argv 단일 인자 한도(Linux 128KiB) 안쪽: 한글 3B × 20,000 = 60KB + <context>·recap 여유
+      message: z.string().min(1).max(20_000),
       idempotencyKey: z.string().optional(),
     }),
     async execute(params) {

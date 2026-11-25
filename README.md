@@ -393,10 +393,10 @@ pnpm dev:all   # docker compose up --build
 
 `docker-compose.yml`:
 
-| 서비스   | 이미지          | 포트 (host:container)            | 마운트                              | 헬스체크              |
-| -------- | --------------- | -------------------------------- | ----------------------------------- | --------------------- |
-| `server` | `finclaw:local` | `${GATEWAY_PORT:-3000}:3000`     | `finclaw-data:/data` (named volume) | `GET /healthz` 매 30s |
-| `web`    | `finclaw:local` | `${FINCLAW_WEB_PORT:-5173}:5173` | -                                   | disabled              |
+| 서비스   | 이미지          | 포트 (host:container)                  | 마운트                              | 헬스체크              |
+| -------- | --------------- | -------------------------------------- | ----------------------------------- | --------------------- |
+| `server` | `finclaw:local` | `127.0.0.1:${GATEWAY_PORT:-3000}:3000` | `finclaw-data:/data` (named volume) | `GET /healthz` 매 30s |
+| `web`    | `finclaw:local` | `${FINCLAW_WEB_PORT:-5173}:5173`       | -                                   | disabled              |
 
 빌드 흐름 (`Dockerfile`): `node:22-bookworm-slim` 기반 multi-stage. builder 에서 `pnpm install --frozen-lockfile` → `pnpm build` + `pnpm --filter @finclaw/web build`. runner 는 non-root `USER node` 로 `node packages/server/dist/main.js` 실행. web 컨테이너는 compose 가 override 해 `pnpm exec vite preview --host 0.0.0.0 --port 5173`. 컨테이너 안 server 는 항상 `0.0.0.0:3000`(`GATEWAY_HOST=0.0.0.0`) 에서 listen 하고, `.env` 의 `GATEWAY_PORT` 는 호스트 쪽 포트만 바꾼다.
 

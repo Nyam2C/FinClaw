@@ -88,9 +88,12 @@ export function buildExecution(deps: BuildExecutionDeps): ExecutionBundle {
     defaultModel: defaultModel.model,
     mcp: {
       url: mcp.url,
-      // N3: 도구 ctx.sessionId = sessionKey (bridge identity)
+      // N3: 도구 ctx.sessionId = sessionKey (bridge identity). exp = run 최대 수명(overall 300s) + 여유 → 10분
       mintToken: (sessionKey) =>
-        signToken({ sub: 'finclaw', sessionId: sessionKey }, mcp.jwtSecret),
+        signToken(
+          { sub: 'finclaw', sessionId: sessionKey, exp: Math.floor(Date.now() / 1000) + 600 },
+          mcp.jwtSecret,
+        ),
     },
     capture: memoryCaptureService,
     retrieval: memoryRetrievalService,

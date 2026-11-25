@@ -17,7 +17,7 @@ services:
       - GATEWAY_HOST=0.0.0.0
       - FINCLAW_DB_PATH=/data/db.sqlite
     ports:
-      - '${GATEWAY_PORT:-3000}:3000'
+      - '127.0.0.1:${GATEWAY_PORT:-3000}:3000'
     volumes:
       - finclaw-data:/data
     command: ['node', 'packages/server/dist/main.js']

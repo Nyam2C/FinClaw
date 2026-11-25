@@ -136,6 +136,17 @@ describe('chat.* RPC methods', () => {
       );
       expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.INVALID_PARAMS);
     });
+
+    it('chat.send rejects empty or over-20,000-char message', async () => {
+      for (const message of ['', 'x'.repeat(20_001)]) {
+        const result = await dispatchRpc(
+          { jsonrpc: '2.0', id: 1, method: 'chat.send', params: { sessionId: 's1', message } },
+          { auth: { level: 'token' }, remoteAddress: '127.0.0.1' },
+          ctx,
+        );
+        expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.INVALID_PARAMS);
+      }
+    });
   });
 
   describe('auth requirements', () => {
