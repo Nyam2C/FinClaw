@@ -1,4 +1,5 @@
 // packages/agent/src/providers/claude-cli/errors.ts
+import type { AgentErrorReason } from '../../runtime/types.js';
 
 export type CliFailoverReason =
   | 'auth'
@@ -33,10 +34,13 @@ export class CliFailoverError extends Error {
 }
 
 const TIMEOUT_RE = /timeout|timed out|deadline exceeded|no output for/i;
-const AUTH_RE = /(unauthor|forbid|invalid.+token|please log ?in|claude login)/i;
+// Phase 46: 'not logged in' — 실측 2.1.332 미인증 result 문구 ("Not logged in · Please run /login")
+const AUTH_RE = /(unauthor|forbid|invalid.+token|please log ?in|claude login|not logged in)/i;
 const RATE_LIMIT_RE = /(rate ?limit|too many req|quota)/i;
 
-export function classifyCliError(message: string): CliFailoverReason {
+export function classifyCliError(
+  message: string,
+): Extract<AgentErrorReason, 'auth' | 'rate_limit' | 'timeout' | 'unknown'> {
   if (AUTH_RE.test(message)) {
     return 'auth';
   }

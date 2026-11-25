@@ -33,3 +33,15 @@ export type {
   RunnerFactory,
   ChatExecutionPort,
 } from './execution/index.js';
+
+// ── Phase 46: AgentRuntime driver seam ──
+export { buildCliArgs, createCliDriver, type CliDriverOptions } from './runtime/cli-driver.js';
+export type {
+  AgentDriver,
+  AgentErrorReason,
+  AgentEvent,
+  AgentRunPort,
+  AgentRunRequest,
+  AgentUsage,
+  DriverRequest,
+} from './runtime/types.js';
