@@ -14,13 +14,20 @@ describe('FinClawConfigSchema', () => {
       accessLog: { retentionDays: 7 },
       rag: { rerank: { enabled: true, topKFirst: 10 } },
       provider: 'claude-cli',
-      cliBackend: {
-        command: 'claude',
-        timeoutMs: 60_000,
-        watchdog: { fresh: { noOutputTimeoutRatio: 0.5 } },
-      },
+      cliBackend: { command: 'claude' },
     });
     expect(result.success).toBe(true);
+  });
+
+  it('phase46: cliBackend.timeoutMs·watchdog 는 거부된다 (strict, S12)', () => {
+    expect(FinClawConfigSchema.safeParse({ cliBackend: { timeoutMs: 60_000 } }).success).toBe(
+      false,
+    );
+    expect(
+      FinClawConfigSchema.safeParse({
+        cliBackend: { watchdog: { fresh: { noOutputTimeoutRatio: 0.5 } } },
+      }).success,
+    ).toBe(false);
   });
 
   it('알 수 없는 키를 거부한다 (strictObject)', () => {

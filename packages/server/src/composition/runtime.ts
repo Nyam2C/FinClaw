@@ -4,15 +4,11 @@
 import {
   InMemoryToolRegistry,
   ProfileHealthMonitor,
-  Runner,
   type AgentDriver,
   type AgentRunPort,
-  type ProviderAdapter,
-  type RunnerFactory,
-  type RunnerTracerAdapter,
 } from '@finclaw/agent';
 import { signToken } from '@finclaw/gateway';
-import { ConcurrencyLane, ConcurrencyLaneManager, type FinClawLogger } from '@finclaw/infra';
+import { ConcurrencyLane, type FinClawLogger } from '@finclaw/infra';
 import type { MarketSkillHandle, NewsSkillHandle } from '@finclaw/skills-finance';
 import {
   createRerankerWithFallback,
@@ -25,7 +21,6 @@ import { AgentRuntime } from '../agent-runtime/runtime.js';
 import type { DefaultAttachMemoryService } from '../auto-reply/agent-memory-hook.js';
 import { registerBuiltInCommands } from '../auto-reply/commands/built-in.js';
 import { InMemoryCommandRegistry } from '../auto-reply/commands/registry.js';
-import { RunnerExecutionAdapter } from '../auto-reply/execution-adapter.js';
 import { AutoReplyPipeline } from '../auto-reply/pipeline.js';
 import { SchedulerService } from '../automation/scheduler.js';
 import { createTracer } from '../observability/tracer.js';
@@ -41,8 +36,6 @@ const PIPELINE_TIMEOUT_MS = 330_000;
 
 export interface BuildExecutionDeps {
   readonly storage: Storage;
-  readonly providerAdapter: ProviderAdapter;
-  readonly lanes: ConcurrencyLaneManager;
   readonly profileHealth: ProfileHealthMonitor;
   readonly logger: FinClawLogger;
   readonly defaultModel: ModelRef;
@@ -57,8 +50,6 @@ export interface BuildExecutionDeps {
 
 export interface ExecutionBundle {
   readonly tracer: Tracer;
-  readonly runnerFactory: RunnerFactory; // M5 삭제
-  readonly adapter: RunnerExecutionAdapter; // M5 삭제
   readonly runtime: AgentRuntime;
   readonly attachMemoryService: DefaultAttachMemoryService;
 }
@@ -66,8 +57,6 @@ export interface ExecutionBundle {
 export function buildExecution(deps: BuildExecutionDeps): ExecutionBundle {
   const {
     storage,
-    providerAdapter,
-    lanes,
     profileHealth,
     logger,
     defaultModel,
@@ -79,29 +68,7 @@ export function buildExecution(deps: BuildExecutionDeps): ExecutionBundle {
   } = deps;
 
   // Phase 30 A6: OTel tracer — span 을 SQLite spans 테이블에 SQL exporter 로 기록.
-  // Phase 30 hotfix P0-2: Runner 에 tracer adapter 주입 — agent.turn / provider.stream span 활성화.
   const tracer = createTracer({ db: storage.db });
-  const tracerAdapter: RunnerTracerAdapter = {
-    withSpan: (name, attrs, fn) => tracer.withSpan(name, attrs, async () => fn()),
-  };
-
-  const runnerFactory: RunnerFactory = () =>
-    new Runner({
-      provider: providerAdapter,
-      laneManager: lanes,
-      tracer: tracerAdapter,
-    });
-
-  // 4b. 실행 어댑터 (storage 주입 — 대화 이력 load/save)
-  const adapter = new RunnerExecutionAdapter({
-    runnerFactory,
-    defaultModel,
-    systemPrompt,
-    storage,
-    logger,
-    profileHealth,
-    profileId: 'default',
-  });
 
   // Phase 26 B/C/D + Phase 30 D5 (buildPipeline 에서 이동): capture / retrieval / attach 3 service.
   const rerankCfg = finclawConfig.rag?.rerank;
@@ -132,7 +99,7 @@ export function buildExecution(deps: BuildExecutionDeps): ExecutionBundle {
     logger,
   });
 
-  return { tracer, runnerFactory, adapter, runtime, attachMemoryService };
+  return { tracer, runtime, attachMemoryService };
 }
 
 // ───────────────────────── buildPipeline (593-653) ─────────────────────────

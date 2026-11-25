@@ -8,7 +8,6 @@
 
   cliBackend: {
     command: 'claude', // claude CLI 실행 경로
-    timeoutMs: 60000, // 1회 실행 타임아웃
   },
 
   // RAG re-ranking (기본 켜짐)

@@ -1,7 +1,7 @@
 // Phase 29 B: RAG 인용 추출 (extractCitedMemoryIds) 단위 검증.
 // 가짜 retrievalResult.snippets 후보와 응답 텍스트의 [mem:xxxxxx] 마커를 매칭.
 import { describe, expect, it } from 'vitest';
-import { extractCitedMemoryIds } from '../execution-adapter.js';
+import { extractCitedMemoryIds } from '../../agent-runtime/runtime.js';
 
 describe('memory citation extraction (Phase 29 B)', () => {
   it('extracts [mem:xxxxxx] markers and matches by id prefix', () => {

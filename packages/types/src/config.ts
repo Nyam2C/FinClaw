@@ -12,14 +12,9 @@ export interface FinClawConfig {
   cliBackend?: CliBackendOptions;
 }
 
-/** Phase 32 W6: claude-cli 백엔드 config 오버라이드. */
+/** Phase 32 W6: claude-cli 백엔드 config 오버라이드. Phase 46: 타임아웃·워치독은 코드 상수 (D8). */
 export interface CliBackendOptions {
   command?: string;
-  timeoutMs?: number;
-  watchdog?: {
-    fresh?: { noOutputTimeoutRatio?: number };
-    resume?: { noOutputTimeoutRatio?: number };
-  };
 }
 
 export interface AccessLogConfig {

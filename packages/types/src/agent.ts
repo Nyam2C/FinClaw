@@ -1,10 +1,10 @@
-import type { AgentId, SessionKey, Timestamp } from './common.js';
+import type { AgentId, Timestamp } from './common.js';
 
 /**
  * 에이전트(워커) 프로필 — orchestrator-worker 워커 정의 (phase42).
  * model 은 인라인 (스킬 정의 파일에 모델명을 넣지 않음 → 프로필이 단일 출처).
  * systemPrompt·도구 허용목록 등 정적 정의는 agentDir 파일로 분리.
- * 이 프로필로 서브에이전트를 선택·호출하고, AgentRunParams 로 실행한다.
+ * 이 프로필로 서브에이전트를 선택·호출한다 (실행은 AgentDriver 1-shot).
  * (동시성 제한은 spawn 레이어의 ConcurrencyLane 책임 — 프로필 필드 아님.)
  */
 export interface AgentProfile {
@@ -18,23 +18,6 @@ export interface AgentProfile {
 export interface ModelRef {
   provider: string;
   model: string;
-}
-
-/**
- * 에이전트 1회 실행 입력 — runner.execute 가 소비하는 실사용 형태.
- * temperature·maxTokens·tools 는 결정4(CLI 무시 SDK-era 필드)에서 제거됨.
- *
- * NOTE(phase43): orchestrator-worker 워커-spawn 형태 `{ profile, prompt }` 로의 전환은
- * consumer(gateway/scheduler/execution-adapter) + runner 마이그레이션과 함께 phase43 에서.
- * 현재는 아래 필드를 직접 소비하므로 type-first 선반영하지 않는다 (선반영 시 build 깨짐).
- */
-export interface AgentRunParams {
-  agentId: AgentId;
-  sessionKey: SessionKey;
-  model: ModelRef;
-  systemPrompt: string;
-  messages: ConversationMessage[];
-  abortSignal?: AbortSignal;
 }
 
 /** 대화 메시지 — 대화 이력·provider 입력의 표준 표현 */
@@ -55,14 +38,6 @@ export interface ToolDefinition {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
-}
-
-/** 토큰 사용량 — provider 응답에서 누적, 비용 계산·관찰성에 사용 */
-export interface TokenUsage {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens?: number;
-  cacheWriteTokens?: number;
 }
 
 /**

@@ -20,7 +20,6 @@ import type {
   StorageAdapter,
   Timestamp,
 } from '@finclaw/types';
-import { extractCitedMemoryIds } from '../auto-reply/execution-adapter.js';
 import type { MemoryCaptureService } from '../auto-reply/stages/memory-capture.js';
 import type { MemoryRetrievalService } from '../auto-reply/stages/memory-retrieval.js';
 import { composePrompt, prepareTurn, type PreparedTurn } from './prepare-turn.js';
@@ -387,4 +386,36 @@ function isLaneError(err: unknown): boolean {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Phase 29 B: 응답 텍스트의 `[mem:xxxxxx]` 마커 (id 첫 6-8자, 또는 콤마 구분 다중)
+ * 를 추출하여 candidates 의 실제 id 와 prefix-match. (phase46 M5: execution-adapter.ts 에서 이동)
+ *
+ * - 마커가 없으면 빈 배열.
+ * - 같은 id 가 여러 마커에 매칭돼도 한 번만 결과에 포함.
+ * - candidates 순서를 유지.
+ */
+export function extractCitedMemoryIds(
+  text: string,
+  candidates: ReadonlyArray<{ readonly id: string }>,
+): string[] {
+  const prefixes = new Set<string>();
+  const re = /\[mem:([a-f0-9]{6,8}(?:,[a-f0-9]{6,8})*)\]/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    for (const p of m[1].split(',')) {
+      prefixes.add(p);
+    }
+  }
+  const matched: string[] = [];
+  for (const c of candidates) {
+    for (const p of prefixes) {
+      if (c.id.startsWith(p)) {
+        matched.push(c.id);
+        break;
+      }
+    }
+  }
+  return matched;
 }

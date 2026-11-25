@@ -1,5 +1,4 @@
 import type { FinClawLogger } from '@finclaw/infra';
-import type { FinClawConfig } from '@finclaw/types';
 import { describe, expect, it, vi } from 'vitest';
 import { buildProviders } from './providers.js';
 
@@ -15,13 +14,8 @@ const logger = {
 } as unknown as FinClawLogger;
 
 describe('buildProviders — Phase 41 CLI-only', () => {
-  it('creates CLI providerAdapter + toolRegistry', () => {
-    const b = buildProviders({
-      finclawConfig: { provider: 'claude-cli' } as unknown as FinClawConfig,
-      logger,
-      mcpEndpoint: { url: 'http://127.0.0.1:0/mcp', jwtSecret: 'test' },
-    });
-    expect(b.providerAdapter).toBeDefined();
+  it('creates toolRegistry (phase46: CLI 실행은 runtime 드라이버)', () => {
+    const b = buildProviders({ logger });
     expect(b.toolRegistry).toBeDefined();
   });
 });

@@ -138,17 +138,8 @@ async function main(): Promise<void> {
   lifecycle.register(cleanup);
   logger.info('Discord adapter logged in');
 
-  // 4. Agent 레이어 (툴 레지스트리 + 러너 팩토리)
-  const { providerAdapter, lanes, toolRegistry } = buildProviders({
-    finclawConfig,
-    logger,
-    // Phase 40 C: CLI 모드의 claude 가 접속할 in-process /mcp 엔드포인트 + JWT mint secret.
-    // jwtSecret 은 gatewayConfig.auth (= defaultConfig.auth) 와 동일해야 /mcp 검증 통과.
-    mcpEndpoint: {
-      url: `http://127.0.0.1:${gatewayPort}/mcp`,
-      jwtSecret: defaultConfig.auth.jwtSecret,
-    },
-  });
+  // 4. Agent 레이어 (툴 레지스트리)
+  const { toolRegistry } = buildProviders({ logger });
 
   // 4a. 프로필 건강 모니터.
   const profileHealth = new ProfileHealthMonitor();
@@ -182,12 +173,9 @@ async function main(): Promise<void> {
       driver,
     });
 
-  // Phase 36: 실행 레이어 (tracer + runnerFactory + adapter) — 구 561-591
-  // runnerFactory/adapter 는 M5 삭제 전까지 buildExecution 이 생성만 한다 — destructure 하지 않음(미사용 lint)
+  // Phase 36: 실행 레이어 (tracer + runtime) — 구 561-591
   const { tracer, runtime, attachMemoryService } = buildExecution({
     storage,
-    providerAdapter,
-    lanes,
     profileHealth,
     logger,
     defaultModel: DEFAULT_MODEL,
