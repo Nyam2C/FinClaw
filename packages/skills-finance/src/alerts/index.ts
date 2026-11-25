@@ -2,7 +2,6 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { ToolRegistry } from '@finclaw/agent';
 import type { FinClawLogger } from '@finclaw/infra';
 import { ConcurrencyLane, createCircuitBreaker } from '@finclaw/infra';
-import type { SkillMetadata } from '@finclaw/types';
 import type { MarketCache } from '../market/cache.js';
 import type { ProviderRegistry } from '../market/provider-registry.js';
 import type { NewsAggregator } from '../news/types.js';
@@ -127,23 +126,3 @@ export async function registerAlertTools(
   monitor.start();
   return { monitor, store };
 }
-
-export const ALERT_SKILL_METADATA: SkillMetadata = {
-  name: 'alert-system',
-  description: '금융 이벤트 조건부 알림 시스템. 가격, 변동률, 거래량, 뉴스 키워드 모니터링.',
-  version: '1.0.0',
-  requires: {
-    env: [],
-    optionalEnv: [
-      'ALERT_CHECK_INTERVAL_MS',
-      'ALERT_DEFAULT_COOLDOWN_MS',
-      'ALERT_MAX_CONCURRENT_CHECKS',
-    ],
-  },
-  tools: [
-    { name: 'set_alert', reason: 'CRUD' },
-    { name: 'list_alerts', reason: 'CRUD' },
-    { name: 'remove_alert', reason: 'CRUD' },
-    { name: 'get_alert_history', reason: '조회' },
-  ],
-};

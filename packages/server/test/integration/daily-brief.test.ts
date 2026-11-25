@@ -1,12 +1,11 @@
 // packages/server/test/integration/daily-brief.test.ts
-// Phase 33 E1: 매일 시나리오 경량 통합 (외부 API/LLM mock, 키 없이 통과).
-// 흐름: KIS mock 잔고 → sync(source='kis') → news output → news-memorizer absorb → memories → 회상(FTS).
+// Phase 33 E1: 매일 시나리오 경량 통합 (외부 API mock, 키 없이 통과).
+// 흐름: KIS mock 잔고 → sync(source='kis') → portfolio_holdings.
 import { KisClient, KisTokenManager } from '@finclaw/skills-finance';
 import type { KisCredentials } from '@finclaw/skills-finance';
-import { openDatabase, searchFts } from '@finclaw/storage';
+import { openDatabase } from '@finclaw/storage';
 import { describe, expect, it, vi } from 'vitest';
 import { BrokerageSyncService } from '../../src/services/brokerage-sync-service.js';
-import { NewsMemorizer } from '../../src/services/news-memorizer.js';
 
 const CREDS: KisCredentials = {
   env: 'vts',
@@ -21,14 +20,8 @@ function res(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status });
 }
 
-const NEWS_OUTPUT = `## NVDA (2026-05-21)
-어제 대비 5% 상승. 데이터센터 수요 강세.
-
-## 005930 (2026-05-21)
-삼성전자 반도체 업황 회복 기대.`;
-
 describe('daily brief integration (mock)', () => {
-  it('KIS sync → holdings(source=kis), news absorb → memories, 회상', async () => {
+  it('KIS sync → holdings(source=kis)', async () => {
     const fetchFn = vi.fn(async (url: string | URL) => {
       const u = String(url);
       if (u.endsWith('/oauth2/tokenP')) {
@@ -51,7 +44,6 @@ describe('daily brief integration (mock)', () => {
       `INSERT INTO portfolios (id,name,currency,updated_at) VALUES ('p1','main','USD',?)`,
     ).run(Date.now());
 
-    // 1) KIS 잔고 동기화
     const client = new KisClient(CREDS, new KisTokenManager(CREDS, fetchFn), fetchFn);
     const sync = new BrokerageSyncService({
       db,
@@ -65,15 +57,6 @@ describe('daily brief integration (mock)', () => {
       .prepare(`SELECT COUNT(*) c FROM portfolio_holdings WHERE source='kis'`)
       .get() as { c: number };
     expect(kisRows.c).toBe(2);
-
-    // 2) 뉴스 브리프 출력 → 심볼별 memory 적재
-    const memorizer = new NewsMemorizer({ db, logger: noopLogger });
-    const stored = await memorizer.absorb({ agentRunId: 'run-daily', output: NEWS_OUTPUT });
-    expect(stored).toBe(2);
-
-    // 3) 다음날 회상 — FTS 로 심볼 발견
-    const hits = searchFts(db, 'NVDA');
-    expect(hits.length).toBeGreaterThan(0);
 
     close();
   });

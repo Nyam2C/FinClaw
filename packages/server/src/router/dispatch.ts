@@ -27,13 +27,20 @@ import { runSubAgent } from './sub-agent.js';
  */
 
 export interface DispatcherDeps {
-  readonly newsAggregator: NewsAggregator;
   readonly quoteService: QuoteService;
   readonly chartService: ChartService;
-  readonly portfolioStore: PortfolioStore;
+  /** 뉴스 키 미설정 시 undefined — 뉴스 의존 intent(news_summary·market_analysis·portfolio_calc)는 에러 결과. */
+  readonly newsAggregator?: NewsAggregator;
+  readonly portfolioStore?: PortfolioStore;
 }
 
 const ANALYSIS_QUEUE_KEY = 'claude-sub-agent-analysis';
+
+const NEWS_UNAVAILABLE: RouteResult = {
+  content: 'news provider not configured (set NEWSDATA_API_KEY, FINNHUB_KEY or ALPHA_VANTAGE_KEY)',
+  source: 'function',
+  isError: true,
+};
 
 export function buildRouteDispatcher(deps: DispatcherDeps): Dispatcher {
   // 파일 정의(prompts/sub-agents/*.md)에서 sub-agent 프로필 1회 로드.
@@ -70,6 +77,9 @@ async function dispatchMarketAnalysis(
   deps: DispatcherDeps,
   profile: AgentProfile,
 ): Promise<RouteResult> {
+  if (!deps.newsAggregator) {
+    return NEWS_UNAVAILABLE;
+  }
   const modelId = profile.model.model;
   const symbols = req.symbol ? ([req.symbol] as TickerSymbol[]) : undefined;
   const news = await deps.newsAggregator.fetchNews({ symbols, limit: 30 });
@@ -82,7 +92,7 @@ async function dispatchMarketAnalysis(
     };
   }
 
-  const options: AnalysisOptions = { symbols, depth: 'standard', language: 'ko' };
+  const options: AnalysisOptions = { symbols };
 
   try {
     const analysis = await analyzeMarket(
@@ -94,7 +104,7 @@ async function dispatchMarketAnalysis(
           timeoutMs: runReq.timeoutMs ?? 30_000,
           queueKey: ANALYSIS_QUEUE_KEY,
         });
-        return { text: res.text, usage: res.usage };
+        return { text: res.text };
       },
       news,
       options,
@@ -155,6 +165,9 @@ async function dispatchChartData(req: RouteRequest, deps: DispatcherDeps): Promi
 }
 
 async function dispatchNewsSummary(req: RouteRequest, deps: DispatcherDeps): Promise<RouteResult> {
+  if (!deps.newsAggregator) {
+    return NEWS_UNAVAILABLE;
+  }
   try {
     const symbols = req.symbol ? ([req.symbol] as TickerSymbol[]) : undefined;
     const news = await deps.newsAggregator.fetchNews({ symbols, limit: 10 });
@@ -172,16 +185,20 @@ async function dispatchPortfolioCalc(
   req: RouteRequest,
   deps: DispatcherDeps,
 ): Promise<RouteResult> {
+  const { newsAggregator, portfolioStore } = deps;
+  if (!newsAggregator || !portfolioStore) {
+    return NEWS_UNAVAILABLE;
+  }
   try {
     // 단일 사용자 기본 포트폴리오 해소 (skills.ts resolveDefaultPortfolioId 와 정합).
-    const portfolios = deps.portfolioStore.listPortfolios();
+    const portfolios = portfolioStore.listPortfolios();
     const portfolio = portfolios[0];
     if (!portfolio) {
       return { content: '포트폴리오가 없습니다.', source: 'function', isError: true };
     }
     const tracker = createPortfolioTracker({
       quoteService: deps.quoteService,
-      newsAggregator: deps.newsAggregator,
+      newsAggregator,
     });
     const summary = await tracker.summarize(portfolio);
     return { content: JSON.stringify(summary), source: 'function', isError: false };

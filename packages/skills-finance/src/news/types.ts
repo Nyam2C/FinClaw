@@ -5,7 +5,7 @@ import type { NewsItem, NewsSentiment, TickerSymbol } from '@finclaw/types';
 export type { NewsItem, NewsSentiment, TickerSymbol };
 
 /** 뉴스 소스 프로바이더 식별자 */
-export type NewsSourceId = 'newsapi' | 'alpha-vantage' | 'rss' | 'newsdata' | 'finnhub-news';
+export type NewsSourceId = 'alpha-vantage' | 'rss' | 'newsdata' | 'finnhub-news';
 
 export type NewsCategory =
   | 'earnings'
@@ -91,7 +91,4 @@ export interface MarketAnalysis {
 /** 시장 분석 요청 옵션 */
 export interface AnalysisOptions {
   readonly symbols?: readonly TickerSymbol[];
-  readonly includeIndicators?: boolean;
-  readonly depth?: 'brief' | 'standard' | 'detailed';
-  readonly language?: 'ko' | 'en';
 }

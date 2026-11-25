@@ -1,7 +1,7 @@
 // packages/skills-finance/src/index.ts
-export { registerMarketTools, MARKET_SKILL_METADATA } from './market/index.js';
+export { createMarketSkill } from './market/index.js';
 export type { MarketSkillConfig, MarketSkillHandle, ChartService } from './market/index.js';
-export { registerNewsTools, NEWS_SKILL_METADATA } from './news/index.js';
+export { createNewsSkill } from './news/index.js';
 export type {
   NewsSkillConfig,
   NewsSkillHandle,
@@ -17,7 +17,7 @@ export type {
   AnalyzeRunnerResult,
 } from './news/analysis/market-analysis.js';
 export type { AnalysisOptions, MarketAnalysis } from './news/types.js';
-export { registerAlertTools, ALERT_SKILL_METADATA } from './alerts/index.js';
+export { registerAlertTools } from './alerts/index.js';
 export type {
   AlertSkillConfig,
   AlertSkillHandle,

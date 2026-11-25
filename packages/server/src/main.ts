@@ -1,7 +1,7 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 // packages/server/src/main.ts
-import { BUILT_IN_MODELS, InMemoryModelCatalog, ProfileHealthMonitor } from '@finclaw/agent';
+import { ProfileHealthMonitor } from '@finclaw/agent';
 import { DiscordAccountSchema, DiscordAdapter } from '@finclaw/channel-discord';
 import { ConfigValidationError, loadConfig, validateConfigStrict } from '@finclaw/config';
 import { createGatewayServer, type GatewayServerConfig } from '@finclaw/gateway';
@@ -155,9 +155,7 @@ async function main(): Promise<void> {
 
   const scheduleRpc = buildScheduleRpc(storage);
 
-  // 4a. 모델 카탈로그(analyze_market 비용 기록용) + 프로필 건강 모니터.
-  // (스킬 등록보다 먼저 생성 — Phase 24 E 의 analyze_market 등록 시점에 주입 필요.)
-  const modelCatalog = new InMemoryModelCatalog(BUILT_IN_MODELS);
+  // 4a. 프로필 건강 모니터.
   const profileHealth = new ProfileHealthMonitor();
 
   // Phase 36: skills/tools/KIS/mcp/plugins 등록 (구 363-559 흡수)
@@ -166,10 +164,7 @@ async function main(): Promise<void> {
       toolRegistry,
       storage,
       logger,
-      finclawConfig,
       discordAdapter,
-      profileHealth,
-      modelCatalog,
       scheduleRpc,
       lifecycle,
     });
@@ -253,7 +248,6 @@ async function main(): Promise<void> {
     logger,
     profileHealth,
     tracer,
-    embeddingProvider,
     lifecycle,
   });
 

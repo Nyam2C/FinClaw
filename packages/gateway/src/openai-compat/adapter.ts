@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import type { OpenAIChatRequest, OpenAIChatResponse, OpenAIStreamChunk } from '../rpc/types.js';
 
-/** OpenAI 모델 ID → FinClaw 내부 모델 ID 매핑 (catalog-data.ts BUILT_IN_MODELS 와 동기) */
+/** OpenAI 모델 ID → FinClaw 내부 모델 ID 매핑 */
 const MODEL_MAP: Record<string, string> = {
   'gpt-4o': 'claude-sonnet-4-6',
   'gpt-4o-mini': 'claude-haiku-4-5-20251001',

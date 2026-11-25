@@ -1,18 +1,10 @@
 // @finclaw/agent — complete barrel export
 
-// ─── models: catalog ───
-export { InMemoryModelCatalog } from './models/catalog.js';
-export type { ProviderId, ModelPricing, ModelEntry, ModelCatalog } from './models/catalog.js';
-
-// ─── models: catalog data ───
-export { BUILT_IN_MODELS } from './models/catalog-data.js';
-
 // ─── models: provider normalize ───
-export { calculateEstimatedCost } from './models/provider-normalize.js';
 export type { NormalizedUsage, StreamChunk } from './models/provider-normalize.js';
 
 // ─── providers ───
-export type { ProviderAdapter, ProviderRequestParams } from './providers/adapter.js';
+export type { ProviderAdapter, ProviderId, ProviderRequestParams } from './providers/adapter.js';
 
 // ─── providers (Phase 32 Backend-as-CLI) ───
 export { CliProviderAdapter } from './providers/claude-cli/adapter.js';
@@ -74,6 +66,3 @@ export type {
   ChatExecutionPort,
   TuiExecutionResultLike,
 } from './execution/index.js';
-
-// ── Phase 33: News brief cron prompt ──
-export { NEWS_BRIEF_PROMPT, NEWS_BRIEF_SCHEDULE_ID } from './prompts/news-brief.js';

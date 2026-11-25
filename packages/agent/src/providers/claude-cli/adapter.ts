@@ -1,8 +1,7 @@
 // packages/agent/src/providers/claude-cli/adapter.ts
 import type { ConversationMessage } from '@finclaw/types';
-import type { ProviderId } from '../../models/catalog.js';
 import type { StreamChunk } from '../../models/provider-normalize.js';
-import type { ProviderAdapter, ProviderRequestParams } from '../adapter.js';
+import type { ProviderAdapter, ProviderId, ProviderRequestParams } from '../adapter.js';
 import { runCliAgent, type RunCliAgentResponse } from './runner.js';
 import type { CliBackendConfig } from './types.js';
 

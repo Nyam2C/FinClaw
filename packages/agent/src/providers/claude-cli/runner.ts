@@ -17,7 +17,7 @@ export interface RunCliAgentRequest {
   abortSignal?: AbortSignal;
   cwd?: string;
   backend?: CliBackendConfig;
-  /** Phase 41: 큐 키 override. inner analyze_market spawn 이 outer ReAct 와 다른 큐를 쓰게 해
+  /** Phase 41: 큐 키 override. route_task sub-agent spawn 이 outer CLI 턴과 다른 큐를 쓰게 해
    *  중첩 spawn 데드락 회피. 미지정 시 buildCliQueueKey(backendId:'claude', ...) 기본. */
   queueKey?: string;
 }

@@ -3,7 +3,6 @@
 
 import {
   InMemoryToolRegistry,
-  NEWS_BRIEF_SCHEDULE_ID,
   ProfileHealthMonitor,
   Runner,
   type ProviderAdapter,
@@ -27,7 +26,6 @@ import { StubFinanceContextProvider } from '../auto-reply/pipeline-context.js';
 import { AutoReplyPipeline } from '../auto-reply/pipeline.js';
 import { SchedulerService } from '../automation/scheduler.js';
 import { createTracer } from '../observability/tracer.js';
-import { NewsMemorizer } from '../services/news-memorizer.js';
 import { wireMemoryServices } from './memory-services.js';
 
 type Storage = ReturnType<typeof createStorage>;
@@ -196,7 +194,6 @@ export interface BuildAutomationDeps {
   readonly logger: FinClawLogger;
   readonly profileHealth: ProfileHealthMonitor;
   readonly tracer: Tracer;
-  readonly embeddingProvider: EmbeddingProvider | undefined;
   readonly lifecycle: { register(fn: () => void | Promise<void>): void };
 }
 
@@ -216,7 +213,6 @@ export function buildAutomation(deps: BuildAutomationDeps): AutomationBundle {
     logger,
     profileHealth,
     tracer,
-    embeddingProvider,
     lifecycle,
   } = deps;
 
@@ -236,13 +232,6 @@ export function buildAutomation(deps: BuildAutomationDeps): AutomationBundle {
   };
   const maxFailRaw = process.env.AUTOMATION_MAX_CONSECUTIVE_FAILURES;
   const maxConsecutiveFailures = maxFailRaw ? Number(maxFailRaw) : 3;
-  // Phase 33 C: news-brief schedule 출력을 심볼별 financial memory 로 적재.
-  const newsMemorizer = new NewsMemorizer({
-    db: storage.db,
-    embeddingProvider,
-    logger,
-    sessionKey: 'news-brief',
-  });
   const scheduler = new SchedulerService({
     db: storage.db,
     runnerFactory,
@@ -258,17 +247,6 @@ export function buildAutomation(deps: BuildAutomationDeps): AutomationBundle {
     onRunComplete: async (args) => {
       if (deliveryHook) {
         await deliveryHook(args);
-      }
-      // Phase 33 C: news-brief schedule 출력만 memories 로 적재 (§B-3 id 화이트리스트).
-      if (args.schedule.id === NEWS_BRIEF_SCHEDULE_ID && !args.error) {
-        try {
-          await newsMemorizer.absorb({ agentRunId: args.agentRunId, output: args.output });
-        } catch (memErr) {
-          logger.warn('news_memorizer.failed', {
-            event: 'news_memorizer.failed',
-            error: (memErr as Error).message,
-          });
-        }
       }
     },
   });

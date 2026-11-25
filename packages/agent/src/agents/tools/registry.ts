@@ -29,13 +29,6 @@ export interface RegisteredToolDefinition extends ToolDefinition {
   readonly timeoutMs?: number;
   /** 외부 API 호출 도구 여부 (true이면 CircuitBreaker 적용) */
   readonly isExternal?: boolean;
-  /**
-   * Phase 30 B1: structured output 출력 schema (Zod). 현재 어떤 경로도 검증하지 않음 —
-   * CLI 런타임은 /mcp 로 도구를 호출하고 Runner 의 enforce 경로는 제거됨.
-   * 유일한 선언처(analyze_market) 삭제 시 함께 제거.
-   */
-  readonly outputSchema?: import('zod/v4').ZodType<unknown>;
-  readonly enforceStructuredOutput?: boolean;
 }
 
 /** 도구 실행 함수 */

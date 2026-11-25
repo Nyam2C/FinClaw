@@ -1,4 +1,3 @@
-import { InMemoryToolRegistry } from '@finclaw/agent';
 import type {
   ChartService,
   NewsAggregator,
@@ -109,31 +108,24 @@ describe('route_task dispatcher — function intents', () => {
   });
 });
 
-describe('M3 main tool surface — direct domain tools hidden', () => {
-  it('unregister removes direct domain tools, route_task remains', () => {
-    const registry = new InMemoryToolRegistry();
-    // 직접 도구 등록 흉내 (이름만 검증 — executor 는 no-op)
-    const noop = async () => ({ content: '', isError: false });
-    for (const name of ['get_stock_price', 'route_task']) {
-      registry.register(
-        {
-          name,
-          description: name,
-          inputSchema: { type: 'object', properties: {}, required: [] },
-          group: 'finance',
-          requiresApproval: false,
-          isTransactional: false,
-          accessesSensitiveData: false,
-          isExternal: true,
-          timeoutMs: 1000,
-        },
-        noop,
-        'skill',
-      );
-    }
-    registry.unregister('get_stock_price');
-    const names = registry.list().map((t) => t.definition.name);
-    expect(names).not.toContain('get_stock_price');
-    expect(names).toContain('route_task');
+describe('route_task dispatcher — no news provider', () => {
+  const marketOnly: DispatcherDeps = { quoteService, chartService };
+
+  it('price_lookup still works', async () => {
+    const r = await buildRouteDispatcher(marketOnly)({
+      intent: 'price_lookup',
+      query: 'AAPL price',
+      symbol: 'AAPL',
+    });
+    expect(r.isError).toBe(false);
   });
+
+  it.each(['news_summary', 'market_analysis', 'portfolio_calc'] as const)(
+    '%s returns an error result',
+    async (intent) => {
+      const r = await buildRouteDispatcher(marketOnly)({ intent, query: 'x' });
+      expect(r.isError).toBe(true);
+      expect(r.content).toContain('news provider not configured');
+    },
+  );
 });

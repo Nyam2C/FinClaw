@@ -1,7 +1,9 @@
 // packages/agent/src/providers/adapter.ts
 import type { ConversationMessage } from '@finclaw/types';
-import type { ProviderId } from '../models/catalog.js';
 import type { StreamChunk } from '../models/provider-normalize.js';
+
+/** 모델 제공자 식별자 */
+export type ProviderId = 'claude-cli';
 
 /** 제공자 API 호출 파라미터 */
 export interface ProviderRequestParams {

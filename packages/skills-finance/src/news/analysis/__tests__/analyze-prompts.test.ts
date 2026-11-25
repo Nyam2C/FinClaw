@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod/v4';
-import { loadAnalysisPrompt, type AnalysisDepth, type AnalysisLanguage } from '../prompt-loader.js';
+import { loadAnalysisPrompt } from '../prompt-loader.js';
 
 const EvidenceSchema = z.array(z.number().int().min(1)).default([]);
 const AnalysisResponseSchema = z.object({
@@ -58,47 +58,40 @@ const validMockResponse = {
   dataGaps: [],
 };
 
-describe('analyze prompts (6 variants × persona + schema integrity)', () => {
-  const depths: readonly AnalysisDepth[] = ['brief', 'standard', 'detailed'];
-  const langs: readonly AnalysisLanguage[] = ['ko', 'en'];
-
-  for (const d of depths) {
-    for (const l of langs) {
-      it(`${d}.${l} embeds the 5 persona principles in the header`, async () => {
-        const text = await loadAnalysisPrompt(d, l);
-        for (const kw of [
-          'CITE EVERY CLAIM',
-          'NO HALLUCINATION',
-          'QUANTIFY UNCERTAINTY',
-          'READ-ONLY',
-          'CONCISE',
-        ]) {
-          expect(text).toContain(kw);
-        }
-      });
-
-      it(`${d}.${l} response-format names every Zod field`, async () => {
-        const text = await loadAnalysisPrompt(d, l);
-        for (const field of [
-          'summary',
-          'summaryEvidence',
-          'sentiment',
-          'keyFactors',
-          'risks',
-          'opportunities',
-          'timeHorizon',
-          'dataGaps',
-          'rationale',
-          'evidence',
-          'impact',
-          'category',
-          'probability',
-        ]) {
-          expect(text).toContain(field);
-        }
-      });
+describe('analyze prompt (standard.ko) persona + schema integrity', () => {
+  it('embeds the 5 persona principles in the header', async () => {
+    const text = await loadAnalysisPrompt();
+    for (const kw of [
+      'CITE EVERY CLAIM',
+      'NO HALLUCINATION',
+      'QUANTIFY UNCERTAINTY',
+      'READ-ONLY',
+      'CONCISE',
+    ]) {
+      expect(text).toContain(kw);
     }
-  }
+  });
+
+  it('response-format names every Zod field', async () => {
+    const text = await loadAnalysisPrompt();
+    for (const field of [
+      'summary',
+      'summaryEvidence',
+      'sentiment',
+      'keyFactors',
+      'risks',
+      'opportunities',
+      'timeHorizon',
+      'dataGaps',
+      'rationale',
+      'evidence',
+      'impact',
+      'category',
+      'probability',
+    ]) {
+      expect(text).toContain(field);
+    }
+  });
 });
 
 describe('AnalysisResponseSchema (mirrors market-analysis.ts)', () => {

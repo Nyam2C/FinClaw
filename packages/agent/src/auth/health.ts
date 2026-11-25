@@ -32,18 +32,12 @@ export interface ModelStats {
   calls: number;
   successCount: number;
   errorCount: number;
-  totalCostUsd: number;
-  /** 토큰 누적 (input/output) */
-  inputTokens: number;
-  outputTokens: number;
 }
 
 /** Phase 24 E: 확장된 recordResult 입력 (modelId 가 있어야 byModel 집계). */
 export interface RecordOptions {
   readonly success: boolean;
   readonly modelId?: string;
-  readonly tokens?: { readonly input: number; readonly output: number };
-  readonly costUsd?: number;
 }
 
 /** 프로필별 상태 */
@@ -78,8 +72,8 @@ export class ProfileHealthMonitor {
    * 요청 결과 기록.
    *
    * - 단순 형식 `(profileId, true|false)`: 기존 호출자 호환.
-   * - 확장 형식 `(profileId, RecordOptions)`: modelId + tokens + costUsd 포함 시 byModel
-   *   누적 (Phase 24 E, status 커맨드 분포 출력용).
+   * - 확장 형식 `(profileId, RecordOptions)`: modelId 포함 시 byModel 누적
+   *   (Phase 24 E, status 커맨드 분포 출력용).
    */
   recordResult(profileId: string, success: boolean): void;
   recordResult(profileId: string, options: RecordOptions): void;
@@ -100,9 +94,6 @@ export class ProfileHealthMonitor {
       } else {
         stats.errorCount += 1;
       }
-      stats.totalCostUsd += opts.costUsd ?? 0;
-      stats.inputTokens += opts.tokens?.input ?? 0;
-      stats.outputTokens += opts.tokens?.output ?? 0;
       state.byModel.set(opts.modelId, stats);
     }
 
@@ -122,8 +113,8 @@ export class ProfileHealthMonitor {
    * Phase 24 E: 프로필의 모델별 누적 통계 (현재까지의 sinceMs 윈도우 내 호출 수 기준).
    *
    * `byModel` 자체는 누적이지만, 최근 sinceMs 동안의 calls 수는 records 에서
-   * modelId 별 카운트로 계산한다 (windowSizeMs 와 별개). totalCostUsd / tokens 등
-   * 누적 필드는 그대로 반환 — status 출력은 calls 만 시간 가중하면 충분.
+   * modelId 별 카운트로 계산한다 (windowSizeMs 와 별개). success/error 누적 필드는
+   * 그대로 반환 — status 출력은 calls 만 시간 가중하면 충분.
    */
   getModelBreakdown(profileId: string, sinceMs = 60 * 60 * 1000): Map<string, ModelStats> {
     const state = this.states.get(profileId);
@@ -208,8 +199,5 @@ function createEmptyModelStats(): ModelStats {
     calls: 0,
     successCount: 0,
     errorCount: 0,
-    totalCostUsd: 0,
-    inputTokens: 0,
-    outputTokens: 0,
   };
 }
