@@ -12,13 +12,14 @@ export function register(program: Command, deps: CliDeps): void {
     .command('list')
     .description('list all agents')
     .action(async () => {
-      const result = await deps.callGateway<Record<string, unknown>[]>('agent.list');
+      // 서버 반환 {agents} — bare array 아님.
+      const result = await deps.callGateway<{ agents?: Record<string, unknown>[] }>('agent.list');
       if (!result.ok) {
         deps.error(theme.error(`Failed to list agents: ${result.error?.message}`));
         deps.exit(EXIT.GATEWAY_ERROR);
         return;
       }
-      const rows = result.data ?? [];
+      const rows = result.data?.agents ?? [];
       deps.output(rows.length > 0 ? formatTable(rows) : theme.dim('No agents registered.'));
     });
 
