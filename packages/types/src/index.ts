@@ -10,7 +10,6 @@ export type * from './gateway.js';
 export type * from './finance.js';
 export type * from './notification.js';
 export type * from './automation.js';
-export type * from './schedule-rpc.js';
 export type * from './trace.js';
 export type * from './gateway-ports.js';
 export type * from './router.js';

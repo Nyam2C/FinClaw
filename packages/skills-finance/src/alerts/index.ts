@@ -21,12 +21,7 @@ import {
 import { createAlertMarketService } from './market-service.js';
 import { createAlertMonitor, type AlertMonitor } from './monitor.js';
 import { createAlertStore } from './store.js';
-import {
-  registerSetAlertTool,
-  registerListAlertsTool,
-  registerRemoveAlertTool,
-  registerGetAlertHistoryTool,
-} from './tools.js';
+import { registerListAlertsTool, registerGetAlertHistoryTool } from './tools.js';
 import type { AlertConditionEvaluator, AlertConditionType, AlertMonitorConfig } from './types.js';
 
 export type {
@@ -118,9 +113,7 @@ export async function registerAlertTools(
     lane,
   });
 
-  registerSetAlertTool(toolRegistry, { store });
   registerListAlertsTool(toolRegistry, { store });
-  registerRemoveAlertTool(toolRegistry, { store });
   registerGetAlertHistoryTool(toolRegistry, { store });
 
   monitor.start();

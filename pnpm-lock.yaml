@@ -214,9 +214,6 @@ importers:
       '@finclaw/agent':
         specifier: workspace:*
         version: link:../agent
-      '@finclaw/infra':
-        specifier: workspace:*
-        version: link:../infra
       '@finclaw/types':
         specifier: workspace:*
         version: link:../types

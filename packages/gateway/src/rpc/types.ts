@@ -144,12 +144,6 @@ export interface GatewayServerConfig {
   readonly mcp?: {
     /** 명시적 비활성화 (기본: toolRegistry 주입 시 활성). */
     readonly enabled?: boolean;
-    /** 노출 허용 도구 그룹 (예: ['finance']). 미지정 시 전체 그룹 (강제 deny 제외). */
-    readonly allowedGroups?: readonly import('@finclaw/agent').ToolGroupId[];
-    /** allowlist 무관 추가 차단 도구명. */
-    readonly denyTools?: readonly string[];
-    /** DEFAULT_MCP_TOOL_DENY 에서 명시 해제(opt-in)할 도구명 — 매수권한처럼 사람만 쓸 도구는 비워둠. */
-    readonly allowTools?: readonly string[];
   };
 }
 

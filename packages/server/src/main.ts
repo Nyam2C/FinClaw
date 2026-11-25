@@ -30,7 +30,6 @@ import { initChannels } from './channels/index.js';
 import { DEFAULT_MODEL, defaultConfig } from './composition/constants.js';
 import { buildProviders } from './composition/providers.js';
 import { buildAutomation, buildExecution, buildPipeline } from './composition/runtime.js';
-import { buildScheduleRpc } from './composition/schedule-rpc.js';
 import { registerSkills } from './composition/skills.js';
 import { ProcessLifecycle } from './process/lifecycle.js';
 import { MessageRouter } from './process/message-router.js';
@@ -153,8 +152,6 @@ async function main(): Promise<void> {
     },
   });
 
-  const scheduleRpc = buildScheduleRpc(storage);
-
   // 4a. 프로필 건강 모니터.
   const profileHealth = new ProfileHealthMonitor();
 
@@ -165,7 +162,6 @@ async function main(): Promise<void> {
       storage,
       logger,
       discordAdapter,
-      scheduleRpc,
       lifecycle,
     });
 

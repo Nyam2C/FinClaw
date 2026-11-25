@@ -14,7 +14,6 @@
   },
   "dependencies": {
     "@finclaw/agent": "workspace:*",
-    "@finclaw/infra": "workspace:*",
     "@finclaw/types": "workspace:*"
   }
 }

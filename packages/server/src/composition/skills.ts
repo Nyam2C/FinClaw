@@ -14,15 +14,13 @@ import {
   KisTokenManager,
   readKeyArray,
   registerAlertTools,
-  registerBrokerageTools,
   type AlertSkillHandle,
   type BrokerageProvider,
   type MarketSkillHandle,
   type NewsSkillHandle,
 } from '@finclaw/skills-finance';
-import { registerGeneralTools, registerRouteTaskTool } from '@finclaw/skills-general';
+import { registerDatetimeTool, registerRouteTaskTool } from '@finclaw/skills-general';
 import type { createStorage } from '@finclaw/storage';
-import type { ScheduleRpc } from '@finclaw/types';
 import { loadPlugins } from '../plugins/loader.js';
 import type { ProcessLifecycle } from '../process/lifecycle.js';
 import { buildRouteDispatcher } from '../router/dispatch.js';
@@ -35,7 +33,6 @@ export interface RegisterSkillsDeps {
   readonly storage: Storage;
   readonly logger: FinClawLogger;
   readonly discordAdapter: DiscordAdapter;
-  readonly scheduleRpc: ScheduleRpc;
   readonly lifecycle: ProcessLifecycle;
 }
 
@@ -48,9 +45,9 @@ export interface SkillsBundle {
 }
 
 export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBundle> {
-  const { toolRegistry, storage, logger, discordAdapter, scheduleRpc, lifecycle } = deps;
+  const { toolRegistry, storage, logger, discordAdapter, lifecycle } = deps;
 
-  registerGeneralTools(toolRegistry, { scheduleRpc });
+  registerDatetimeTool(toolRegistry);
 
   const finnhubKeys = readKeyArray('FINNHUB_KEY');
   const twelveDataKeys = readKeyArray('TWELVE_DATA_KEY');
@@ -167,7 +164,7 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
     logger.warn('brokerage.provider_unimplemented', {
       event: 'brokerage.provider_unimplemented',
       provider: 'toss',
-      note: 'Toss brokerage client not implemented (awaiting Open API). Skipping brokerage tools.',
+      note: 'Toss brokerage client not implemented (awaiting Open API). Skipping brokerage sync.',
     });
   } else {
     // provider === 'kis' (기본)
@@ -192,16 +189,9 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
         logger,
         resolvePortfolioId: resolveDefaultPortfolioId,
       });
-      const syncService = brokerageSyncService;
-      registerBrokerageTools(toolRegistry, {
-        syncHoldings: async () => {
-          const r = await syncService.run();
-          return { holdingsCount: r.holdingsCount, marketsScanned: r.marketsScanned };
-        },
-      });
-      logger.info('Brokerage (KIS) tools registered', { env: kisEnv });
+      logger.info('Brokerage (KIS) sync service ready', { env: kisEnv });
     } else {
-      logger.info('KIS not configured — skipping brokerage tools');
+      logger.info('KIS not configured — skipping brokerage sync');
     }
   }
 

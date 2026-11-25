@@ -1,12 +1,7 @@
 import type { ToolGroupId, ToolRegistry } from '@finclaw/agent';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { describe, expect, it, vi } from 'vitest';
-import {
-  computeDeniedTools,
-  DEFAULT_MCP_TOOL_DENY,
-  jsonSchemaToZodShape,
-  registerBridgedTools,
-} from './bridge.js';
+import { jsonSchemaToZodShape, registerBridgedTools } from './bridge.js';
 
 function makeRegistry(
   tools: Array<{ name: string; group: ToolGroupId }>,
@@ -42,61 +37,21 @@ function mockServer() {
   };
 }
 
-describe('computeDeniedTools', () => {
-  it('denies the read-only-first default set with no config', () => {
-    const denied = computeDeniedTools({});
-    for (const name of DEFAULT_MCP_TOOL_DENY) {
-      expect(denied.has(name)).toBe(true);
-    }
-  });
-
-  it('allowTools removes a tool from the default deny (opt-in)', () => {
-    expect(computeDeniedTools({ allowTools: ['set_alert'] }).has('set_alert')).toBe(false);
-  });
-
-  it('denyTools adds tools to the deny set', () => {
-    expect(computeDeniedTools({ denyTools: ['get_stock_price'] }).has('get_stock_price')).toBe(
-      true,
-    );
-  });
-});
-
 describe('registerBridgedTools', () => {
   const identity = { userId: 'u', sessionId: 's' };
 
-  it('registers read-only tools but not the default-denied mutating/escape tools', () => {
+  it('registers every registry tool', () => {
     const server = mockServer();
     registerBridgedTools(
       server,
       makeRegistry([
-        { name: 'get_stock_price', group: 'finance' },
-        { name: 'set_alert', group: 'finance' },
-        { name: 'web_fetch', group: 'web' },
-        { name: 'read_local_file', group: 'system' },
+        { name: 'route_task', group: 'custom' },
+        { name: 'list_alerts', group: 'finance' },
       ]),
-      {},
       identity,
     );
     const registered = server.registerTool.mock.calls.map((c) => c[0]);
-    expect(registered).toContain('get_stock_price');
-    expect(registered).not.toContain('set_alert');
-    expect(registered).not.toContain('web_fetch');
-    expect(registered).not.toContain('read_local_file');
-  });
-
-  it('restricts to allowedGroups when set', () => {
-    const server = mockServer();
-    registerBridgedTools(
-      server,
-      makeRegistry([
-        { name: 'get_stock_price', group: 'finance' },
-        { name: 'get_current_datetime', group: 'custom' },
-      ]),
-      { allowedGroups: ['finance'] },
-      identity,
-    );
-    const registered = server.registerTool.mock.calls.map((c) => c[0]);
-    expect(registered).toEqual(['get_stock_price']);
+    expect(registered).toEqual(['route_task', 'list_alerts']);
   });
 
   it('bridged executor routes to toolRegistry.execute with mcp ctx + request signal', async () => {
@@ -104,8 +59,7 @@ describe('registerBridgedTools', () => {
     const server = mockServer();
     registerBridgedTools(
       server,
-      makeRegistry([{ name: 'get_stock_price', group: 'finance' }], execute),
-      {},
+      makeRegistry([{ name: 'route_task', group: 'custom' }], execute),
       identity,
     );
     const cb = server.registerTool.mock.calls[0][2] as (
@@ -115,7 +69,7 @@ describe('registerBridgedTools', () => {
     const signal = new AbortController().signal;
     const result = await cb({ symbol: 'AAPL' }, { signal });
     expect(execute).toHaveBeenCalledWith(
-      'get_stock_price',
+      'route_task',
       { symbol: 'AAPL' },
       {
         sessionId: 's',
