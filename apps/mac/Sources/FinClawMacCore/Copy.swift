@@ -74,6 +74,7 @@ public enum Copy {
   public static let lostRun = "연결이 끊겨서 답을 못 받았어요. 자세히에서 확인해 주세요"
   public static let resetDone = "새 대화를 시작했어요"
   public static let historyFailed = "대화 기록을 불러오지 못했어요"
+  public static let tooLong = "질문이 너무 길어요. 20,000자 안으로 줄여 주세요"
   public static let alertsUnavailable = "알림 기능이 꺼져 있어요 — 시세·뉴스 API 키가 필요해요"
   public static let inputPlaceholder = "핀에게 물어보기"
 }

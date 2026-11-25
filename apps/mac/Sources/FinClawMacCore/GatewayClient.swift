@@ -142,28 +142,37 @@ public func backoffDelay(attempt: Int) -> Duration {
     return try JSONDecoder().decode(Reply<R>.self, from: frame).result
   }
 
-  /// runId 는 호출자가 먼저 정한다. "session not found" → chat.start + 1회 재전송.
+  /// chat.send 의 message 상한 (chat.ts zod `.max(20_000)` — JS 문자열 길이 = UTF-16 단위)
+  public static let maxMessageUTF16 = 20_000
+
+  /// "session not found" → chat.start + 1회 재시도 (Q9). send·history 공용.
+  private func withSession<R>(_ body: (String) async throws -> R) async throws -> R {
+    guard let sid = sessionId else { throw RpcError(code: -1, message: "disconnected") }
+    do {
+      return try await body(sid)
+    } catch let e as RpcError where e.message.contains("session not found") {
+      let fresh = try await call("chat.start", ["agentId": "default"], as: StartResult.self).sessionId
+      sessionId = fresh
+      return try await body(fresh)
+    }
+  }
+
+  /// runId 는 호출자가 먼저 정한다.
   public func send(_ message: String, runId: String) async throws {
-    for attempt in 0..<2 {
-      guard let sid = sessionId else { throw RpcError(code: -1, message: "disconnected") }
-      do {
-        _ = try await call("chat.send", ["sessionId": sid, "message": message, "runId": runId], as: RunIdResult.self)
-        return
-      } catch let e as RpcError where attempt == 0 && e.message.contains("session not found") {  // Q9
-        sessionId = try await call("chat.start", ["agentId": "default"], as: StartResult.self).sessionId
-      }
+    _ = try await withSession { sid in
+      try await call("chat.send", ["sessionId": sid, "message": message, "runId": runId], as: RunIdResult.self)
     }
   }
 
   /// chat.history (limit 생략 = 서버 기본 20)
   public func history() async throws -> [HistoryLine] {
-    guard let sid = sessionId else { throw RpcError(code: -1, message: "disconnected") }
-    return try await call("chat.history", ["sessionId": sid], as: ChatHistory.self).messages
+    try await withSession { try await call("chat.history", ["sessionId": $0], as: ChatHistory.self).messages }
   }
 
-  public func abort(runId: String) async throws {
+  /// false = 서버에 그 run 이 이미 없다
+  public func abort(runId: String) async throws -> Bool {
     guard let sid = sessionId else { throw RpcError(code: -1, message: "disconnected") }
-    _ = try await call("chat.abort", ["sessionId": sid, "runId": runId], as: Aborted.self)
+    return try await call("chat.abort", ["sessionId": sid, "runId": runId], as: Aborted.self).aborted
   }
 
   public func reset() async throws {

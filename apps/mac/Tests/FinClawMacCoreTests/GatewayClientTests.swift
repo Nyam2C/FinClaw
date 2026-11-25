@@ -321,3 +321,32 @@ private struct Echo: Decodable { let v: Int }
   #expect(h.conns[0].request.value(forHTTPHeaderField: "Authorization") == "Bearer a")
   #expect(h.conns[1].request.value(forHTTPHeaderField: "Authorization") == "Bearer b")
 }
+
+@MainActor @Test func historySessionNotFoundRestartsOnce() async throws {
+  let h = Harness()
+  defer { h.finish() }
+  #expect(await h.online())
+  h.conn.autoStart = false
+  async let lines = h.client.history()
+  #expect(await eventually { h.conn.requests.count == 2 })
+  #expect(h.conn.requests[1].method == "chat.history")
+  h.conn.fail(h.conn.requests[1].id, -32603, "session not found")
+  #expect(await eventually { h.conn.requests.count == 3 })
+  #expect(h.conn.requests[2].method == "chat.start")
+  h.conn.respond(h.conn.requests[2].id, #"{"sessionId":"s2"}"#)
+  #expect(await eventually { h.conn.requests.count == 4 })
+  #expect(h.conn.requests[3].params as? [String: String] == ["sessionId": "s2"])
+  h.conn.respond(h.conn.requests[3].id, #"{"messages":[{"role":"user","text":"안녕"}]}"#)
+  #expect(try await lines == [HistoryLine(role: "user", text: "안녕")])
+}
+
+@MainActor @Test func abortReportsMissingRun() async throws {
+  let h = Harness()
+  defer { h.finish() }
+  #expect(await h.online())
+  async let aborted = h.client.abort(runId: "r1")
+  #expect(await eventually { h.conn.requests.count == 2 })
+  #expect(h.conn.requests[1].params as? [String: String] == ["sessionId": "s1", "runId": "r1"])
+  h.conn.respond(h.conn.requests[1].id, #"{"aborted":false}"#)
+  #expect(try await aborted == false)
+}

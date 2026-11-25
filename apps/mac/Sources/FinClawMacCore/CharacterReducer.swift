@@ -56,6 +56,7 @@ public enum CharacterEvent: Equatable, Sendable {
   case client(ClientEvent)
   case sent(runId: String)  // chat.send RPC **전에**
   case requestFailed  // chat.send 등 RPC 실패
+  case abandoned(runId: String)  // 중지했는데 서버에 그 run 이 없음(aborted:false) → 종료 이벤트가 오지 않는다
   case inputFocused(Bool)
   case dismiss  // 말풍선 닫기 · 배지 클릭(다음 큐) 공용
   case setProactive(Bool)
@@ -91,10 +92,13 @@ public enum CharacterReducer {
     case .sent(let id):
       clearRun(&s)
       s.runId = id; s.mood = .thinking; s.bubble = .answer(text: "", closesAt: nil); s.lastDeltaAt = nil
-    case .requestFailed: fail(&s, Copy.requestFailed, now)
+    case .requestFailed:
+      guard s.mood != .offline else { return }  // 끊긴 상태가 우선 — 실패 표정으로 offline 을 가리지 않는다
+      fail(&s, Copy.requestFailed, now)
+    case .abandoned(let id): server(&s, .runError(runId: id, reason: "aborted"), now)
     case .inputFocused(let b):
       s.inputFocused = b
-      if b, s.mood == .idle { s.mood = .listening } else if !b, s.mood == .listening { s.mood = .idle }
+      if b, s.mood == .idle { s.mood = .listening } else if !b, s.mood == .listening { showNextOrIdle(&s, now) }
     case .dismiss:
       guard s.runId == nil else { return }  // [TQ4c] 중지 버튼이 정식 경로
       s.bubble = nil; showNextOrIdle(&s, now)
@@ -106,7 +110,11 @@ public enum CharacterReducer {
       switch s.bubble { case .answer?, .proactive?: return; default: s.bubble = .notice(msg, closesAt: now + noticeSecs) }
     case .tick(let hold):
       if s.mood == .happy, now.timeIntervalSince(s.moodSince) >= happyHold { s.mood = .talking }
-      if !hold, let c = s.bubble?.closesAt, now >= c { s.bubble = nil; showNextOrIdle(&s, now) }  // [TQ4d]
+      if !hold, let c = s.bubble?.closesAt, now >= c {  // [TQ4d]
+        s.bubble = nil
+        // P4: 입력 중이면 큐 알림은 입력을 마칠 때까지 기다린다 (inputFocused(false) 가 꺼낸다)
+        if s.inputFocused, s.mood != .offline { s.mood = .listening } else { showNextOrIdle(&s, now) }
+      }
       if s.mood == .offline, s.bubble == nil, let since = s.offlineSince, now.timeIntervalSince(since) >= offlineDelay {
         s.bubble = .notice(Copy.offline(s.offlineReason ?? .serverDown), closesAt: .distantFuture)
       }

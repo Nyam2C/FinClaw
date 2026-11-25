@@ -29,6 +29,7 @@ import SwiftUI
     CharacterReducer.reduce(&s, e, now: .now)
     guard s != state else { return }  // tick 마다 뷰를 다시 그리지 않게
     let old = state; state = s
+    if old.runId != nil, s.runId == nil, expanded { loadHistory() }  // 펼친 패널에 방금 끝난 답을 반영
     if old.mood != .happy, s.mood == .happy, case .answer(let t, _)? = s.bubble {  // B9: end 첫 문장 1회
       announce(String(t.prefix { !".?!\n".contains($0) }), high: false)
     }
@@ -57,17 +58,45 @@ import SwiftUI
     AccessibilityNotification.Announcement(s).post()
   }
 
-  func send() {  // D4: run 중엔 뷰가 입력을 잠근다
-    let msg = input.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !msg.isEmpty, state.runId == nil else { return }
-    input = ""; panel?.resignKey()
-    let id = UUID().uuidString.lowercased()
-    apply(.sent(runId: id))  // §2-3: RPC 전에
-    Task { do { try await client.send(msg, runId: id) } catch { apply(.requestFailed) } }
+  /// 입력창 안내. 있으면 보내지 않고 입력을 그대로 둔다 — 끊긴 상태 · 서버 상한 초과.
+  var inputHint: String? {
+    if state.mood == .offline { return Copy.offline(state.offlineReason ?? .serverDown) }
+    if input.utf16.count > GatewayClient.maxMessageUTF16 { return Copy.tooLong }
+    return nil
   }
 
-  func abort() { if let id = state.runId { Task { try? await client.abort(runId: id) } } }
-  func reset() { Task { do { try await client.reset(); apply(.notice(Copy.resetDone)) } catch { apply(.requestFailed) } } }
+  func send() {  // D4: run 중엔 뷰가 입력을 잠근다
+    let msg = input.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !msg.isEmpty, state.runId == nil, inputHint == nil else { return }
+    input = ""
+    panel?.resignKey()
+    history.append(HistoryLine(role: "user", text: msg))  // 펼친 패널에 질문을 바로 보인다 (끝나면 재조회)
+    let id = UUID().uuidString.lowercased()
+    apply(.sent(runId: id))  // §2-3: RPC 전에
+    Task {
+      do { try await client.send(msg, runId: id) } catch { apply(.requestFailed) }
+    }
+  }
+
+  func abort() {
+    guard let id = state.runId else { return }
+    Task {
+      // 서버에 그 run 이 없으면(이미 끝났는데 종료 이벤트를 놓침) 종료 이벤트도 오지 않는다 → 로컬에서 정리
+      if (try? await client.abort(runId: id)) == false { apply(.abandoned(runId: id)) }
+    }
+  }
+
+  /// reset 은 진행 중 run 이 끝나길 기다린다(서버 lane). 실패해도 run 상태는 건드리지 않고 안내만.
+  func reset() {
+    Task {
+      do {
+        try await client.reset()
+        apply(.notice(Copy.resetDone))
+      } catch {
+        apply(.notice(Copy.requestFailed))
+      }
+    }
+  }
   func reconnect() { client.reconnect() }
   func setProactive(_ on: Bool) { UserDefaults.standard.set(on, forKey: "proactiveEnabled"); apply(.setProactive(on)) }
   /// B8: 캐릭터 탭 → 입력창 + key. proactive 표시에는 쓰지 않는다 (P1).

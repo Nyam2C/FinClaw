@@ -107,15 +107,24 @@ struct TwoStepButton: View {
 /// B8 입력창. Enter = 전송 후 포커스 해제, Esc = 닫기. run 중 비활성 (D4).
 struct InputBar: View {
   @Binding var text: String
-  let disabled: Bool, onSubmit: () -> Void, onCancel: () -> Void, onExpand: () -> Void, onFocus: (Bool) -> Void
+  let disabled: Bool
+  let hint: String?  // 있으면 Enter 로 보내지 않는다 (입력은 그대로)
+  let onSubmit: () -> Void, onCancel: () -> Void, onExpand: () -> Void, onFocus: (Bool) -> Void
   @FocusState private var focused: Bool
 
   var body: some View {
-    HStack(spacing: 6) {
-      TextField(Copy.inputPlaceholder, text: $text).textFieldStyle(.plain).focused($focused).disabled(disabled)
-        .onSubmit { onSubmit(); focused = false }
-        .onExitCommand { focused = false; onCancel() }
-      Button("▸", action: onExpand).buttonStyle(.plain).help("대화 펼치기")
+    VStack(alignment: .leading, spacing: 4) {
+      HStack(spacing: 6) {
+        TextField(Copy.inputPlaceholder, text: $text).textFieldStyle(.plain).focused($focused).disabled(disabled)
+          .onSubmit {
+            guard hint == nil else { return }
+            onSubmit()
+            focused = false
+          }
+          .onExitCommand { focused = false; onCancel() }
+        Button("▸", action: onExpand).buttonStyle(.plain).help("대화 펼치기")
+      }
+      if let hint { Text(hint).font(.caption).foregroundStyle(.secondary) }
     }
     .padding(8)
     .frame(width: 260)

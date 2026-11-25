@@ -68,8 +68,8 @@ struct RootView: View {
       }
       if model.inputOpen {
         InputBar(
-          text: $model.input, disabled: s.runId != nil, onSubmit: model.send, onCancel: model.closeInput,
-          onExpand: model.expand, onFocus: { model.apply(.inputFocused($0)) })
+          text: $model.input, disabled: s.runId != nil, hint: model.inputHint, onSubmit: model.send,
+          onCancel: model.closeInput, onExpand: model.expand, onFocus: { model.apply(.inputFocused($0)) })
       }
       CharacterView(state: s, onTap: model.openInput, onBadge: { model.apply(.dismiss) })
     }

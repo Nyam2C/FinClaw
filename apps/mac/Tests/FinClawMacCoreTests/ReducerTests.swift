@@ -375,3 +375,41 @@ private func shown(_ s: CharacterState) -> Proactive? {
   apply(&o, .notice(Copy.resetDone))
   #expect(o.bubble == nil)
 }
+
+// MARK: - phase47 리뷰 수정 (R2)
+
+@Test func requestFailedWhileOfflineStaysOffline() {
+  var s = idle()
+  apply(&s, .client(.disconnected(.serverDown)))
+  apply(&s, .requestFailed)  // 끊긴 뒤 도착한 reset·send 실패
+  #expect(s.mood == .offline)
+  #expect(s.bubble == nil)
+}
+
+@Test func abandonedRunGoesIdleAndIgnoresLateEvents() {
+  var s = running()
+  apply(&s, .abandoned(runId: "other"))
+  #expect(s.runId == "r1")
+  apply(&s, .abandoned(runId: "r1"))
+  #expect(s.mood == .idle)
+  #expect(s.runId == nil)
+  #expect(s.bubble == nil)
+  apply(&s, sv(.end(runId: "r1", text: "늦은 답")))
+  #expect(s.mood == .idle)
+  #expect(s.bubble == nil)
+}
+
+@Test func bubbleCloseWhileTypingWaitsThenShowsQueue() {
+  var s = running()
+  apply(&s, sv(.end(runId: "r1", text: "답")))
+  apply(&s, alert("a1"))  // 답 말풍선 표시 중 → 큐
+  apply(&s, .inputFocused(true))  // 답을 보며 다음 질문 입력
+  apply(&s, .tick(holdBubble: false), 30)
+  #expect(s.bubble == nil)
+  #expect(s.mood == .listening)
+  #expect(s.queue.count == 1)
+  apply(&s, .inputFocused(false), 31)
+  #expect(s.mood == .alert)
+  #expect(shown(s)?.key == "a1")
+  #expect(s.queue.isEmpty)
+}
