@@ -4,6 +4,7 @@ import type {
   ChatStreamDeltaParams,
   ChatStreamEndParams,
   ChatStreamErrorParams,
+  ChatStreamToolParams,
 } from '@finclaw/types';
 import type { WsConnection, JsonRpcNotification } from './rpc/types.js';
 
@@ -15,6 +16,7 @@ import type { WsConnection, JsonRpcNotification } from './rpc/types.js';
  * | text_delta      | chat.stream.delta | 150ms 배치                     |
  * | done            | chat.stream.end   | 즉시 (남은 delta flush 후)     |
  * | error           | chat.stream.error | 즉시 (남은 delta flush 후)     |
+ * | tool_use/result | chat.stream.tool  | 즉시 (남은 delta flush 후)     |
  * | start           | (전송 안 함)      |                                |
  */
 export class GatewayBroadcaster {
@@ -23,6 +25,8 @@ export class GatewayBroadcaster {
     { runId: string; text: string; timer: ReturnType<typeof setTimeout> }
   >();
   private static readonly BATCH_INTERVAL_MS = 150;
+  // ponytail: tool_result 가 오지 않은 채 끝난 run(abort) 의 항목은 남는다 — 엔트리당 수십 바이트, 프로세스 수명 동안 무시 가능.
+  private readonly toolNames = new Map<string, string>();
 
   /** slow consumer 임계값 (bytes) */
   private static readonly MAX_BUFFER = 1024 * 1024;
@@ -50,8 +54,31 @@ export class GatewayBroadcaster {
           reason: event.reason,
         } satisfies ChatStreamErrorParams);
         break;
+      case 'tool_use':
+        this.flushDelta(conn.id, sessionId, conn); // 순서 보존: 앞선 서술 delta 를 먼저
+        this.toolNames.set(event.id, event.name);
+        this.sendImmediate(conn, 'chat.stream.tool', {
+          sessionId,
+          runId,
+          toolCallId: event.id,
+          name: event.name,
+          phase: 'start',
+        } satisfies ChatStreamToolParams);
+        break;
+      case 'tool_result':
+        this.flushDelta(conn.id, sessionId, conn);
+        this.sendImmediate(conn, 'chat.stream.tool', {
+          sessionId,
+          runId,
+          toolCallId: event.id,
+          name: this.toolNames.get(event.id) ?? '',
+          phase: 'end',
+          isError: event.isError,
+        } satisfies ChatStreamToolParams);
+        this.toolNames.delete(event.id);
+        break;
       default:
-        break; // start·tool_use·tool_result — M6 전까지 미전송
+        break; // start 는 WS 로 보내지 않음 (plan §3-7)
     }
   }
 

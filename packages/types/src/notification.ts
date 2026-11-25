@@ -34,3 +34,13 @@ export interface ChatStreamErrorParams {
   readonly error: string;
   readonly reason: string;
 }
+
+/** chat.stream.tool — 도구 진행 (입력/결과 내용 미포함 — S14). tool_use→start, tool_result→end. */
+export interface ChatStreamToolParams {
+  readonly sessionId: string;
+  readonly runId: string;
+  readonly toolCallId: string;
+  readonly name: string;
+  readonly phase: 'start' | 'end';
+  readonly isError?: boolean; // end 만
+}

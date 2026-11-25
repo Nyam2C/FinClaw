@@ -124,7 +124,41 @@ export function createChatMethods(deps: ChatMethodsDeps): readonly RpcMethodHand
     },
   };
 
-  return [startHandler, sendHandler];
+  const abortHandler: RpcMethodHandler<
+    { sessionId: string; runId?: string },
+    { aborted: boolean }
+  > = {
+    method: 'chat.abort',
+    description:
+      '진행 중인 채팅 실행을 중단합니다 (종료 신호는 chat.stream.error{reason:aborted} 1회)',
+    authLevel: 'token',
+    schema: z.object({ sessionId: z.string(), runId: z.string().optional() }),
+    async execute(params) {
+      const active = activeRuns.get(params.sessionId);
+      if (!active || (params.runId !== undefined && params.runId !== active.runId)) {
+        return { aborted: false };
+      }
+      active.controller.abort(); // → driver SIGINT → 2s → SIGKILL → runtime 이 error{aborted} 1회 (I11)
+      return { aborted: true };
+    },
+  };
+
+  const resetHandler: RpcMethodHandler<{ sessionId: string }, { reset: boolean }> = {
+    method: 'chat.reset',
+    description: '세션의 대화·CLI 세션 바인딩을 초기화합니다',
+    authLevel: 'token',
+    schema: z.object({ sessionId: z.string() }),
+    async execute(params) {
+      const session = deps.registry.getSession(params.sessionId);
+      if (!session) {
+        throw new Error('session not found');
+      }
+      // Q14: per-session lane 경유 — 진행 중 run 의 종료 기록 뒤에 삭제된다
+      return { reset: await deps.runtime.reset(session.sessionKey) };
+    },
+  };
+
+  return [startHandler, sendHandler, abortHandler, resetHandler];
 }
 
 /** chat.* 메서드 일괄 등록 */

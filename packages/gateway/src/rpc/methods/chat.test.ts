@@ -1,6 +1,6 @@
 import type { AgentEvent, AgentRunPort, AgentRunRequest } from '@finclaw/agent';
 import { resetEventBus } from '@finclaw/infra';
-import type { ModelRef } from '@finclaw/types';
+import type { ModelRef, RpcMethod } from '@finclaw/types';
 import { createSessionKey } from '@finclaw/types';
 // packages/server/src/gateway/rpc/methods/chat.test.ts
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -178,31 +178,31 @@ describe('chat.* RPC methods', () => {
     });
   });
 
-  describe('chat.send (D9)', () => {
-    async function startSession(runtime: AgentRunPort, conn?: WsConnection) {
-      ctx = makeServerCtx();
-      registerChatMethods(
-        {
-          registry: ctx.registry,
-          connections: ctx.connections,
-          broadcaster: ctx.broadcaster,
-          defaultModel: TEST_MODEL,
-          runtime,
-        },
-        ctx.methods,
-      );
-      if (conn) {
-        ctx.connections.set(conn.id, conn);
-      }
-      const session = ctx.registry.startSession({
-        agentId: 'default',
-        connectionId: conn?.id ?? 'gone',
-        model: TEST_MODEL,
-        sessionKey: createSessionKey('tui:local:default'),
-      });
-      return session.sessionId;
+  async function startSession(runtime: AgentRunPort, conn?: WsConnection) {
+    ctx = makeServerCtx();
+    registerChatMethods(
+      {
+        registry: ctx.registry,
+        connections: ctx.connections,
+        broadcaster: ctx.broadcaster,
+        defaultModel: TEST_MODEL,
+        runtime,
+      },
+      ctx.methods,
+    );
+    if (conn) {
+      ctx.connections.set(conn.id, conn);
     }
+    const session = ctx.registry.startSession({
+      agentId: 'default',
+      connectionId: conn?.id ?? 'gone',
+      model: TEST_MODEL,
+      sessionKey: createSessionKey('tui:local:default'),
+    });
+    return session.sessionId;
+  }
 
+  describe('chat.send (D9)', () => {
     const send = (sessionId: string) =>
       dispatchRpc(
         { jsonrpc: '2.0', id: 1, method: 'chat.send', params: { sessionId, message: '안녕' } },
@@ -259,6 +259,76 @@ describe('chat.* RPC methods', () => {
       await send(sessionId);
       g.open();
       await vi.waitFor(() => expect(done).toHaveBeenCalled());
+    });
+  });
+  describe('chat.abort / chat.reset (M6)', () => {
+    function abortableRuntime() {
+      const reset = vi.fn().mockResolvedValue(true);
+      const runtime: AgentRunPort = {
+        async *run(req) {
+          yield { type: 'text_delta', text: '분석 중' };
+          await new Promise((resolve) =>
+            req.signal.addEventListener('abort', resolve, { once: true }),
+          );
+          yield { type: 'error', runId: req.runId ?? '', reason: 'aborted', message: 'aborted' };
+        },
+        reset,
+      };
+      return { runtime, reset };
+    }
+
+    const rpc = (method: string, params: Record<string, unknown>) =>
+      dispatchRpc(
+        { jsonrpc: '2.0', id: 1, method: method as RpcMethod, params },
+        { auth: { level: 'token' }, remoteAddress: '127.0.0.1' },
+        ctx,
+      );
+
+    it('abort → {aborted:true} + chat.stream.error{reason:aborted} 정확히 1회', async () => {
+      const { runtime } = abortableRuntime();
+      const conn = mockConn();
+      const sessionId = await startSession(runtime, conn);
+      const { result } = (await rpc('chat.send', { sessionId, message: '길게 분석해줘' })) as {
+        result: { runId: string };
+      };
+      const aborted = (await rpc('chat.abort', { sessionId })) as { result: { aborted: boolean } };
+      expect(aborted.result.aborted).toBe(true);
+      await vi.waitFor(() =>
+        expect(conn.sent.some((m) => m.method === 'chat.stream.error')).toBe(true),
+      );
+      const errors = conn.sent.filter((m) => m.method === 'chat.stream.error');
+      expect(errors).toHaveLength(1);
+      expect(errors[0]?.params).toMatchObject({
+        sessionId,
+        runId: result.runId,
+        reason: 'aborted',
+      });
+    });
+
+    it('runId 가 다르면 {aborted:false}', async () => {
+      const { runtime } = abortableRuntime();
+      const sessionId = await startSession(runtime, mockConn());
+      await rpc('chat.send', { sessionId, message: 'x' });
+      const res = (await rpc('chat.abort', { sessionId, runId: 'other' })) as {
+        result: { aborted: boolean };
+      };
+      expect(res.result.aborted).toBe(false);
+      await rpc('chat.abort', { sessionId }); // 정리
+    });
+
+    it('진행 중 run 이 없으면 {aborted:false}', async () => {
+      const { runtime } = abortableRuntime();
+      const sessionId = await startSession(runtime, mockConn());
+      const res = (await rpc('chat.abort', { sessionId })) as { result: { aborted: boolean } };
+      expect(res.result.aborted).toBe(false);
+    });
+
+    it('reset → runtime.reset(session.sessionKey)', async () => {
+      const { runtime, reset } = abortableRuntime();
+      const sessionId = await startSession(runtime, mockConn());
+      const res = (await rpc('chat.reset', { sessionId })) as { result: { reset: boolean } };
+      expect(res.result.reset).toBe(true);
+      expect(reset).toHaveBeenCalledWith('tui:local:default');
     });
   });
 });

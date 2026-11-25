@@ -197,4 +197,41 @@ describe('GatewayBroadcaster', () => {
       expect(msg.method).toBe('system.shutdown');
     });
   });
+  describe('tool events (M6)', () => {
+    it('tool_use → start, tool_result → end (같은 toolCallId·name, isError)', () => {
+      const conn = createMockConn();
+      broadcaster.send(conn, 'sess-1', 'run-1', { type: 'text_delta', text: '확인해 볼게요' });
+      broadcaster.send(conn, 'sess-1', 'run-1', {
+        type: 'tool_use',
+        id: 't1',
+        name: 'mcp__finclaw__route_task',
+        input: { intent: 'price_lookup' },
+      });
+      broadcaster.send(conn, 'sess-1', 'run-1', { type: 'tool_result', id: 't1', isError: true });
+      const msgs = (conn.ws.send as ReturnType<typeof vi.fn>).mock.calls.map((c) =>
+        JSON.parse(c[0] as string),
+      );
+      expect(msgs.map((m) => m.method)).toEqual([
+        'chat.stream.delta',
+        'chat.stream.tool',
+        'chat.stream.tool',
+      ]);
+      expect(msgs[1].params).toEqual({
+        sessionId: 'sess-1',
+        runId: 'run-1',
+        toolCallId: 't1',
+        name: 'mcp__finclaw__route_task',
+        phase: 'start',
+      });
+      expect(msgs[2].params).toEqual({
+        sessionId: 'sess-1',
+        runId: 'run-1',
+        toolCallId: 't1',
+        name: 'mcp__finclaw__route_task',
+        phase: 'end',
+        isError: true,
+      });
+      expect(JSON.stringify(msgs)).not.toContain('price_lookup'); // 입력 내용 미포함 (S14)
+    });
+  });
 });
