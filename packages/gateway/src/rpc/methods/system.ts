@@ -52,7 +52,7 @@ export function registerSystemMethods(registry: MethodRegistry): void {
         name: 'finclaw-gateway',
         version: loadVersion(),
         methods: registry.list(), // Phase 35: 인스턴스 레지스트리 (요청 시점 등록 목록)
-        capabilities: ['streaming', 'batch', 'subscriptions'],
+        capabilities: ['streaming', 'batch'],
       };
     },
   };

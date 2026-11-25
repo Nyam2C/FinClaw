@@ -8,20 +8,6 @@ export type TickerSymbol = Brand<string, 'TickerSymbol'>;
 /** 통화 코드 (ISO 4217) */
 export type CurrencyCode = Brand<string, 'CurrencyCode'>;
 
-/** 금융 상품 유형 */
-export type InstrumentType = 'stock' | 'etf' | 'crypto' | 'forex' | 'index' | 'bond' | 'commodity';
-
-/** 금융 상품 */
-export interface FinancialInstrument {
-  symbol: TickerSymbol;
-  name: string;
-  type: InstrumentType;
-  exchange?: string;
-  currency: CurrencyCode;
-  sector?: string;
-  industry?: string;
-}
-
 // ─── 시장 데이터 ───
 
 /** 실시간 시세 */
@@ -48,9 +34,6 @@ export interface OHLCVCandle {
   close: number;
   volume: number;
 }
-
-/** 시계열 간격 */
-export type TimeInterval = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d' | '1w' | '1M';
 
 // ─── 뉴스 ───
 
@@ -124,7 +107,6 @@ export interface Portfolio {
 /** 포트폴리오 보유 종목 */
 export interface PortfolioHolding {
   symbol: TickerSymbol;
-  instrument?: FinancialInstrument;
   quantity: number;
   averageCost: number;
   currentPrice?: number;

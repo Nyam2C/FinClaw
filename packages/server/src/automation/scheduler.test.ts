@@ -4,7 +4,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { InMemoryToolRegistry, ProfileHealthMonitor } from '@finclaw/agent';
+import { ProfileHealthMonitor } from '@finclaw/agent';
 import { ConcurrencyLane, type FinClawLogger } from '@finclaw/infra';
 import { addSchedule, getSchedule, openDatabase, type Database } from '@finclaw/storage';
 import { createAgentId, type ModelRef } from '@finclaw/types';
@@ -63,7 +63,6 @@ describe('SchedulerService.triggerNow', () => {
     const runner = { execute: vi.fn().mockRejectedValue(new Error('boom')) };
     const sched = new SchedulerService({
       db: database.db,
-      toolRegistry: new InMemoryToolRegistry(),
       runnerFactory: () => runner as never,
       lane,
       defaultModel: DEFAULT_MODEL,
@@ -96,7 +95,6 @@ describe('SchedulerService.triggerNow', () => {
     const runner = { execute: vi.fn().mockRejectedValue(new Error('boom')) };
     const sched = new SchedulerService({
       db: database.db,
-      toolRegistry: new InMemoryToolRegistry(),
       runnerFactory: () => runner as never,
       lane,
       defaultModel: DEFAULT_MODEL,
@@ -134,14 +132,12 @@ describe('SchedulerService.triggerNow', () => {
         return {
           messages: [{ role: 'assistant', content: 'hello' }],
           usage: { inputTokens: 10, outputTokens: 5 },
-          turns: 1,
           status: 'completed',
         };
       }),
     };
     const sched = new SchedulerService({
       db: database.db,
-      toolRegistry: new InMemoryToolRegistry(),
       runnerFactory: () => runner as never,
       lane,
       defaultModel: DEFAULT_MODEL,
@@ -160,7 +156,6 @@ describe('SchedulerService.triggerNow', () => {
   it('not_found 시 throw', async () => {
     const sched = new SchedulerService({
       db: database.db,
-      toolRegistry: new InMemoryToolRegistry(),
       runnerFactory: () => ({ execute: vi.fn() }) as never,
       lane,
       defaultModel: DEFAULT_MODEL,

@@ -4,9 +4,8 @@
 
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
-import type { AliasIndex, ModelCatalog, ProfileHealthMonitor, ToolRegistry } from '@finclaw/agent';
-import { DEFAULT_FALLBACK_TRIGGERS, resolveModel, runWithModelFallback } from '@finclaw/agent';
-import { buildDispatcher, collectToolCalls, extractAssistantText } from '@finclaw/agent';
+import type { ProfileHealthMonitor, RunnerFactory } from '@finclaw/agent';
+import { extractAssistantText } from '@finclaw/agent';
 import type { ConcurrencyLane, FinClawLogger } from '@finclaw/infra';
 import { nextRunAt as computeNextRunAt, parseCron } from '@finclaw/infra';
 import {
@@ -16,15 +15,8 @@ import {
   markScheduleRun,
   updateSchedule,
 } from '@finclaw/storage';
-import type {
-  AgentRunParams,
-  ConversationMessage,
-  ModelRef,
-  Schedule,
-  SchedulerPort,
-} from '@finclaw/types';
+import type { ModelRef, Schedule, SchedulerPort } from '@finclaw/types';
 import { createAgentId, createSessionKey } from '@finclaw/types';
-import type { RunnerFactory } from '../auto-reply/execution-adapter.js';
 import type { FinclawTracer } from '../observability/tracer.js';
 import { resolveCronStaggerMs } from './stagger.js';
 
@@ -43,7 +35,6 @@ export interface SchedulerCallbacks {
 
 export interface SchedulerDeps extends SchedulerCallbacks {
   readonly db: DatabaseSync;
-  readonly toolRegistry: ToolRegistry;
   readonly runnerFactory: RunnerFactory;
   /** schedule 동시 실행 1개로 제한하는 lane. main.ts 에서 maxConcurrent:1 로 주입. */
   readonly lane: ConcurrencyLane;
@@ -52,9 +43,6 @@ export interface SchedulerDeps extends SchedulerCallbacks {
   readonly logger: FinClawLogger;
   readonly profileHealth: ProfileHealthMonitor;
   readonly profileId?: string;
-  readonly modelCatalog?: ModelCatalog;
-  readonly modelAliasIndex?: AliasIndex;
-  readonly fallbackChain?: readonly string[];
   /** 연속 실패 임계 (3 = AUTOMATION_MAX_CONSECUTIVE_FAILURES). 기본 3. */
   readonly maxConsecutiveFailures?: number;
   /** 기본 timeout (ms). schedule.timeoutMs 가 우선. 기본 60_000. */
@@ -223,72 +211,29 @@ export class SchedulerService implements SchedulerPort {
       try {
         const sessionKey = createSessionKey(`schedule-${s.id}-${randomUUID()}`);
         const agentIdBrand = createAgentId(s.agentId as string);
-        const { dispatcher } = buildDispatcher(this.deps.toolRegistry, {
-          sessionId: sessionKey as string,
-          userId: 'scheduler',
-          channelId: 'scheduler',
-        });
-        const runner = this.deps.runnerFactory(dispatcher);
-        const userMsg: ConversationMessage = { role: 'user', content: s.prompt };
         const abortController = new AbortController();
         const timeoutMs = s.timeoutMs ?? this.deps.defaultTimeoutMs ?? 60_000;
         const timer = setTimeout(() => abortController.abort(), timeoutMs);
 
-        const buildParams = (model: ModelRef): AgentRunParams => ({
-          agentId: agentIdBrand,
-          sessionKey,
-          model,
-          systemPrompt: this.deps.systemPrompt,
-          messages: [userMsg],
-          abortSignal: abortController.signal,
-        });
-
-        let usedModelId: string | undefined;
         try {
-          let result;
-          if (
-            this.deps.modelCatalog &&
-            this.deps.modelAliasIndex &&
-            (this.deps.fallbackChain?.length ?? 0) > 0
-          ) {
-            const chain = [this.deps.defaultModel.model, ...(this.deps.fallbackChain ?? [])];
-            const catalog = this.deps.modelCatalog;
-            const aliasIndex = this.deps.modelAliasIndex;
-            const fallback = await runWithModelFallback(
-              {
-                models: chain.map((raw) => ({ raw })),
-                maxRetriesPerModel: 1,
-                retryBaseDelayMs: 500,
-                fallbackOn: DEFAULT_FALLBACK_TRIGGERS,
-                abortSignal: abortController.signal,
-              },
-              async (resolved) =>
-                runner.execute(
-                  buildParams({
-                    ...this.deps.defaultModel,
-                    provider: resolved.provider,
-                    model: resolved.modelId,
-                  }),
-                ),
-              (ref) => resolveModel(ref, catalog, aliasIndex),
-            );
-            result = fallback.result;
-            usedModelId = fallback.modelUsed.modelId;
-          } else {
-            result = await runner.execute(buildParams(this.deps.defaultModel));
-          }
+          const result = await this.deps.runnerFactory().execute({
+            agentId: agentIdBrand,
+            sessionKey,
+            model: this.deps.defaultModel,
+            systemPrompt: this.deps.systemPrompt,
+            messages: [{ role: 'user', content: s.prompt }],
+            abortSignal: abortController.signal,
+          });
           output = extractAssistantText(result.messages);
-          const toolCalls = collectToolCalls(result.messages, startedAt);
           const durationMs = Date.now() - startedAt;
           const inserted = addAgentRun(this.deps.db, {
             agentId: agentIdBrand,
             prompt: s.prompt,
             output,
-            toolCalls: JSON.stringify(toolCalls),
             tokensInput: result.usage.inputTokens,
             tokensOutput: result.usage.outputTokens,
             durationMs,
-            modelUsed: usedModelId ?? this.deps.defaultModel.model,
+            modelUsed: this.deps.defaultModel.model,
             // Phase 30 hotfix P0-1: schedule 실행이 자체 trace 의 root, agent_runs 가 그 아래.
             traceId: traceCtx?.traceId,
             parentSpanId: traceCtx?.parentSpanId,

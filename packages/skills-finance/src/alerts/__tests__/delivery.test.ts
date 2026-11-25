@@ -3,7 +3,6 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   formatAlertMessage,
   createDiscordDeliveryHandler,
-  createWebSocketDeliveryHandler,
   createLogDeliveryHandler,
   createDeliveryDispatcher,
 } from '../delivery.js';
@@ -64,28 +63,6 @@ describe('DiscordDeliveryHandler', () => {
     expect(fetch).toHaveBeenCalledWith('user-1');
     expect(createDM).toHaveBeenCalled();
     expect(send).toHaveBeenCalled();
-  });
-});
-
-describe('WebSocketDeliveryHandler', () => {
-  it('broadcastToChannel 호출, userId 포함', async () => {
-    const broadcastToChannel = vi.fn().mockReturnValue(1);
-    const connections = new Map();
-    const handler = createWebSocketDeliveryHandler({
-      broadcaster: { broadcastToChannel },
-      connections,
-    });
-
-    await handler.deliver(mockAlert(), mockEvaluation);
-    expect(broadcastToChannel).toHaveBeenCalledWith(
-      connections,
-      'alerts',
-      expect.objectContaining({
-        type: 'alert.triggered',
-        userId: 'user-1',
-        alertId: 'alert-1',
-      }),
-    );
   });
 });
 

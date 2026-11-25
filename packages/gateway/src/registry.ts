@@ -1,8 +1,7 @@
 // packages/server/src/gateway/registry.ts
 import { randomUUID } from 'node:crypto';
-import { EventEmitter } from 'node:events';
 import type { ModelRef, SessionKey } from '@finclaw/types';
-import type { ActiveSession, RegistryEvent } from './rpc/types.js';
+import type { ActiveSession } from './rpc/types.js';
 
 /**
  * Chat 실행 레지스트리
@@ -11,11 +10,9 @@ import type { ActiveSession, RegistryEvent } from './rpc/types.js';
  * - 동일 연결에서 중복 실행 방지
  * - TTL 기반 자동 만료 (AbortSignal.timeout)
  * - 주기적 cleanup (60초 간격)
- * - 이벤트 발행 (session_started, session_completed, session_error)
  */
 export class ChatRegistry {
   private readonly sessions = new Map<string, ActiveSession>();
-  private readonly emitter = new EventEmitter();
   private readonly cleanupTimer: ReturnType<typeof setInterval>;
 
   constructor(private readonly sessionTtlMs: number) {
@@ -57,7 +54,6 @@ export class ChatRegistry {
     });
 
     this.sessions.set(session.sessionId, session);
-    this.emit({ type: 'session_started', session });
 
     return session;
   }
@@ -72,28 +68,12 @@ export class ChatRegistry {
     session.abortController.abort();
     this.sessions.delete(sessionId);
 
-    this.emit({
-      type: 'session_completed',
-      sessionId,
-      durationMs: Date.now() - session.startedAt,
-    });
-
     return { stopped: true };
   }
 
   /** 세션 조회 */
   getSession(sessionId: string): ActiveSession | undefined {
     return this.sessions.get(sessionId);
-  }
-
-  /** 모든 세션 목록 */
-  listSessions(): ActiveSession[] {
-    return [...this.sessions.values()];
-  }
-
-  /** 특정 연결에 속한 세션 목록 */
-  listSessionsByConnection(connectionId: string): ActiveSession[] {
-    return [...this.sessions.values()].filter((s) => s.connectionId === connectionId);
   }
 
   /** 모든 세션 abort (shutdown 용) */
@@ -123,15 +103,5 @@ export class ChatRegistry {
   dispose(): void {
     clearInterval(this.cleanupTimer);
     this.abortAll();
-  }
-
-  /** 이벤트 리스너 등록. 해제 함수 반환. */
-  on(listener: (event: RegistryEvent) => void): () => void {
-    this.emitter.on('event', listener);
-    return () => this.emitter.off('event', listener);
-  }
-
-  private emit(event: RegistryEvent): void {
-    this.emitter.emit('event', event);
   }
 }

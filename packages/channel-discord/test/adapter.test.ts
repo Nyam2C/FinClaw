@@ -4,24 +4,6 @@ import { DiscordAdapter } from '../src/adapter.js';
 
 // discord.js mock
 vi.mock('discord.js', () => {
-  // Proxy-based chain: any method call returns the same proxy
-  function makeChain(): unknown {
-    return new Proxy(
-      {},
-      {
-        get:
-          () =>
-          (...args: unknown[]) => {
-            const fn = args.find((a: unknown) => typeof a === 'function');
-            if (fn) {
-              fn(makeChain());
-            }
-            return makeChain();
-          },
-      },
-    );
-  }
-
   const _login = vi.fn().mockResolvedValue('token');
   const _destroy = vi.fn().mockResolvedValue(undefined);
   const _removeAllListeners = vi.fn();
@@ -45,84 +27,12 @@ vi.mock('discord.js', () => {
     guilds = { cache: { size: 2 } };
   }
 
-  const _restPut = vi.fn().mockResolvedValue(undefined);
-  class MockREST {
-    setToken() {
-      return this;
-    }
-    put = _restPut;
-  }
-
   return {
     Client: MockClient,
     GatewayIntentBits: { Guilds: 1, GuildMessages: 2, DirectMessages: 4, MessageContent: 8 },
     Partials: { Channel: 0, Message: 1 },
     ActivityType: { Playing: 0 },
-    REST: MockREST,
-    Routes: {
-      applicationGuildCommands: vi.fn().mockReturnValue('/commands'),
-      applicationCommands: vi.fn().mockReturnValue('/commands'),
-    },
     MessageFlags: { Ephemeral: 64 },
-    SlashCommandBuilder: class {
-      name = 'mock';
-      setName(n: string) {
-        this.name = n;
-        return this;
-      }
-      setDescription() {
-        return this;
-      }
-      addStringOption(fn: (opt: unknown) => unknown) {
-        fn(makeChain());
-        return this;
-      }
-      addIntegerOption(fn: (opt: unknown) => unknown) {
-        fn(makeChain());
-        return this;
-      }
-      addNumberOption(fn: (opt: unknown) => unknown) {
-        fn(makeChain());
-        return this;
-      }
-      addSubcommand(fn: (opt: unknown) => unknown) {
-        fn(makeChain());
-        return this;
-      }
-      toJSON() {
-        return { name: this.name };
-      }
-    },
-    EmbedBuilder: class {
-      data: Record<string, unknown> = {};
-      setTitle(t: string) {
-        this.data.title = t;
-        return this;
-      }
-      setColor(c: number) {
-        this.data.color = c;
-        return this;
-      }
-      setFooter(f: Record<string, string>) {
-        this.data.footer = f;
-        return this;
-      }
-      setTimestamp() {
-        return this;
-      }
-      setURL(u: string) {
-        this.data.url = u;
-        return this;
-      }
-      setDescription(d: string) {
-        this.data.description = d;
-        return this;
-      }
-      addFields(...fields: unknown[]) {
-        this.data.fields = [...((this.data.fields as unknown[]) ?? []), ...fields];
-        return this;
-      }
-    },
   };
 });
 
@@ -138,20 +48,11 @@ vi.mock('@finclaw/infra', () => ({
     child: vi.fn(),
     flush: vi.fn(),
   }),
-  retry: vi.fn().mockImplementation((fn: () => unknown) => fn()),
 }));
 
 function makeConfig() {
   return {
     botToken: 'test-token',
-    applicationId: 'app-123',
-    guildIds: ['guild-1'],
-    allowDMs: true,
-    typingIntervalMs: 5000,
-    maxChunkLength: 2000,
-    maxChunkLines: 17,
-    approvalRequired: false,
-    approvalTimeoutMs: 300_000,
   };
 }
 
@@ -213,10 +114,6 @@ describe('DiscordAdapter', () => {
     ).rejects.toThrow('Client not initialized');
   });
 
-  it('addReaction은 에러 없이 실행된다 (TODO stub)', async () => {
-    await expect(adapter.addReaction('msg-1', '👍')).resolves.toBeUndefined();
-  });
-
   it('sendTyping은 setup() 전에는 조용히 반환한다', async () => {
     await expect(adapter.sendTyping('discord', 'ch-1')).resolves.toBeUndefined();
   });
@@ -230,6 +127,5 @@ describe('DiscordAdapter', () => {
     expect(adapter.onMessage).toBeDefined();
     expect(adapter.send).toBeDefined();
     expect(adapter.sendTyping).toBeDefined();
-    expect(adapter.addReaction).toBeDefined();
   });
 });

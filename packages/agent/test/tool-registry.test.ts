@@ -5,7 +5,7 @@ import type {
   ToolExecutionContext,
   ToolResult,
 } from '../src/agents/tools/registry.js';
-import { InMemoryToolRegistry, toApiToolDefinition } from '../src/agents/tools/registry.js';
+import { InMemoryToolRegistry } from '../src/agents/tools/registry.js';
 
 // ── 헬퍼 ──
 
@@ -70,34 +70,6 @@ describe('InMemoryToolRegistry', () => {
     expect(() => registry.register(makeDef(), okExecutor)).toThrow('already registered');
   });
 
-  it('등록 해제한다', () => {
-    registry.register(makeDef(), okExecutor);
-    expect(registry.unregister('test-tool')).toBe(true);
-    expect(registry.has('test-tool')).toBe(false);
-    expect(registry.unregister('nonexistent')).toBe(false);
-  });
-
-  it('그룹별로 도구를 조회한다', () => {
-    registry.register(makeDef({ name: 'a', group: 'finance' }), okExecutor);
-    registry.register(makeDef({ name: 'b', group: 'finance' }), okExecutor);
-    registry.register(makeDef({ name: 'c', group: 'system' }), okExecutor);
-
-    expect(registry.listByGroup('finance')).toHaveLength(2);
-    expect(registry.listByGroup('system')).toHaveLength(1);
-    expect(registry.listByGroup('web')).toHaveLength(0);
-  });
-
-  // ── toApiToolDefinition ──
-
-  it('RegisteredToolDefinition을 3필드 ToolDefinition으로 변환한다', () => {
-    const reg = makeDef({ name: 'x', group: 'finance', isTransactional: true });
-    const api = toApiToolDefinition(reg);
-
-    expect(api).toEqual({ name: 'x', description: 'A test tool', inputSchema: {} });
-    expect(api).not.toHaveProperty('group');
-    expect(api).not.toHaveProperty('isTransactional');
-  });
-
   // ── execute ──
 
   it('등록되지 않은 도구 실행 시 에러 결과를 반환한다', async () => {
@@ -136,23 +108,6 @@ describe('InMemoryToolRegistry', () => {
 
     expect(result.isError).toBe(true);
     expect(result.content).toContain('denied');
-  });
-
-  it('beforeToolExecute 훅으로 실행을 skip할 수 있다', async () => {
-    const hookRegistry = new InMemoryToolRegistry({
-      hooks: {
-        beforeToolExecute: async (payload) => ({
-          ...payload,
-          skip: true,
-          skipResult: { content: 'Hooked!', isError: false },
-        }),
-      },
-    });
-    hookRegistry.register(makeDef(), okExecutor);
-
-    const result = await hookRegistry.execute('test-tool', {}, makeCtx());
-
-    expect(result.content).toBe('Hooked!');
   });
 
   // ── 루프 감지 통합 (Phase 31 D) ──

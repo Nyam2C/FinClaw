@@ -52,17 +52,4 @@ export function register(program: Command, deps: CliDeps): void {
       const rows = result.data?.alerts ?? [];
       deps.output(rows.length > 0 ? formatTable(rows) : theme.dim('No alerts configured.'));
     });
-
-  cmd
-    .command('remove <id>')
-    .description('remove an alert')
-    .action(async (id: string) => {
-      const result = await deps.callGateway('finance.alert.remove', { id });
-      if (!result.ok) {
-        deps.error(theme.error(`Failed to remove alert: ${result.error?.message}`));
-        deps.exit(EXIT.GATEWAY_ERROR);
-        return;
-      }
-      deps.output(theme.success(`Alert ${id} removed.`));
-    });
 }

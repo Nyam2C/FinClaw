@@ -1,21 +1,16 @@
 // ── groups ──
-export type { ToolGroupId, ToolGroup } from './groups.js';
+export type { ToolGroupId } from './groups.js';
 
 // ── registry ──
 export type {
-  ToolInputSchema,
-  ToolPropertySchema,
   RegisteredToolDefinition,
   ToolExecutor,
   ToolExecutionContext,
   ToolResult,
   RegisteredTool,
   ToolRegistry,
-  BeforeToolExecutePayload,
-  AfterToolExecutePayload,
-  ToolRegistryHooks,
 } from './registry.js';
-export { toApiToolDefinition, InMemoryToolRegistry, jsonSchemaToZod } from './registry.js';
+export { InMemoryToolRegistry, jsonSchemaToZod } from './registry.js';
 
 // ── policy ──
 export type {

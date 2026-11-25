@@ -2,7 +2,7 @@
 // Phase 30 C10: createAccessLogger 가 db 옵션 주입 시 SQLite 에 기록.
 
 import { EventEmitter } from 'node:events';
-import { listAccessLog, openDatabase } from '@finclaw/storage';
+import { openDatabase } from '@finclaw/storage';
 import { describe, expect, it } from 'vitest';
 import { createAccessLogger } from './access-log.js';
 
@@ -39,14 +39,14 @@ describe('createAccessLogger SQLite dual-write', () => {
     log(req, res, { rpcMethod: 'system.ping', authLevel: 'token' });
     (res as unknown as EventEmitter).emit('finish');
 
-    const rows = listAccessLog(db.db);
+    const rows = db.db.prepare('SELECT * FROM access_log').all();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       method: 'system.ping',
       actor: 'token',
       ip: '127.0.0.1',
       status: '200',
-      traceId: 'aa'.repeat(16),
+      trace_id: 'aa'.repeat(16),
     });
   });
 

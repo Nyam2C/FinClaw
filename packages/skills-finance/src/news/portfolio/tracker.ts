@@ -82,7 +82,7 @@ export function createPortfolioTracker(deps: {
         portfolio: valuated,
         topGainers,
         topLosers,
-        sectorAllocation: {}, // 향후 FinancialInstrument.sector 기반 구현
+        sectorAllocation: {}, // 섹터 데이터 소스 없음 — 항상 비어 있음
         dailyChange,
         dailyChangePercent,
       };

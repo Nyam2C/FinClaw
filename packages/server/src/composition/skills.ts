@@ -3,34 +3,24 @@
 
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import {
-  InMemoryModelCatalog,
-  InMemoryToolRegistry,
-  NEWS_BRIEF_PROMPT,
-  NEWS_BRIEF_SCHEDULE_ID,
-  ProfileHealthMonitor,
-} from '@finclaw/agent';
+import type { InMemoryToolRegistry } from '@finclaw/agent';
 import type { DiscordAdapter } from '@finclaw/channel-discord';
-import { nextRunAt as computeNextRunAt, parseCron } from '@finclaw/infra';
 import type { FinClawLogger } from '@finclaw/infra';
 import {
+  createMarketSkill,
+  createNewsSkill,
   KeyRotator,
   KisClient,
   KisTokenManager,
   readKeyArray,
   registerAlertTools,
-  registerBrokerageTools,
-  registerMarketTools,
-  registerNewsTools,
   type AlertSkillHandle,
   type BrokerageProvider,
   type MarketSkillHandle,
   type NewsSkillHandle,
 } from '@finclaw/skills-finance';
-import { registerGeneralTools, registerRouteTaskTool } from '@finclaw/skills-general';
-import { addSchedule, getSchedule, type createStorage } from '@finclaw/storage';
-import type { FinClawConfig, ScheduleRpc, Timestamp } from '@finclaw/types';
-import { createAgentId } from '@finclaw/types';
+import { registerDatetimeTool, registerRouteTaskTool } from '@finclaw/skills-general';
+import type { createStorage } from '@finclaw/storage';
 import { loadPlugins } from '../plugins/loader.js';
 import type { ProcessLifecycle } from '../process/lifecycle.js';
 import { buildRouteDispatcher } from '../router/dispatch.js';
@@ -42,11 +32,7 @@ export interface RegisterSkillsDeps {
   readonly toolRegistry: InMemoryToolRegistry;
   readonly storage: Storage;
   readonly logger: FinClawLogger;
-  readonly finclawConfig: FinClawConfig;
   readonly discordAdapter: DiscordAdapter;
-  readonly profileHealth: ProfileHealthMonitor;
-  readonly modelCatalog: InMemoryModelCatalog;
-  readonly scheduleRpc: ScheduleRpc;
   readonly lifecycle: ProcessLifecycle;
 }
 
@@ -59,19 +45,9 @@ export interface SkillsBundle {
 }
 
 export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBundle> {
-  const {
-    toolRegistry,
-    storage,
-    logger,
-    finclawConfig,
-    discordAdapter,
-    profileHealth,
-    modelCatalog,
-    scheduleRpc,
-    lifecycle,
-  } = deps;
+  const { toolRegistry, storage, logger, discordAdapter, lifecycle } = deps;
 
-  registerGeneralTools(toolRegistry, { scheduleRpc });
+  registerDatetimeTool(toolRegistry);
 
   const finnhubKeys = readKeyArray('FINNHUB_KEY');
   const twelveDataKeys = readKeyArray('TWELVE_DATA_KEY');
@@ -87,14 +63,14 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
   let newsHandle: NewsSkillHandle | undefined;
 
   if (finnhubRotator || twelveDataRotator || alphaVantageRotator || coinGeckoKey) {
-    marketHandle = await registerMarketTools(toolRegistry, {
+    marketHandle = await createMarketSkill({
       db: storage.db,
       finnhubRotator,
       twelveDataRotator,
       alphaVantageRotator,
       coinGeckoKey,
     });
-    logger.info('Market tools registered', {
+    logger.info('Market providers initialized', {
       providers: [
         finnhubRotator && 'finnhub',
         twelveDataRotator && 'twelve-data',
@@ -103,24 +79,20 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
       ].filter(Boolean),
     });
   } else {
-    logger.info('No market keys set — skipping market tools');
+    logger.info('No market keys set — skipping market/news/route_task');
   }
 
   const newsdataKeys = readKeyArray('NEWSDATA_API_KEY');
   const newsdataRotator = newsdataKeys.length > 0 ? new KeyRotator(newsdataKeys) : undefined;
 
   if (marketHandle && (alphaVantageRotator || newsdataRotator || finnhubRotator)) {
-    newsHandle = await registerNewsTools(toolRegistry, {
+    newsHandle = createNewsSkill({
       db: storage.db,
       alphaVantageKey: alphaVantageKeys[0],
       newsdataRotator,
       finnhubRotator, // 시세 KeyRotator 와 동일 인스턴스 공유
-      quoteService: marketHandle.quoteService,
-      profileHealth,
-      profileId: 'default',
-      modelCatalog,
     });
-    logger.info('News tools registered', {
+    logger.info('News providers initialized', {
       providers: [
         alphaVantageRotator && 'alpha-vantage',
         newsdataRotator && 'newsdata',
@@ -128,37 +100,22 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
       ].filter(Boolean),
     });
   } else if (marketHandle) {
-    logger.info('No news keys set — skipping news tools');
+    logger.info('No news keys set — route_task news intents disabled');
   }
 
-  // Phase 43 M3: route_task 함수 dispatch + 직접 도메인 도구 메인 노출 제거.
-  // 메인은 thin orchestrator — 조회/분석은 route_task 로 위임. analyze_market 은 이미 sub-agent.
-  if (newsHandle && marketHandle) {
+  // Phase 43 M3: 도메인 조회/분석은 route_task 하나로만 노출 (메인은 thin orchestrator).
+  // 뉴스 키가 없으면 뉴스 의존 intent 는 dispatcher 가 에러 결과를 돌려준다.
+  if (marketHandle) {
     const dispatcher = buildRouteDispatcher({
-      newsAggregator: newsHandle.aggregator,
       quoteService: marketHandle.quoteService,
       chartService: marketHandle.chartService,
-      portfolioStore: newsHandle.portfolioStore,
+      newsAggregator: newsHandle?.aggregator,
+      portfolioStore: newsHandle?.portfolioStore,
     });
     registerRouteTaskTool(toolRegistry, dispatcher);
-
-    // 직접 도메인 도구를 메인 노출에서 제거(route_task 가 service 직접 호출로 흡수).
-    // alerts 모니터는 ToolRegistry 의 도구를 쓰지 않고 marketHandle.cache/providers 를
-    // 직접 받으므로(아래 registerAlertTools) 이 unregister 가 alerts 에 영향 없음.
-    for (const name of [
-      'analyze_market',
-      'get_stock_price',
-      'get_crypto_price',
-      'get_forex_rate',
-      'get_market_chart',
-      'get_financial_news',
-      'get_portfolio_summary',
-    ]) {
-      toolRegistry.unregister(name);
-    }
-    logger.info('route_task registered; direct domain tools hidden from main agent', {
+    logger.info('route_task registered', {
       event: 'route_task.registered',
-      hidden: 7,
+      news: newsHandle !== undefined,
     });
   }
 
@@ -207,7 +164,7 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
     logger.warn('brokerage.provider_unimplemented', {
       event: 'brokerage.provider_unimplemented',
       provider: 'toss',
-      note: 'Toss brokerage client not implemented (awaiting Open API). Skipping brokerage tools.',
+      note: 'Toss brokerage client not implemented (awaiting Open API). Skipping brokerage sync.',
     });
   } else {
     // provider === 'kis' (기본)
@@ -232,44 +189,9 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
         logger,
         resolvePortfolioId: resolveDefaultPortfolioId,
       });
-      const syncService = brokerageSyncService;
-      registerBrokerageTools(toolRegistry, {
-        syncHoldings: async () => {
-          const r = await syncService.run();
-          return { holdingsCount: r.holdingsCount, marketsScanned: r.marketsScanned };
-        },
-      });
-      logger.info('Brokerage (KIS) tools registered', { env: kisEnv });
-
-      // Phase 33 C / Phase 40: news-brief seed — CLI 모드는 seed skip (brokerage_sync_holdings MCP deny).
-      const isCliMode = (finclawConfig.provider ?? 'claude-cli') === 'claude-cli';
-      if (isCliMode) {
-        logger.warn('news_brief.seed_skipped_cli', {
-          event: 'news_brief.seed_skipped_cli',
-          note: 'read-only CLI mode denies brokerage_sync_holdings (humans-only); the holdings brief needs it. Seed skipped — use SDK mode for the scheduled brief.',
-        });
-      } else if (getSchedule(storage.db, NEWS_BRIEF_SCHEDULE_ID) === null) {
-        const briefCron = '0 0 * * *';
-        const briefNext = computeNextRunAt(parseCron(briefCron), Date.now());
-        addSchedule(storage.db, {
-          id: NEWS_BRIEF_SCHEDULE_ID,
-          name: 'Daily holdings news brief',
-          cron: briefCron,
-          agentId: createAgentId('default'),
-          prompt: NEWS_BRIEF_PROMPT,
-          deliveryChannel: 'web',
-          deliveryTarget: 'broadcast',
-          enabled: true,
-          nextRunAt: briefNext === null ? undefined : (briefNext as Timestamp),
-        });
-        logger.info('Seeded news-brief-daily schedule', {
-          event: 'schedule.seeded',
-          id: NEWS_BRIEF_SCHEDULE_ID,
-          cron: briefCron,
-        });
-      }
+      logger.info('Brokerage (KIS) sync service ready', { env: kisEnv });
     } else {
-      logger.info('KIS not configured — skipping brokerage tools');
+      logger.info('KIS not configured — skipping brokerage sync');
     }
   }
 
@@ -290,6 +212,11 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
     failed: pluginResult.failed,
     mcpServers: pluginResult.mcpHandles.length,
   });
+  for (const d of pluginResult.diagnostics) {
+    if (d.severity !== 'info') {
+      logger.warn(`Plugin ${d.pluginName} (${d.phase}): ${d.message}`);
+    }
+  }
   lifecycle.register(async () => {
     for (const h of pluginResult.mcpHandles) {
       await h.shutdown();

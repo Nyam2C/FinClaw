@@ -6,8 +6,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { z } from 'zod/v4';
 import type { GatewayServerContext } from '../context.js';
 import { MethodRegistry } from '../rpc/index.js';
-import type { GatewayServerConfig, WsConnection } from '../rpc/types.js';
-import { handleWsConnection, sendNotification } from './connection.js';
+import type { GatewayServerConfig } from '../rpc/types.js';
+import { handleWsConnection } from './connection.js';
 
 let methods: MethodRegistry; // Phase 35: 인스턴스 레지스트리 (테스트 격리)
 
@@ -218,34 +218,5 @@ describe('WebSocket Connection', () => {
     await handleWsConnection(ws as unknown as import('ws').WebSocket, req, ctx);
     // authenticate가 즉시 resolve하므로 타임아웃 전에 클리어됨
     expect(ctx.connections.size).toBe(1);
-  });
-});
-
-describe('sendNotification', () => {
-  it('sends notification to open connection', () => {
-    const ctx = makeCtx();
-    const ws = createMockWs();
-    const conn: WsConnection = {
-      id: 'conn-1',
-      ws: ws as unknown as import('ws').WebSocket,
-      auth: { level: 'none', permissions: [] },
-      connectedAt: Date.now(),
-      lastPongAt: Date.now(),
-      subscriptions: new Set(),
-    };
-    ctx.connections.set('conn-1', conn);
-
-    sendNotification(ctx, 'conn-1', 'test.event', { data: 'hello' });
-
-    expect(ws.sentMessages).toHaveLength(1);
-    const msg = JSON.parse(ws.sentMessages[0] ?? '');
-    expect(msg.method).toBe('test.event');
-    expect(msg.params.data).toBe('hello');
-  });
-
-  it('does nothing for unknown connection', () => {
-    const ctx = makeCtx();
-    sendNotification(ctx, 'unknown', 'test.event', {});
-    // no error thrown
   });
 });

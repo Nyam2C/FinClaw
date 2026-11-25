@@ -98,9 +98,6 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1
         version: 1.29.0(zod@4.3.6)
-      chokidar:
-        specifier: ^5.0.0
-        version: 5.0.0
       ws:
         specifier: ^8.19.0
         version: 8.20.0
@@ -165,9 +162,6 @@ importers:
       '@opentelemetry/sdk-trace-base':
         specifier: ^2.7.1
         version: 2.7.1(@opentelemetry/api@1.9.1)
-      chokidar:
-        specifier: ^5.0.0
-        version: 5.0.0
       commander:
         specifier: ^14
         version: 14.0.3
@@ -214,9 +208,6 @@ importers:
       '@finclaw/agent':
         specifier: workspace:*
         version: link:../agent
-      '@finclaw/infra':
-        specifier: workspace:*
-        version: link:../infra
       '@finclaw/types':
         specifier: workspace:*
         version: link:../types
@@ -1434,10 +1425,6 @@ packages:
     resolution: {integrity: sha512-7NzBL0rN6fMUW+f7A6Io4h40qQlG+xGmtMxfbnH/K7TAtt8JQWVQK+6g0UXKMeVJoyV5EkkNsErQ8pVD3bLHbA==}
     engines: {node: ^12.17.0 || ^14.13 || >=16.0.0}
 
-  chokidar@5.0.0:
-    resolution: {integrity: sha512-TQMmc3w+5AxjpL8iIiwebF73dRDF4fBIieAqGn9RGCWaEVwQ6Fb2cGe31Yns0RRIzii5goJ1Y7xbMwo1TxMplw==}
-    engines: {node: '>= 20.19.0'}
-
   cli-boxes@4.0.1:
     resolution: {integrity: sha512-5IOn+jcCEHEraYolBPs/sT4BxYCe2nHg374OPiItB1O96KZFseS2gthU4twyYzeDcFew4DaUM/xwc5BQf08JJw==}
     engines: {node: '>=18.20 <19 || >=20.10'}
@@ -2137,10 +2124,6 @@ packages:
   react@19.2.5:
     resolution: {integrity: sha512-llUJLzz1zTUBrskt2pwZgLq59AemifIftw4aB7JxOqf1HY2FDaGDxgwpAPVzHU1kdWabH7FauP4i1oEeer2WCA==}
     engines: {node: '>=0.10.0'}
-
-  readdirp@5.0.0:
-    resolution: {integrity: sha512-9u/XQ1pvrQtYyMpZe7DXKv2p5CNvyVwzUB6uhLAnQwHMSgKMBR62lc7AHljaeteeHXn11XTAaLLUVZYVZyuRBQ==}
-    engines: {node: '>= 20.19.0'}
 
   require-from-string@2.0.2:
     resolution: {integrity: sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw==}
@@ -3339,10 +3322,6 @@ snapshots:
 
   chalk@5.6.2: {}
 
-  chokidar@5.0.0:
-    dependencies:
-      readdirp: 5.0.0
-
   cli-boxes@4.0.1: {}
 
   cli-cursor@4.0.0:
@@ -4084,8 +4063,6 @@ snapshots:
       scheduler: 0.27.0
 
   react@19.2.5: {}
-
-  readdirp@5.0.0: {}
 
   require-from-string@2.0.2: {}
 

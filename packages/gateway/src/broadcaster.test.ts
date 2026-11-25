@@ -14,7 +14,7 @@ function createMockConn(id: string = 'conn-1'): WsConnection {
       bufferedAmount: 0,
       send: vi.fn((data: string) => sent.push(data)),
     } as unknown as WsConnection['ws'],
-    auth: { level: 'token' as const, permissions: [] },
+    auth: { level: 'token' as const },
     connectedAt: Date.now(),
     lastPongAt: Date.now(),
     subscriptions: new Set(),
@@ -66,7 +66,6 @@ describe('GatewayBroadcaster', () => {
           status: 'completed',
           messages: [],
           usage: { inputTokens: 0, outputTokens: 0 },
-          turns: 1,
           durationMs: 100,
         },
       } as StreamEvent);
@@ -83,30 +82,6 @@ describe('GatewayBroadcaster', () => {
   });
 
   describe('immediate events', () => {
-    it('sends tool_use_start immediately', () => {
-      const conn = createMockConn();
-      broadcaster.send(conn, 'sess-1', {
-        type: 'tool_use_start',
-        toolCall: { id: 'tc-1', name: 'search', input: {} },
-      } as StreamEvent);
-
-      expect(conn.ws.send).toHaveBeenCalledTimes(1);
-      const msg = JSON.parse((conn.ws.send as ReturnType<typeof vi.fn>).mock.calls[0][0]);
-      expect(msg.method).toBe('chat.stream.tool_start');
-    });
-
-    it('sends tool_use_end immediately', () => {
-      const conn = createMockConn();
-      broadcaster.send(conn, 'sess-1', {
-        type: 'tool_use_end',
-        result: { toolUseId: 'tc-1', content: 'result', isError: false },
-      } as StreamEvent);
-
-      expect(conn.ws.send).toHaveBeenCalledTimes(1);
-      const msg = JSON.parse((conn.ws.send as ReturnType<typeof vi.fn>).mock.calls[0][0]);
-      expect(msg.method).toBe('chat.stream.tool_end');
-    });
-
     it('sends error immediately with flush', () => {
       const conn = createMockConn();
       broadcaster.send(conn, 'sess-1', { type: 'text_delta', delta: 'buf' });
@@ -123,35 +98,14 @@ describe('GatewayBroadcaster', () => {
     });
   });
 
-  describe('ignored events', () => {
-    it('ignores state_change events', () => {
-      const conn = createMockConn();
-      broadcaster.send(conn, 'sess-1', {
-        type: 'state_change',
-        from: 'idle',
-        to: 'streaming',
-      } as StreamEvent);
-      expect(conn.ws.send).not.toHaveBeenCalled();
-    });
-
-    it('ignores usage_update events', () => {
-      const conn = createMockConn();
-      broadcaster.send(conn, 'sess-1', {
-        type: 'usage_update',
-        usage: { inputTokens: 10, outputTokens: 5 },
-      } as StreamEvent);
-      expect(conn.ws.send).not.toHaveBeenCalled();
-    });
-  });
-
   describe('slow consumer protection', () => {
     it('skips send when bufferedAmount > 1MB', () => {
       const conn = createMockConn();
       Object.defineProperty(conn.ws, 'bufferedAmount', { value: 2 * 1024 * 1024 });
 
       broadcaster.send(conn, 'sess-1', {
-        type: 'tool_use_start',
-        toolCall: { id: 'tc-1', name: 'x', input: {} },
+        type: 'error',
+        error: new Error('x'),
       } as StreamEvent);
 
       expect(conn.ws.send).not.toHaveBeenCalled();
@@ -162,8 +116,8 @@ describe('GatewayBroadcaster', () => {
       Object.defineProperty(conn.ws, 'readyState', { value: 3 }); // CLOSED
 
       broadcaster.send(conn, 'sess-1', {
-        type: 'tool_use_start',
-        toolCall: { id: 'tc-1', name: 'x', input: {} },
+        type: 'error',
+        error: new Error('x'),
       } as StreamEvent);
 
       expect(conn.ws.send).not.toHaveBeenCalled();
@@ -201,41 +155,15 @@ describe('GatewayBroadcaster', () => {
       expect(sent).toBe(0);
     });
 
-    it('market.tick 채널은 256KB 임계값 적용', () => {
+    it('버퍼 1MB 초과 연결은 건너뛴다', () => {
       const connections = new Map<string, WsConnection>();
       const c1 = createMockConn('c1');
-      c1.subscriptions.add('market.tick');
-      Object.defineProperty(c1.ws, 'bufferedAmount', { value: 300 * 1024 });
+      c1.subscriptions.add('portfolio.changed');
+      Object.defineProperty(c1.ws, 'bufferedAmount', { value: 2 * 1024 * 1024 });
       connections.set('c1', c1);
 
-      const sent = broadcaster.broadcastToChannel(connections, 'market.tick', {});
+      const sent = broadcaster.broadcastToChannel(connections, 'portfolio.changed', {});
       expect(sent).toBe(0);
-    });
-  });
-
-  describe('subscribe / unsubscribe', () => {
-    it('구독 추가 성공', () => {
-      const connections = new Map<string, WsConnection>();
-      connections.set('c1', createMockConn('c1'));
-
-      expect(broadcaster.subscribe('c1', 'config.updated', connections)).toBe(true);
-      expect(connections.get('c1')?.subscriptions.has('config.updated')).toBe(true);
-    });
-
-    it('존재하지 않는 연결 → false', () => {
-      const connections = new Map<string, WsConnection>();
-
-      expect(broadcaster.subscribe('nope', 'config.updated', connections)).toBe(false);
-    });
-
-    it('구독 해제 성공', () => {
-      const connections = new Map<string, WsConnection>();
-      const c1 = createMockConn('c1');
-      c1.subscriptions.add('config.updated');
-      connections.set('c1', c1);
-
-      expect(broadcaster.unsubscribe('c1', 'config.updated', connections)).toBe(true);
-      expect(connections.get('c1')?.subscriptions.has('config.updated')).toBe(false);
     });
   });
 

@@ -6,7 +6,7 @@
  * packages/server/build-info.json에 기록한다.
  *
  * 사용법: tsx scripts/write-build-info.ts
- * CI에서: release.yml의 빌드 단계에서 실행
+ * 수동 실행 전용 (CI 워크플로우에서 호출하지 않음)
  */
 import { execSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';

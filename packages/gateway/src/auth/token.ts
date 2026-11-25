@@ -1,6 +1,6 @@
 // packages/server/src/gateway/auth/token.ts
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import type { AuthResult, Permission } from '../rpc/types.js';
+import type { AuthResult } from '../rpc/types.js';
 
 /**
  * 간이 JWT 검증 (HS256 전용)
@@ -50,7 +50,6 @@ export function validateToken(token: string, secret: string): AuthResult {
     sub?: string;
     clientId?: string;
     sessionId?: string;
-    permissions?: string[];
     exp?: number;
   };
   try {
@@ -72,8 +71,6 @@ export function validateToken(token: string, secret: string): AuthResult {
       clientId: payload.clientId,
       // Phase 40 B: per-spawn JWT 의 sessionId claim 운반 (MCP ctx 조립용).
       sessionId: payload.sessionId,
-      // TODO(review-2): payload.permissions 각 요소의 유효성 검증 추가 권장 — 현재는 캐스트만 수행
-      permissions: (payload.permissions ?? []) as Permission[],
     },
   };
 }

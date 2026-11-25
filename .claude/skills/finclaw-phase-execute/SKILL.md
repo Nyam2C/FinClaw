@@ -105,7 +105,7 @@ implementer 가 모든 밀스톤을 완료하고 마지막 커밋이 끝나면 �
 
 - base SHA = phase 시작 시점
 - 대상 phase = 본 작업의 phase 번호
-- 옵션: e2e/live 미포함 (기본)
+- 옵션: live 미포함 (기본)
 
 `finclaw-phase-finalize` 가 자체 워크플로우로:
 

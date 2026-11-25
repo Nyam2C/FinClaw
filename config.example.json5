@@ -1,64 +1,24 @@
 // config.example.json5 — FinClaw 설정 예시
-// 이 파일을 finclaw.json5로 복사하여 사용하세요.
+// ~/.finclaw/config/finclaw.json5 (또는 FINCLAW_CONFIG 경로)로 복사하여 사용하세요.
+// 모든 키는 선택이며, 런타임이 실제로 읽는 키만 허용된다 (알 수 없는 키는 부팅 실패).
+// 비밀값(Discord 토큰, API 키)은 .env 로 둔다.
 {
-  gateway: {
-    port: 3000,
-    host: '127.0.0.1',
-    tls: false,
-    corsOrigins: [],
+  // 추론 백엔드 — claude CLI 단일 (생략 가능)
+  provider: 'claude-cli',
+
+  cliBackend: {
+    command: 'claude', // claude CLI 실행 경로
+    timeoutMs: 60000, // 1회 실행 타임아웃
   },
 
-  agents: {
-    defaults: {
-      model: 'claude-sonnet-4-6',
-      provider: 'anthropic',
-      maxConcurrent: 2,
-      maxTokens: 4096,
-      temperature: 0.7,
-    },
+  // RAG re-ranking (기본 켜짐)
+  rag: {
+    rerank: { enabled: true, topKFirst: 10 },
   },
 
-  channels: {
-    discord: {
-      botToken: '${DISCORD_TOKEN}',
-      applicationId: '${DISCORD_CLIENT_ID}',
-    },
-    cli: { enabled: true },
-    web: { enabled: false, port: 3001 },
-  },
+  // access-log 보존 기간 (일, 기본 30)
+  accessLog: { retentionDays: 30 },
 
-  session: {
-    mainKey: 'default',
-    resetPolicy: 'idle',
-    idleTimeoutMs: 1800000, // 30분
-  },
-
-  logging: {
-    level: 'info',
-    file: false,
-    redactSensitive: true,
-  },
-
-  finance: {
-    dataProviders: [{ name: 'alpha-vantage', apiKey: '${ALPHA_VANTAGE_KEY}' }],
-  },
-
-  // 모델 역할 라우팅 — 요청 성격에 맞게 Haiku/Sonnet/Opus 자동 선택 (Phase 24)
-  // 최종 선택 = max(role.preferred, 도구.minModel) — 분석 도구는 자동으로 Opus 승격
-  routing: {
-    roles: {
-      fetch: { preferred: 'haiku', maxTokens: 1024 }, // 시세·뉴스 등 단순 조회
-      chat: { preferred: 'sonnet', maxTokens: 4096 }, // 일반 대화
-      analysis: { preferred: 'opus', maxTokens: 8192 }, // 시장 분석·금융 판단
-      summarize: { preferred: 'haiku', maxTokens: 2048 }, // 내부 요약 (사용자 직접 호출 X)
-    },
-    automation: {
-      strictFallback: true, // 자동화 실행 시 fallback chain 한 단계 좁게 (minModel 미만 금지)
-      logVerbose: true, // 자동화 실행은 전량 감사 로그
-    },
-    override: {
-      allowClientHint: true, // 사용자가 modelHint 로 모델 선호 표현 가능
-      respectMinModel: true, // 도구의 minModel 하한선 준수 (분석 도구는 무조건 Opus 이상)
-    },
-  },
+  // `finclaw tui` 가 게이트웨이에 보낼 토큰. ${VAR} 는 환경변수로 치환된다 (미설정 시 부팅 실패).
+  // gateway: { auth: { token: '${FINCLAW_GATEWAY_TOKEN}' } },
 }

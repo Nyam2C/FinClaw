@@ -8,7 +8,7 @@ echo "[setup] 1/3 Checking .env ..."
 if [ ! -f .env ]; then
   cp .env.example .env
   echo "[setup]   → .env created from .env.example"
-  echo "[setup]   → Fill in: ANTHROPIC_API_KEY, DISCORD_BOT_TOKEN, DISCORD_APPLICATION_ID"
+  echo "[setup]   → Fill in: DISCORD_BOT_TOKEN (inference uses 'claude login', no API key)"
 else
   echo "[setup]   → .env already exists (skipped)"
 fi
@@ -22,5 +22,5 @@ echo "[setup]   → ${HOME}/.finclaw/ ready (used by local 'pnpm dev'; Docker us
 
 echo ""
 echo "[setup] Done. Next steps:"
-echo "  1) Edit .env and fill in required API keys"
+echo "  1) Run 'claude login' and set DISCORD_BOT_TOKEN in .env"
 echo "  2) Run 'pnpm run dev:all' to start all services on Docker"

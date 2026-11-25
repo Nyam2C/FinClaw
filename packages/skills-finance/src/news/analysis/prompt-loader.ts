@@ -28,15 +28,7 @@ async function readPromptFile(filename: string, callerHint: string): Promise<str
   }
 }
 
-export type AnalysisDepth = 'brief' | 'standard' | 'detailed';
-export type AnalysisLanguage = 'ko' | 'en';
-
-export async function loadAnalysisPrompt(
-  depth: AnalysisDepth,
-  language: AnalysisLanguage,
-): Promise<string> {
-  return readPromptFile(
-    `analyze.${depth}.${language}.md`,
-    `loadAnalysisPrompt(${depth},${language})`,
-  );
+/** route_task market_analysis 는 standard 깊이·한국어로 고정 — 프롬프트 1종만 유지. */
+export async function loadAnalysisPrompt(): Promise<string> {
+  return readPromptFile('analyze.standard.ko.md', 'loadAnalysisPrompt()');
 }

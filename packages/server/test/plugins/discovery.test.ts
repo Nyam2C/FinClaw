@@ -13,7 +13,8 @@ import { PluginSecurityError } from '../../src/plugins/errors.js';
 let tmpDir: string;
 
 beforeAll(() => {
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finclaw-discovery-'));
+  // realpath: macOS /tmp → /private/tmp 심볼릭 링크 (validatePluginPath 가 realpath 비교)
+  tmpDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'finclaw-discovery-')));
 });
 
 afterAll(() => {

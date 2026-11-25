@@ -2,7 +2,7 @@
 // loader 가 도구를 ToolRegistry 에 등록하는지 검증.
 //
 // CLAUDE.md feedback_tests_no_api_keys 준수: 외부 API 키 불필요 (mock stdio 서버만).
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,7 +17,8 @@ describe('MCP plugin e2e (Phase 29 D)', () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), 'finclaw-mcp-test-'));
+    // realpath: macOS /tmp → /private/tmp 심볼릭 링크 (validatePluginPath 가 realpath 비교)
+    tmpDir = realpathSync(mkdtempSync(join(tmpdir(), 'finclaw-mcp-test-')));
   });
 
   afterEach(() => {

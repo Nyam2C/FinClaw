@@ -10,17 +10,6 @@ export const CACHE_TTL = {
   CRYPTO: 180_000,
 } as const;
 
-// ─── Types ───
-
-export interface MarketCacheEntry {
-  readonly key: string;
-  readonly data: string;
-  readonly provider: string;
-  readonly ttlMs: number;
-  readonly cachedAt: number;
-  readonly expiresAt: number;
-}
-
 // ─── CRUD ───
 
 export function getCachedData<T>(db: DatabaseSync, key: string): T | null {
@@ -65,9 +54,4 @@ export function getStaleCachedData<T>(db: DatabaseSync, key: string): T | null {
     return null;
   }
   return JSON.parse(row.data) as T;
-}
-
-export function purgeExpiredCache(db: DatabaseSync): number {
-  const result = db.prepare('DELETE FROM market_cache WHERE expires_at <= ?').run(Date.now());
-  return Number(result.changes);
 }

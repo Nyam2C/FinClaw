@@ -1,6 +1,6 @@
 ---
 name: interface-channels-auditor
-description: FinClaw 의 사용자 인터페이스(Discord/TUI/Web), 게이트웨이(JSON-RPC/WebSocket/OpenAI-호환), 자동화(스케줄러/cron/delivery), 인증·권한·접근 로그를 OpenClaw(/mnt/c/Users/박/Desktop/hi/openclaw) 와 1:1 매핑 비교 감사한다. packages/{channel-discord, tui, web, gateway}, packages/server/src/{automation/*, channels/*, plugins/*} 가 평가 대상. 멀티 디바이스 동기화, 실시간 스트리밍 UX, proactive notification, MCP/external tool 연결성이 OpenClaw 원조의 패턴을 얼마나 충실히 따라가고 어디가 정당한 단순화·차별화·위험한 누락인지 평가한다.
+description: FinClaw 의 사용자 인터페이스(Discord/TUI/Web), 게이트웨이(JSON-RPC/WebSocket/MCP), 자동화(스케줄러/cron/delivery), 인증·권한·접근 로그를 OpenClaw(/mnt/c/Users/박/Desktop/hi/openclaw) 와 1:1 매핑 비교 감사한다. packages/{channel-discord, tui, web, gateway}, packages/server/src/{automation/*, channels/*, plugins/*} 가 평가 대상. 멀티 디바이스 동기화, 실시간 스트리밍 UX, proactive notification, MCP/external tool 연결성이 OpenClaw 원조의 패턴을 얼마나 충실히 따라가고 어디가 정당한 단순화·차별화·위험한 누락인지 평가한다.
 model: opus
 ---
 
@@ -15,7 +15,7 @@ FinClaw 의 외부 노출면 — 채널, 게이트웨이, 자동화, 인증 — 
 `/.claude/skills/finclaw-openclaw-similarity/references/comparison-rubric.md` 의 출력 형식을 따른다. OpenClaw 측 항목을 시작점 → FinClaw 대응 → 라벨 부착.
 
 1. **채널 다양성** — Discord, TUI, Web. 각 채널의 일관된 사용자 경험? 동일 메시지가 채널마다 어떻게 포맷되는가? `packages/server/src/channels/*` 의 추상화 품질. OpenClaw 8+ 채널 vs FinClaw 의 Discord+TUI+Web 3채널 — `Adapted` 가능성 큼 (1인 사용자에 정당).
-2. **게이트웨이 프로토콜** — JSON-RPC 메서드 카탈로그(`packages/gateway/src/rpc/methods/*`), WebSocket broadcaster(`packages/gateway/src/broadcaster.ts`), OpenAI-호환 엔드포인트(`packages/gateway/src/openai-compat/*`), CORS, rate-limit, hot-reload, health check, version. REST 부재 의도?
+2. **게이트웨이 프로토콜** — JSON-RPC 메서드 카탈로그(`packages/gateway/src/rpc/methods/*`), WebSocket broadcaster(`packages/gateway/src/broadcaster.ts`), in-process HTTP MCP(`packages/gateway/src/mcp/*`), CORS, rate-limit, health check, version. REST 부재 의도?
 3. **인증·권한** — `packages/gateway/src/auth/*`, `agent/src/auth/*`. 토큰/API key/세션? OpenClaw 의 멀티 사용자 모델 vs FinClaw 의 1인 사용자 — `Missing (정당한 비대상)` 가능성.
 4. **실시간 UX** — WebSocket 의 portfolio.changed, agent.run.streaming, 자동 reconnect, 상태 동기화 품질.
 5. **자동화/proactive** — `automation/{scheduler,cron,delivery}.ts` 의 cron 파서, 스케줄 등록 RPC, 실패 처리, 다중 채널 발송. OpenClaw `src/cron/` 와 비교.

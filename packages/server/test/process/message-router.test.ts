@@ -1,9 +1,7 @@
 import { resetEventBus, getEventBus, type FinClawLogger } from '@finclaw/infra';
 import type { InboundMessage, MsgContext } from '@finclaw/types';
-import type { FinClawConfig } from '@finclaw/types';
 import { createChannelId, createTimestamp } from '@finclaw/types';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { BindingMatch } from '../../src/process/binding-matcher.js';
 import { MessageRouter } from '../../src/process/message-router.js';
 
 function makeLogger(): FinClawLogger {
@@ -31,10 +29,6 @@ function makeMsg(overrides: Partial<InboundMessage> = {}): InboundMessage {
   };
 }
 
-const config: FinClawConfig = {
-  agents: { entries: { main: { agentDir: './agents/main' } } },
-};
-
 describe('MessageRouter', () => {
   beforeEach(() => {
     resetEventBus();
@@ -43,7 +37,6 @@ describe('MessageRouter', () => {
   it('메시지를 라우팅하고 onProcess 호출', async () => {
     const onProcess = vi.fn().mockResolvedValue(undefined);
     const router = new MessageRouter({
-      config,
       logger: makeLogger(),
       onProcess,
     });
@@ -51,18 +44,13 @@ describe('MessageRouter', () => {
     await router.route(makeMsg());
     expect(onProcess).toHaveBeenCalledTimes(1);
 
-    const [ctx, match, signal] = onProcess.mock.calls[0];
+    const [ctx] = onProcess.mock.calls[0];
     expect(ctx.body).toBe('hello');
-    expect(match.matchTier).toBe('default'); // extractBindingRules creates rules without channelId
-    expect(signal).toBeInstanceOf(AbortSignal);
-
-    router.dispose();
   });
 
   it('동일 id 중복 메시지 필터링 (Dedupe)', async () => {
     const onProcess = vi.fn().mockResolvedValue(undefined);
     const router = new MessageRouter({
-      config,
       logger: makeLogger(),
       onProcess,
     });
@@ -72,13 +60,11 @@ describe('MessageRouter', () => {
     await router.route(msg); // 중복
 
     expect(onProcess).toHaveBeenCalledTimes(1);
-    router.dispose();
   });
 
   it('EventBus에 channel:message 이벤트 발행', async () => {
     const onProcess = vi.fn().mockResolvedValue(undefined);
     const router = new MessageRouter({
-      config,
       logger: makeLogger(),
       onProcess,
     });
@@ -88,8 +74,6 @@ describe('MessageRouter', () => {
 
     await router.route(makeMsg());
     expect(handler).toHaveBeenCalledTimes(1);
-
-    router.dispose();
   });
 
   it('큐 체인: 처리 중 enqueue된 메시지가 순차 처리됨', async () => {
@@ -99,7 +83,6 @@ describe('MessageRouter', () => {
       await new Promise((r) => setTimeout(r, 20));
     });
     const router = new MessageRouter({
-      config,
       logger: makeLogger(),
       onProcess,
     });
@@ -116,7 +99,6 @@ describe('MessageRouter', () => {
     await new Promise((r) => setTimeout(r, 50));
 
     expect(calls).toEqual(['first', 'second']);
-    router.dispose();
   });
 
   it('onProcess 에러 시 다음 메시지 계속 처리', async () => {
@@ -128,7 +110,6 @@ describe('MessageRouter', () => {
       }
     });
     const router = new MessageRouter({
-      config,
       logger: makeLogger(),
       onProcess,
     });
@@ -142,30 +123,5 @@ describe('MessageRouter', () => {
     await new Promise((r) => setTimeout(r, 50));
 
     expect(onProcess).toHaveBeenCalledTimes(2);
-    router.dispose();
-  });
-
-  it('dispose 시 활성 AbortController abort', async () => {
-    let capturedSignal: AbortSignal | undefined;
-    const onProcess = vi
-      .fn()
-      .mockImplementation(async (_ctx: MsgContext, _match: BindingMatch, signal: AbortSignal) => {
-        capturedSignal = signal;
-        // 처리 중 지연
-        await new Promise((r) => setTimeout(r, 100));
-      });
-    const router = new MessageRouter({
-      config,
-      logger: makeLogger(),
-      onProcess,
-    });
-
-    const routePromise = router.route(makeMsg());
-    // 즉시 dispose → abort
-    await new Promise((r) => setTimeout(r, 10));
-    router.dispose();
-
-    await routePromise;
-    expect(capturedSignal?.aborted).toBe(true);
   });
 });

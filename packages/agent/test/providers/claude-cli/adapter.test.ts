@@ -2,7 +2,6 @@ import { describe, it, expect, vi } from 'vitest';
 import type { ProviderRequestParams } from '../../../src/providers/adapter.js';
 import { CliProviderAdapter } from '../../../src/providers/claude-cli/adapter.js';
 import * as runnerMod from '../../../src/providers/claude-cli/runner.js';
-import { createProviderAdapter } from '../../../src/providers/factory.js';
 
 const params = (): ProviderRequestParams => ({
   model: 'sonnet',
@@ -67,11 +66,5 @@ describe('CliProviderAdapter', () => {
     expect(spy).toHaveBeenCalledWith(
       expect.objectContaining({ prompt: expect.stringContaining('안녕'), modelId: 'sonnet' }),
     );
-  });
-});
-
-describe('createProviderAdapter factory', () => {
-  it('creates claude-cli adapter', () => {
-    expect(createProviderAdapter({ kind: 'claude-cli' }).providerId).toBe('claude-cli');
   });
 });

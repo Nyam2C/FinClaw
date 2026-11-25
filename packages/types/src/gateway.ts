@@ -13,17 +13,7 @@ export type RpcMethod =
   | 'schedule.history'
   | 'schedule.disable'
   | 'schedule.enable'
-  | 'schedule.testCron'
   | 'session.get'
-  | 'session.reset'
-  | 'session.list'
-  | 'config.get'
-  | 'config.update'
-  | 'config.reload'
-  | 'channel.list'
-  | 'channel.status'
-  | 'health.check'
-  | 'skill.execute'
   | 'finance.quote'
   | 'finance.news'
   | 'finance.alert.create'
@@ -38,14 +28,9 @@ export type RpcMethod =
   | 'memory.search'
   | 'chat.start'
   | 'chat.send'
-  | 'chat.stop'
-  | 'chat.history'
   | 'system.health'
   | 'system.info'
-  | 'system.ping'
-  | 'trace.get'
-  | 'trace.list'
-  | 'audit.list';
+  | 'system.ping';
 
 /** JSON-RPC 2.0 요청 */
 export interface RpcRequest<T = unknown> {
@@ -82,56 +67,3 @@ export const RPC_ERROR_CODES = {
   SESSION_NOT_FOUND: -32003,
   AGENT_BUSY: -32004,
 } as const;
-
-/** WebSocket 이벤트 */
-export type WsEvent =
-  | WsMessageEvent
-  | WsTypingEvent
-  | WsAgentStatusEvent
-  | WsAlertEvent
-  | WsErrorEvent;
-
-export interface WsMessageEvent {
-  type: 'message';
-  channelId: string;
-  senderId: string;
-  text: string;
-  timestamp: number;
-}
-
-export interface WsTypingEvent {
-  type: 'typing';
-  channelId: string;
-  agentId: string;
-  isTyping: boolean;
-}
-
-export interface WsAgentStatusEvent {
-  type: 'agent.status';
-  agentId: string;
-  status: 'idle' | 'running' | 'error';
-}
-
-export interface WsAlertEvent {
-  type: 'alert';
-  alertId: string;
-  symbol: string;
-  condition: string;
-  currentValue: number;
-  triggeredAt: number;
-}
-
-export interface WsErrorEvent {
-  type: 'error';
-  code: number;
-  message: string;
-}
-
-/** 게이트웨이 상태 */
-export interface GatewayStatus {
-  uptime: number;
-  connections: number;
-  activeAgents: number;
-  activeSessions: number;
-  version: string;
-}

@@ -1,8 +1,7 @@
 // packages/agent/src/providers/claude-cli/adapter.ts
 import type { ConversationMessage } from '@finclaw/types';
-import type { ProviderId } from '../../models/catalog.js';
 import type { StreamChunk } from '../../models/provider-normalize.js';
-import type { ProviderAdapter, ProviderRequestParams } from '../adapter.js';
+import type { ProviderAdapter, ProviderId, ProviderRequestParams } from '../adapter.js';
 import { runCliAgent, type RunCliAgentResponse } from './runner.js';
 import type { CliBackendConfig } from './types.js';
 
@@ -19,12 +18,6 @@ export class CliProviderAdapter implements ProviderAdapter {
 
   constructor(private readonly opts: CliProviderAdapterOptions = {}) {}
 
-  // 비스트리밍 1회 호출 — Runner 는 streamCompletion 만 쓰지만 인터페이스상 필요
-  async chatCompletion(params: ProviderRequestParams): Promise<unknown> {
-    const result = await this.#run(params);
-    return { text: result.text, usage: result.usage, sessionId: result.sessionId };
-  }
-
   // ★ async generator: text_delta → usage → done
   async *streamCompletion(params: ProviderRequestParams): AsyncIterable<StreamChunk> {
     // Phase 41: W2 sdkFallback 제거 — CLI 단일 경로. 에러는 상위로 그대로 전파.
@@ -40,7 +33,7 @@ export class CliProviderAdapter implements ProviderAdapter {
           outputTokens: result.usage.output ?? 0,
           cacheReadTokens: result.usage.cacheRead ?? 0,
           cacheWriteTokens: result.usage.cacheWrite ?? 0,
-          // Phase 40 E: 구독 차감 실비용(total_cost_usd) → agent_runs 의 estimatedCostUsd 로 회계.
+          // Phase 40 E: 구독 차감 실비용(total_cost_usd). 현재 Runner 는 input/output 토큰만 소비.
           estimatedCostUsd: result.usage.costUsd ?? 0,
         },
       };

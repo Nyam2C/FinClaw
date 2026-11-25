@@ -1,6 +1,6 @@
 import type { ChatExecutionPort } from '@finclaw/agent';
 import { resetEventBus } from '@finclaw/infra';
-import type { ConversationRecord, MemoryEntry, ModelRef, SearchResult } from '@finclaw/types';
+import type { ModelRef } from '@finclaw/types';
 // packages/server/src/gateway/rpc/methods/chat.test.ts
 import { describe, it, expect, beforeEach } from 'vitest';
 import { GatewayBroadcaster } from '../../broadcaster.js';
@@ -15,20 +15,6 @@ const TEST_MODEL: ModelRef = {
   provider: 'anthropic',
   model: 'claude-test',
 };
-
-function makeStorage() {
-  return {
-    saveConversation: async () => undefined,
-    upsertConversation: async () => undefined,
-    getConversation: async () => null as ConversationRecord | null,
-    deleteConversation: async () => false,
-    searchConversations: async () => [] as SearchResult[],
-    saveMemory: async () => undefined,
-    searchMemory: async () => [] as MemoryEntry[],
-    initialize: async () => undefined,
-    close: async () => undefined,
-  };
-}
 
 function makeStubAdapter(): ChatExecutionPort {
   return {
@@ -78,7 +64,6 @@ describe('chat.* RPC methods', () => {
         registry: ctx.registry,
         connections: ctx.connections,
         broadcaster: ctx.broadcaster,
-        storage: makeStorage(),
         defaultModel: TEST_MODEL,
         adapter: makeStubAdapter(),
       },
@@ -90,7 +75,7 @@ describe('chat.* RPC methods', () => {
     it('chat.start rejects missing agentId', async () => {
       const result = await dispatchRpc(
         { jsonrpc: '2.0', id: 1, method: 'chat.start', params: {} },
-        { auth: { level: 'token', permissions: [] }, remoteAddress: '127.0.0.1' },
+        { auth: { level: 'token' }, remoteAddress: '127.0.0.1' },
         ctx,
       );
       expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.INVALID_PARAMS);
@@ -99,7 +84,7 @@ describe('chat.* RPC methods', () => {
     it('chat.send rejects missing sessionId', async () => {
       const result = await dispatchRpc(
         { jsonrpc: '2.0', id: 1, method: 'chat.send', params: { message: 'hi' } },
-        { auth: { level: 'token', permissions: [] }, remoteAddress: '127.0.0.1' }, // ← 'session' → 'token'
+        { auth: { level: 'token' }, remoteAddress: '127.0.0.1' }, // ← 'session' → 'token'
         ctx,
       );
       expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.INVALID_PARAMS);
@@ -108,21 +93,7 @@ describe('chat.* RPC methods', () => {
     it('chat.send rejects missing message', async () => {
       const result = await dispatchRpc(
         { jsonrpc: '2.0', id: 1, method: 'chat.send', params: { sessionId: 's1' } },
-        { auth: { level: 'token', permissions: [] }, remoteAddress: '127.0.0.1' }, // ← 'session' → 'token'
-        ctx,
-      );
-      expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.INVALID_PARAMS);
-    });
-
-    it('chat.history validates limit range', async () => {
-      const result = await dispatchRpc(
-        {
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'chat.history',
-          params: { sessionId: 's1', limit: 0 },
-        },
-        { auth: { level: 'token', permissions: [] }, remoteAddress: '127.0.0.1' },
+        { auth: { level: 'token' }, remoteAddress: '127.0.0.1' }, // ← 'session' → 'token'
         ctx,
       );
       expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.INVALID_PARAMS);
@@ -133,7 +104,7 @@ describe('chat.* RPC methods', () => {
     it('chat.start requires token level', async () => {
       const result = await dispatchRpc(
         { jsonrpc: '2.0', id: 1, method: 'chat.start', params: { agentId: 'a' } },
-        { auth: { level: 'none', permissions: [] }, remoteAddress: '127.0.0.1' },
+        { auth: { level: 'none' }, remoteAddress: '127.0.0.1' },
         ctx,
       );
       expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.UNAUTHORIZED);
@@ -148,7 +119,7 @@ describe('chat.* RPC methods', () => {
           method: 'chat.send',
           params: { sessionId: 's1', message: 'hi' },
         },
-        { auth: { level: 'api_key', permissions: [] }, remoteAddress: '127.0.0.1' },
+        { auth: { level: 'api_key' }, remoteAddress: '127.0.0.1' },
         ctx,
       );
       expect((denied as { error: { code: number } }).error.code).toBe(RpcErrors.UNAUTHORIZED);
@@ -162,7 +133,7 @@ describe('chat.* RPC methods', () => {
           method: 'chat.send',
           params: { sessionId: 's1', message: 'hi' },
         },
-        { auth: { level: 'token', permissions: [] }, remoteAddress: '127.0.0.1' },
+        { auth: { level: 'token' }, remoteAddress: '127.0.0.1' },
         ctx,
       );
       expect((passed as { error?: { code: number } }).error?.code).not.toBe(RpcErrors.UNAUTHORIZED);

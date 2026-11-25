@@ -25,36 +25,3 @@ export async function assertPortAvailable(port: number, host = '0.0.0.0'): Promi
     });
   });
 }
-
-/**
- * 사용 가능한 포트 찾기
- *
- * 지정 포트부터 시작하여 사용 가능한 첫 포트를 반환.
- * maxTries 횟수만큼 시도.
- */
-export async function findAvailablePort(
-  startPort: number,
-  maxTries = 10,
-  host = '0.0.0.0',
-): Promise<number> {
-  for (let i = 0; i < maxTries; i++) {
-    const port = startPort + i;
-    try {
-      await assertPortAvailable(port, host);
-      return port;
-    } catch (err) {
-      if (!(err instanceof PortInUseError)) {
-        throw err;
-      }
-      // 다음 포트 시도
-    }
-  }
-  throw new PortInUseError(startPort, `ports ${startPort}-${startPort + maxTries - 1} all in use`);
-}
-
-/**
- * 포트 번호 유효성 검사
- */
-export function isValidPort(port: number): boolean {
-  return Number.isInteger(port) && port >= 1 && port <= 65535;
-}

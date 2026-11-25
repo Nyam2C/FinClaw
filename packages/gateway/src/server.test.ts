@@ -1,6 +1,6 @@
 import type { ChatExecutionPort } from '@finclaw/agent';
 import { resetEventBus } from '@finclaw/infra';
-import type { ConversationRecord, MemoryEntry, ModelRef, SearchResult } from '@finclaw/types';
+import type { ModelRef } from '@finclaw/types';
 // packages/gateway/src/server.test.ts
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import type { GatewayServerConfig } from './rpc/types.js';
@@ -26,17 +26,6 @@ function makeTestDeps(): GatewayServerDeps {
   return {
     defaultModel: TEST_MODEL,
     adapter: makeStubAdapter(),
-    storage: {
-      saveConversation: async () => undefined,
-      upsertConversation: async () => undefined,
-      getConversation: async () => null as ConversationRecord | null,
-      deleteConversation: async () => false,
-      searchConversations: async () => [] as SearchResult[],
-      saveMemory: async () => undefined,
-      searchMemory: async () => [] as MemoryEntry[],
-      initialize: async () => undefined,
-      close: async () => undefined,
-    },
   };
 }
 

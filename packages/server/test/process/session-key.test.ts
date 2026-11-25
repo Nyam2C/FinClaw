@@ -1,12 +1,7 @@
 import type { AgentId } from '@finclaw/types';
-import { createSessionKey, createChannelId } from '@finclaw/types';
+import { createChannelId } from '@finclaw/types';
 import { describe, it, expect } from 'vitest';
-import {
-  deriveRoutingSessionKey,
-  deriveGlobalSessionKey,
-  classifySessionKey,
-  parseRoutingSessionKey,
-} from '../../src/process/session-key.js';
+import { deriveRoutingSessionKey } from '../../src/process/session-key.js';
 
 describe('deriveRoutingSessionKey', () => {
   it('DM 세션 키 형식: agent:{agentId}:{channelId}:direct', () => {
@@ -72,47 +67,5 @@ describe('deriveRoutingSessionKey', () => {
       chatType: 'direct',
     });
     expect(key1).toBe(key2);
-  });
-});
-
-describe('deriveGlobalSessionKey', () => {
-  it('글로벌 키 형식: agent:{agentId}:global', () => {
-    const key = deriveGlobalSessionKey('main');
-    expect(key as string).toBe('agent:main:global');
-  });
-});
-
-describe('classifySessionKey', () => {
-  it('agent-scoped 키 분류', () => {
-    expect(classifySessionKey(createSessionKey('agent:main:discord:direct'))).toBe('agent');
-  });
-
-  it('agent: 접두사이나 parts < 4이면 malformed', () => {
-    expect(classifySessionKey(createSessionKey('agent:main'))).toBe('malformed');
-  });
-
-  it('config 스타일 키는 legacy', () => {
-    expect(classifySessionKey(createSessionKey('channel:discord_123'))).toBe('legacy');
-  });
-
-  it('콜론 없는 키는 malformed', () => {
-    expect(classifySessionKey(createSessionKey('nocolon'))).toBe('malformed');
-  });
-});
-
-describe('parseRoutingSessionKey', () => {
-  it('agent-scoped 키 파싱', () => {
-    const parsed = parseRoutingSessionKey(createSessionKey('agent:main:discord:group:ch1:t1'));
-    expect(parsed).toEqual({
-      agentId: 'main',
-      channelId: 'discord',
-      chatType: 'group',
-      chatId: 'ch1',
-      threadId: 't1',
-    });
-  });
-
-  it('non-agent 키는 undefined 반환', () => {
-    expect(parseRoutingSessionKey(createSessionKey('channel:foo'))).toBeUndefined();
   });
 });

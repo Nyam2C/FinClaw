@@ -3,7 +3,6 @@ import type {
   RpcRequest,
   RpcResponse,
   JsonRpcNotification,
-  BroadcastChannel,
   SessionKey,
 } from '@finclaw/types';
 // packages/server/src/gateway/rpc/types.ts
@@ -15,21 +14,17 @@ export type {
   RpcResponse,
   RpcError,
   RpcMethod,
-  WsEvent,
-  GatewayStatus,
   JsonRpcNotification,
-  BroadcastChannel,
 } from '@finclaw/types';
 export { RPC_ERROR_CODES } from '@finclaw/types';
 
 // === 인증 타입 ===
 
-/** 인증 레벨 (4-layer) */
+/** 인증 레벨 (3-layer) */
 export type AuthLevel =
   | 'none' // 공개 (health, info, ping)
   | 'api_key' // API 키 (외부 서비스)
-  | 'token' // JWT 토큰 (웹 클라이언트)
-  | 'session'; // 세션 스코프 (활성 채팅 세션 전용)
+  | 'token'; // JWT 토큰 (웹 클라이언트)
 
 /** 인증 정보 */
 export interface AuthInfo {
@@ -37,19 +32,7 @@ export interface AuthInfo {
   readonly clientId?: string;
   readonly userId?: string;
   readonly sessionId?: string;
-  readonly permissions: readonly Permission[];
 }
-
-/** 권한 */
-export type Permission =
-  | 'chat:read'
-  | 'chat:write'
-  | 'chat:execute'
-  | 'config:read'
-  | 'config:write'
-  | 'agent:read'
-  | 'agent:manage'
-  | 'system:admin';
 
 /** 인증 결과 */
 export type AuthResult =
@@ -125,16 +108,6 @@ export interface GatewayServerConfig {
   };
 
   // ── Phase 11 추가 ──
-  readonly openaiCompat?: {
-    readonly enabled: boolean;
-    readonly sseKeepaliveMs: number;
-  };
-  readonly hotReload?: {
-    readonly configPath: string;
-    readonly debounceMs: number;
-    readonly validateBeforeApply: boolean;
-    readonly mode: 'watch' | 'poll';
-  };
   readonly rateLimit?: {
     readonly windowMs: number;
     readonly maxRequests: number;
@@ -144,12 +117,6 @@ export interface GatewayServerConfig {
   readonly mcp?: {
     /** 명시적 비활성화 (기본: toolRegistry 주입 시 활성). */
     readonly enabled?: boolean;
-    /** 노출 허용 도구 그룹 (예: ['finance']). 미지정 시 전체 그룹 (강제 deny 제외). */
-    readonly allowedGroups?: readonly import('@finclaw/agent').ToolGroupId[];
-    /** allowlist 무관 추가 차단 도구명. */
-    readonly denyTools?: readonly string[];
-    /** DEFAULT_MCP_TOOL_DENY 에서 명시 해제(opt-in)할 도구명 — 매수권한처럼 사람만 쓸 도구는 비워둠. */
-    readonly allowTools?: readonly string[];
   };
 }
 
@@ -165,26 +132,11 @@ export interface ActiveSession {
   readonly abortController: AbortController;
   /** 선택된 모델 (session.get의 `model` 필드는 이 객체의 `.model`을 문자열로 평탄화해 반환) */
   readonly model: ModelRef;
-  /** 대화 이력 저장 키 — storage.upsertConversation/deleteConversation에 사용 */
+  /** 대화 이력 저장 키 */
   readonly sessionKey: SessionKey;
 }
 
-/** 레지스트리 이벤트 */
-export type RegistryEvent =
-  | { readonly type: 'session_started'; readonly session: ActiveSession }
-  | { readonly type: 'session_completed'; readonly sessionId: string; readonly durationMs: number }
-  | { readonly type: 'session_error'; readonly sessionId: string; readonly error: Error };
-
 // ── Phase 11 타입 ──
-
-/** 설정 변경 이벤트 */
-export interface ConfigChangeEvent {
-  readonly path: string;
-  readonly changeType: 'modified' | 'added' | 'removed';
-  readonly timestamp: number;
-  readonly previousHash: string;
-  readonly currentHash: string;
-}
 
 /** Rate limit 상태 */
 export interface RateLimitInfo {
@@ -238,78 +190,4 @@ export interface AccessLogEntry {
   readonly contentLength: number;
   readonly rpcMethod?: string;
   readonly authLevel?: string;
-}
-
-/** OpenAI 호환 타입 */
-export interface OpenAIChatRequest {
-  readonly model: string;
-  readonly messages: readonly OpenAIMessage[];
-  readonly temperature?: number;
-  readonly max_tokens?: number;
-  readonly stream?: boolean;
-  readonly tools?: readonly OpenAITool[];
-}
-
-export interface OpenAIMessage {
-  readonly role: 'system' | 'user' | 'assistant' | 'tool';
-  readonly content: string | null;
-  readonly tool_calls?: readonly OpenAIToolCall[];
-  readonly tool_call_id?: string;
-}
-
-export interface OpenAIToolCall {
-  readonly id: string;
-  readonly type: 'function';
-  readonly function: { readonly name: string; readonly arguments: string };
-}
-
-export interface OpenAITool {
-  readonly type: 'function';
-  readonly function: {
-    readonly name: string;
-    readonly description?: string;
-    readonly parameters?: Record<string, unknown>;
-  };
-}
-
-export interface OpenAIChatResponse {
-  readonly id: string;
-  readonly object: 'chat.completion';
-  readonly created: number;
-  readonly model: string;
-  readonly choices: readonly {
-    readonly index: number;
-    readonly message: OpenAIMessage;
-    readonly finish_reason: string;
-  }[];
-  readonly usage: {
-    readonly prompt_tokens: number;
-    readonly completion_tokens: number;
-    readonly total_tokens: number;
-  };
-}
-
-export interface OpenAIStreamChunk {
-  readonly id: string;
-  readonly object: 'chat.completion.chunk';
-  readonly created: number;
-  readonly model: string;
-  readonly choices: readonly {
-    readonly index: number;
-    readonly delta: Partial<OpenAIMessage>;
-    readonly finish_reason: string | null;
-  }[];
-}
-
-export interface OpenAIErrorResponse {
-  readonly error: {
-    readonly message: string;
-    readonly type:
-      | 'invalid_request_error'
-      | 'authentication_error'
-      | 'rate_limit_error'
-      | 'server_error';
-    readonly code: string | null;
-    readonly param: string | null;
-  };
 }

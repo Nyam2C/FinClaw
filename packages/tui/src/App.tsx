@@ -1,11 +1,6 @@
 // packages/tui/src/App.tsx
 
-import type {
-  ChatStreamDeltaParams,
-  ChatStreamErrorParams,
-  ChatStreamToolStartParams,
-  ChatStreamToolEndParams,
-} from '@finclaw/types';
+import type { ChatStreamDeltaParams, ChatStreamErrorParams } from '@finclaw/types';
 import { Box, useInput, useApp } from 'ink';
 import React, { useState, useEffect, useCallback } from 'react';
 import { ChatView, type ChatMessage } from './ChatView.js';
@@ -19,7 +14,7 @@ interface AppProps {
   agentId: string;
 }
 
-const PANELS: TuiPanel[] = ['chat', 'market', 'portfolio', 'alerts', 'settings'];
+const PANELS: TuiPanel[] = ['chat', 'market', 'portfolio', 'alerts'];
 
 export function App({ gatewayUrl, token, agentId }: AppProps) {
   const { exit } = useApp();
@@ -99,30 +94,6 @@ export function App({ gatewayUrl, token, agentId }: AppProps) {
           ]);
           break;
         }
-        case 'chat.stream.tool_start': {
-          const { toolCall } = params as unknown as ChatStreamToolStartParams;
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: crypto.randomUUID(),
-              role: 'system',
-              content: `[Tool] ${toolCall.name}`,
-            },
-          ]);
-          break;
-        }
-        case 'chat.stream.tool_end': {
-          const { result } = params as unknown as ChatStreamToolEndParams;
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: crypto.randomUUID(),
-              role: 'tool',
-              content: JSON.stringify(result),
-            },
-          ]);
-          break;
-        }
       }
     });
 
@@ -170,14 +141,13 @@ export function App({ gatewayUrl, token, agentId }: AppProps) {
             {
               id: crypto.randomUUID(),
               role: 'system',
-              content: 'Commands: /help, /market, /portfolio, /alerts, /settings, /quit',
+              content: 'Commands: /help, /market, /portfolio, /alerts, /quit',
             },
           ]);
           break;
         case 'market':
         case 'portfolio':
         case 'alerts':
-        case 'settings':
           setPanel(cmd);
           break;
         case 'quit':

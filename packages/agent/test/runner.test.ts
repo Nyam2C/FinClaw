@@ -1,23 +1,18 @@
-import { ConcurrencyLaneManager, getEventBus } from '@finclaw/infra';
+import { ConcurrencyLaneManager } from '@finclaw/infra';
 import type { AgentRunParams } from '@finclaw/types';
 import { describe, it, expect, beforeEach } from 'vitest';
-import { HARD_MAX_TOOL_RESULT_CHARS } from '../src/agents/session/tool-result-guard.js';
 import type { RunnerOptions } from '../src/execution/runner.js';
 import { Runner } from '../src/execution/runner.js';
 import type { StreamEvent } from '../src/execution/streaming.js';
-import { ExecutionToolDispatcher } from '../src/execution/tool-executor.js';
 import type { StreamChunk } from '../src/models/provider-normalize.js';
 import type { ProviderAdapter, ProviderRequestParams } from '../src/providers/adapter.js';
 
 /** mock provider: 미리 정해진 StreamChunk 시퀀스를 반환 */
-function createMockProvider(sequences: StreamChunk[][]): ProviderAdapter {
-  let callIndex = 0;
+function createMockProvider(chunks: StreamChunk[]): ProviderAdapter {
   return {
-    providerId: 'anthropic',
-    chatCompletion: async () => ({}),
+    providerId: 'claude-cli',
     async *streamCompletion(_params: ProviderRequestParams): AsyncIterable<StreamChunk> {
-      const seq = sequences[callIndex++] ?? [];
-      for (const chunk of seq) {
+      for (const chunk of chunks) {
         yield chunk;
       }
     },
@@ -39,215 +34,102 @@ function createBaseParams(overrides?: Partial<AgentRunParams>): AgentRunParams {
 }
 
 describe('Runner', () => {
-  let toolExecutor: ExecutionToolDispatcher;
   let laneManager: ConcurrencyLaneManager;
 
   beforeEach(() => {
-    toolExecutor = new ExecutionToolDispatcher();
     laneManager = new ConcurrencyLaneManager();
   });
 
   function createRunner(provider: ProviderAdapter, opts?: Partial<RunnerOptions>): Runner {
-    return new Runner({
-      provider,
-      toolExecutor,
-      laneManager,
-      ...opts,
-    });
+    return new Runner({ provider, laneManager, ...opts });
   }
 
-  describe('단일 턴 실행', () => {
-    it('도구 호출 없는 간단한 질의 — completed 반환', async () => {
-      const provider = createMockProvider([
-        [
-          { type: 'text_delta', text: '안녕하세요!' },
-          { type: 'usage', usage: { inputTokens: 10, outputTokens: 5 } },
-          { type: 'done' },
-        ],
-      ]);
+  it('provider 1회 호출 → assistant 텍스트 메시지 + usage', async () => {
+    const provider = createMockProvider([
+      { type: 'text_delta', text: '안녕하세요!' },
+      { type: 'usage', usage: { inputTokens: 10, outputTokens: 5 } },
+      { type: 'done' },
+    ]);
 
-      const runner = createRunner(provider);
-      const result = await runner.execute(createBaseParams());
+    const result = await createRunner(provider).execute(createBaseParams());
 
-      expect(result.status).toBe('completed');
-      expect(result.turns).toBe(1);
-      expect(result.usage.inputTokens).toBe(10);
-      expect(result.usage.outputTokens).toBe(5);
-      // 마지막 메시지가 assistant 응답
-      const lastMsg = result.messages.at(-1);
-      expect(lastMsg?.role).toBe('assistant');
-      expect(lastMsg?.content).toBe('안녕하세요!');
-    });
+    expect(result.status).toBe('completed');
+    expect(result.usage).toEqual({ inputTokens: 10, outputTokens: 5 });
+    expect(result.messages).toHaveLength(2);
+    expect(result.messages.at(-1)).toEqual({ role: 'assistant', content: '안녕하세요!' });
   });
 
-  describe('멀티 턴 실행 (도구 호출)', () => {
-    it('LLM → tool_use → LLM 2턴 실행', async () => {
-      const provider = createMockProvider([
-        // 턴 1: LLM이 도구 호출
-        [
-          { type: 'tool_use_start', id: 'call_1', name: 'get_price' },
-          { type: 'tool_input_delta', delta: '{"ticker":"AAPL"}' },
-          { type: 'tool_use_end' },
-          { type: 'usage', usage: { inputTokens: 50, outputTokens: 20 } },
-          { type: 'done' },
-        ],
-        // 턴 2: LLM이 텍스트 응답
-        [
-          { type: 'text_delta', text: 'AAPL 가격은 150입니다.' },
-          { type: 'usage', usage: { inputTokens: 80, outputTokens: 15 } },
-          { type: 'done' },
-        ],
-      ]);
+  it('abortSignal이 이미 aborted이면 provider 호출 없이 aborted를 반환한다', async () => {
+    const provider: ProviderAdapter = {
+      providerId: 'claude-cli',
+      // eslint-disable-next-line require-yield
+      async *streamCompletion() {
+        throw new Error('should not be called');
+      },
+    };
+    const controller = new AbortController();
+    controller.abort();
 
-      toolExecutor.register('get_price', {
-        execute: async (input) => {
-          const { ticker } = input as { ticker: string };
-          return `${ticker}: $150.00`;
+    const result = await createRunner(provider).execute(
+      createBaseParams({ abortSignal: controller.signal }),
+    );
+    expect(result.status).toBe('aborted');
+  });
+
+  it('text_delta 이벤트를 리스너에 전달한다', async () => {
+    const provider = createMockProvider([
+      { type: 'text_delta', text: '안녕' },
+      { type: 'text_delta', text: '하세요' },
+      { type: 'done' },
+    ]);
+
+    const events: StreamEvent[] = [];
+    await createRunner(provider).execute(createBaseParams(), (e) => events.push(e));
+
+    expect(events).toEqual([
+      { type: 'text_delta', delta: '안녕' },
+      { type: 'text_delta', delta: '하세요' },
+    ]);
+  });
+
+  it('tracer 주입 시 agent.turn → provider.stream span 으로 감싼다', async () => {
+    const spans: string[] = [];
+    const provider = createMockProvider([{ type: 'text_delta', text: 'ok' }, { type: 'done' }]);
+    const runner = createRunner(provider, {
+      tracer: {
+        withSpan: (name, _attrs, fn) => {
+          spans.push(name);
+          return fn();
         },
-      });
-
-      const runner = createRunner(provider);
-      const result = await runner.execute(createBaseParams());
-
-      expect(result.status).toBe('completed');
-      expect(result.turns).toBe(2);
-      expect(result.usage.inputTokens).toBe(130); // 50 + 80
-      expect(result.usage.outputTokens).toBe(35); // 20 + 15
-
-      // 메시지 구조: user → assistant(tool_use) → tool(result) → assistant(text)
-      const msgs = result.messages;
-      expect(msgs).toHaveLength(4);
-      expect(msgs[1]?.role).toBe('assistant');
-      expect(msgs[2]?.role).toBe('tool');
-      expect(msgs[3]?.role).toBe('assistant');
-      expect(msgs[3]?.content).toBe('AAPL 가격은 150입니다.');
+      },
     });
+
+    await runner.execute(createBaseParams());
+    expect(spans).toEqual(['agent.turn', 'provider.stream']);
   });
 
-  describe('maxTurns 제한', () => {
-    it('maxTurns 도달 시 max_turns 상태를 반환한다', async () => {
-      const sequences = Array.from({ length: 5 }, () => [
-        { type: 'tool_use_start' as const, id: 'call_x', name: 'loop_tool' },
-        { type: 'tool_input_delta' as const, delta: '{}' },
-        { type: 'tool_use_end' as const },
-        { type: 'usage' as const, usage: { inputTokens: 10, outputTokens: 5 } },
-        { type: 'done' as const },
-      ]);
-      const provider = createMockProvider(sequences);
+  it('정상 완료 시 lane 핸들이 release된다', async () => {
+    const provider = createMockProvider([{ type: 'text_delta', text: 'ok' }, { type: 'done' }]);
+    await createRunner(provider).execute(createBaseParams());
 
-      toolExecutor.register('loop_tool', { execute: async () => 'ok' });
-
-      const runner = createRunner(provider, { maxTurns: 3 });
-      const result = await runner.execute(createBaseParams());
-
-      expect(result.status).toBe('max_turns');
-      expect(result.turns).toBe(3);
-    });
+    const handle = await laneManager.acquire('main', 'test-session');
+    handle.release();
   });
 
-  describe('거대 tool result truncate (Phase 31 E)', () => {
-    it('tool result 가 400K 초과 시 truncate + tool:result:truncated emit', async () => {
-      const provider = createMockProvider([
-        [
-          { type: 'tool_use_start', id: 'call_big', name: 'big_tool' },
-          { type: 'tool_input_delta', delta: '{}' },
-          { type: 'tool_use_end' },
-          { type: 'usage', usage: { inputTokens: 10, outputTokens: 5 } },
-          { type: 'done' },
-        ],
-        [
-          { type: 'text_delta', text: '완료' },
-          { type: 'usage', usage: { inputTokens: 20, outputTokens: 5 } },
-          { type: 'done' },
-        ],
-      ]);
+  it('에러 시에도 lane 핸들이 release된다 (try/finally)', async () => {
+    const provider: ProviderAdapter = {
+      providerId: 'claude-cli',
+      // eslint-disable-next-line require-yield
+      async *streamCompletion() {
+        throw new Error('Provider exploded');
+      },
+    };
 
-      const huge = 'x'.repeat(HARD_MAX_TOOL_RESULT_CHARS + 100_000);
-      toolExecutor.register('big_tool', { execute: async () => huge });
+    await expect(createRunner(provider).execute(createBaseParams())).rejects.toThrow(
+      'Provider exploded',
+    );
 
-      const events: Array<{ chars: number; max: number }> = [];
-      const listener = (_id: string, chars: number, max: number) => events.push({ chars, max });
-      getEventBus().on('tool:result:truncated', listener);
-
-      const runner = createRunner(provider);
-      const result = await runner.execute(createBaseParams());
-      getEventBus().off('tool:result:truncated', listener);
-
-      expect(events).toHaveLength(1);
-      expect(events[0]?.chars).toBe(huge.length);
-      expect(events[0]?.max).toBe(HARD_MAX_TOOL_RESULT_CHARS);
-
-      const toolMsg = result.messages.find((m) => m.role === 'tool');
-      const blocks = Array.isArray(toolMsg?.content)
-        ? (toolMsg.content as Array<{ content: string }>)
-        : [];
-      expect(blocks[0]?.content.length).toBeLessThanOrEqual(HARD_MAX_TOOL_RESULT_CHARS);
-    });
-  });
-
-  describe('abort 처리', () => {
-    it('abortSignal이 이미 aborted이면 즉시 aborted를 반환한다', async () => {
-      const provider = createMockProvider([]);
-      const runner = createRunner(provider);
-
-      const controller = new AbortController();
-      controller.abort();
-
-      const result = await runner.execute(createBaseParams({ abortSignal: controller.signal }));
-      expect(result.status).toBe('aborted');
-      expect(result.turns).toBe(0);
-    });
-  });
-
-  describe('이벤트 리스너', () => {
-    it('text_delta 이벤트를 리스너에 전달한다', async () => {
-      const provider = createMockProvider([
-        [
-          { type: 'text_delta', text: '안녕' },
-          { type: 'text_delta', text: '하세요' },
-          { type: 'done' },
-        ],
-      ]);
-
-      const events: StreamEvent[] = [];
-      const runner = createRunner(provider);
-      await runner.execute(createBaseParams(), (e) => events.push(e));
-
-      const textDeltas = events.filter((e) => e.type === 'text_delta');
-      expect(textDeltas).toHaveLength(2);
-      expect(textDeltas[0]).toEqual({ type: 'text_delta', delta: '안녕' });
-      expect(textDeltas[1]).toEqual({ type: 'text_delta', delta: '하세요' });
-    });
-  });
-
-  describe('Lane 핸들 release', () => {
-    it('정상 완료 시 핸들이 release된다', async () => {
-      const provider = createMockProvider([[{ type: 'text_delta', text: 'ok' }, { type: 'done' }]]);
-
-      const runner = createRunner(provider);
-      await runner.execute(createBaseParams());
-
-      // release 확인: 같은 키로 다시 acquire 가능해야 함
-      const handle = await laneManager.acquire('main', 'test-session');
-      handle.release();
-    });
-
-    it('에러 시에도 핸들이 release된다 (try/finally)', async () => {
-      const provider: ProviderAdapter = {
-        providerId: 'anthropic',
-        chatCompletion: async () => ({}),
-        // eslint-disable-next-line require-yield
-        async *streamCompletion() {
-          throw new Error('Provider exploded');
-        },
-      };
-
-      const runner = createRunner(provider);
-      await expect(runner.execute(createBaseParams())).rejects.toThrow('Provider exploded');
-
-      // release 확인
-      const handle = await laneManager.acquire('main', 'test-session');
-      handle.release();
-    });
+    const handle = await laneManager.acquire('main', 'test-session');
+    handle.release();
   });
 });

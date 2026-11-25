@@ -1,50 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import {
-  loadAnalysisPrompt,
-  SkillPromptLoadError,
-  type AnalysisDepth,
-  type AnalysisLanguage,
-} from '../prompt-loader.js';
+import { loadAnalysisPrompt } from '../prompt-loader.js';
 
 describe('loadAnalysisPrompt', () => {
-  const depths: readonly AnalysisDepth[] = ['brief', 'standard', 'detailed'];
-  const langs: readonly AnalysisLanguage[] = ['ko', 'en'];
-
-  for (const d of depths) {
-    for (const l of langs) {
-      it(`loads ${d}.${l}`, async () => {
-        const text = await loadAnalysisPrompt(d, l);
-        expect(text).toContain('Response format (strict JSON');
-        expect(text.length).toBeGreaterThan(50);
-      });
-    }
-  }
-
-  it('language directive switches per language', async () => {
-    expect(await loadAnalysisPrompt('standard', 'ko')).toContain('Output language: 한국어');
-    expect(await loadAnalysisPrompt('standard', 'en')).toContain('Output language: English');
-  });
-
-  it('depth directive switches per depth', async () => {
-    expect(await loadAnalysisPrompt('brief', 'ko')).toContain('Detail level: brief');
-    expect(await loadAnalysisPrompt('detailed', 'ko')).toContain('Detail level: detailed');
-    expect(await loadAnalysisPrompt('standard', 'ko')).toContain('Detail level: standard');
-  });
-});
-
-describe('SkillPromptLoadError', () => {
-  it('reports searchDir + filename + caller hint when file missing', async () => {
-    try {
-      // 일부러 존재하지 않는 조합. depth 타입 체크는 우회 (테스트 의도).
-      await loadAnalysisPrompt('foo' as AnalysisDepth, 'ko');
-      expect.fail('should have thrown');
-    } catch (e) {
-      expect(e).toBeInstanceOf(SkillPromptLoadError);
-      const err = e as SkillPromptLoadError;
-      expect(err.filename).toBe('analyze.foo.ko.md');
-      expect(err.message).toContain('searched in:');
-      expect(err.message).toContain('required by: loadAnalysisPrompt(foo,ko)');
-      expect(err.searchDir).toMatch(/prompts\/news$/);
-    }
+  it('loads standard.ko', async () => {
+    const text = await loadAnalysisPrompt();
+    expect(text).toContain('Response format (strict JSON');
+    expect(text).toContain('Output language: 한국어');
+    expect(text).toContain('Detail level: standard');
   });
 });

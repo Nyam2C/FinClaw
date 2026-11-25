@@ -19,8 +19,3 @@ export function runWithContext<T>(ctx: RequestContext, fn: () => T): T {
 export function getContext(): RequestContext | undefined {
   return als.getStore();
 }
-
-/** 현재 요청 ID (로깅 등에서 편의 사용) */
-export function getRequestId(): string | undefined {
-  return als.getStore()?.requestId;
-}

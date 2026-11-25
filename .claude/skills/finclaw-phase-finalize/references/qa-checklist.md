@@ -58,7 +58,6 @@ pnpm lint         # oxlint --config oxlintrc.json .
 ### 3.2 옵션 (사용자 명시 시만)
 
 ```bash
-pnpm test:e2e     # vitest --config vitest.e2e.config.ts
 pnpm test:live    # vitest --config vitest.live.config.ts (외부 API 키 필수)
 ```
 

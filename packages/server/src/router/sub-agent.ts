@@ -18,7 +18,6 @@ export interface SubAgentRequest {
 
 export interface SubAgentResponse {
   readonly text: string;
-  readonly usage?: { readonly input: number; readonly output: number };
 }
 
 const DEFAULT_SUB_AGENT_MODEL = 'claude-opus-4-7';
@@ -32,8 +31,5 @@ export async function runSubAgent(req: SubAgentRequest): Promise<SubAgentRespons
     timeoutMs: req.timeoutMs ?? 60_000,
     queueKey: req.queueKey ?? DEFAULT_SUB_AGENT_QUEUE,
   });
-  return {
-    text: res.text,
-    usage: res.usage ? { input: res.usage.input ?? 0, output: res.usage.output ?? 0 } : undefined,
-  };
+  return { text: res.text };
 }

@@ -1,7 +1,6 @@
 import type { FinClawLogger } from '@finclaw/infra';
 // packages/server/src/auto-reply/stages/deliver.ts
 import type { OutboundMessage, ReplyPayload, ChannelPlugin } from '@finclaw/types';
-import type { ToolCallRecord } from '../execution-adapter.js';
 import type { PipelineMsgContext } from '../pipeline-context.js';
 import type { StageResult } from '../pipeline.js';
 import { splitMessage } from '../response-formatter.js';
@@ -34,9 +33,6 @@ export async function deliverResponse(
   if (executeResult.controlTokens.needsDisclaimer) {
     content += '\n\n---\n' + INVESTMENT_DISCLAIMER;
   }
-
-  // Phase 22: 도구 출처 footer 자동 첨부
-  content += formatSourceFooter(executeResult.toolCalls);
 
   // Phase 26 B: 기억 capture 꼬리표
   // capture 가 명시적 선언을 저장(또는 dedup)했으면 응답 끝에 한 줄 부착.
@@ -83,28 +79,4 @@ export async function deliverResponse(
   }
 
   return { action: 'continue', data: outbound };
-}
-
-function formatSourceFooter(toolCalls: readonly ToolCallRecord[] | undefined): string {
-  if (!toolCalls || toolCalls.length === 0) {
-    return '';
-  }
-  const formatter = new Intl.DateTimeFormat('ko-KR', {
-    timeZone: 'Asia/Seoul',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-  const displayed = toolCalls.slice(0, 3);
-  const lines = displayed.map((tc) => {
-    const time = formatter.format(new Date(tc.timestamp));
-    const src = tc.source ? `(${tc.source})` : '';
-    return `📊 ${tc.name}${src} @ ${time} KST`;
-  });
-  if (toolCalls.length > 3) {
-    lines.push(`… (외 ${toolCalls.length - 3}개 도구)`);
-  }
-  return '\n\n---\n' + lines.join('\n');
 }

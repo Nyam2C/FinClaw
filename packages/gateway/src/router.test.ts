@@ -193,11 +193,11 @@ describe('HTTP Router', () => {
       },
     });
 
-    // HS256 JWT — secret: 'test', payload: {sub:'dev',permissions:[]}
+    // HS256 JWT — secret: 'test', payload: {sub:'dev'}
     const { createHmac } = await import('node:crypto');
     const b64url = (obj: unknown) => Buffer.from(JSON.stringify(obj)).toString('base64url');
     const header = b64url({ alg: 'HS256', typ: 'JWT' });
-    const payload = b64url({ sub: 'dev', permissions: [] });
+    const payload = b64url({ sub: 'dev' });
     const sig = createHmac('sha256', 'test').update(`${header}.${payload}`).digest('base64url');
     const token = `${header}.${payload}.${sig}`;
 

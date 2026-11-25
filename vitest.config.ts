@@ -13,13 +13,7 @@ export default defineConfig({
     maxWorkers: isCI ? ciWorkers : localWorkers,
     hookTimeout: process.platform === 'win32' ? 60_000 : 30_000,
     include: ['packages/*/src/**/*.test.ts', 'packages/*/test/**/*.test.ts', 'test/**/*.test.ts'],
-    exclude: [
-      'dist/**',
-      'node_modules/**',
-      '**/*.storage.test.ts',
-      '**/*.e2e.test.ts',
-      '**/*.live.test.ts',
-    ],
+    exclude: ['dist/**', 'node_modules/**', '**/*.storage.test.ts', '**/*.live.test.ts'],
     setupFiles: ['test/setup.ts'],
     coverage: {
       provider: 'v8',

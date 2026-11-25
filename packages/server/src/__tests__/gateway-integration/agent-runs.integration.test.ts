@@ -44,7 +44,7 @@ function makeServerCtx(): GatewayServerContext {
 }
 
 const tokenCtx = {
-  auth: { level: 'token' as const, permissions: [] },
+  auth: { level: 'token' as const },
   remoteAddress: '127.0.0.1',
 };
 
@@ -312,7 +312,6 @@ function makeAgentRunResult(output: string) {
       { role: 'assistant' as const, content: output },
     ],
     usage: { inputTokens: 30, outputTokens: 60 },
-    turns: 1,
     durationMs: 400,
   };
 }

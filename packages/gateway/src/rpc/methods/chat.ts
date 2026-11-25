@@ -1,7 +1,7 @@
 // packages/server/src/gateway/rpc/methods/chat.ts
 import type { ChatExecutionPort } from '@finclaw/agent';
 import type { FinClawLogger } from '@finclaw/infra';
-import type { AgentId, ModelRef, SessionKey, StorageAdapter } from '@finclaw/types';
+import type { AgentId, ModelRef, SessionKey } from '@finclaw/types';
 import { createAgentId, createSessionKey } from '@finclaw/types';
 import { z } from 'zod/v4';
 import type { GatewayBroadcaster } from '../../broadcaster.js';
@@ -19,7 +19,6 @@ export interface ChatMethodsDeps {
   readonly registry: ChatRegistry;
   readonly connections: Map<string, WsConnection>;
   readonly broadcaster: GatewayBroadcaster;
-  readonly storage: StorageAdapter;
   readonly defaultModel: ModelRef;
   readonly adapter: ChatExecutionPort;
   readonly logger?: FinClawLogger;
@@ -106,43 +105,7 @@ export function createChatMethods(deps: ChatMethodsDeps): readonly RpcMethodHand
     },
   };
 
-  const stopHandler: RpcMethodHandler<{ sessionId: string }, { stopped: boolean }> = {
-    method: 'chat.stop',
-    description: '활성 세션을 중단합니다',
-    authLevel: 'token', // ← 'session' 에서 강등 (Phase 37 A)
-    schema: z.object({
-      sessionId: z.string(),
-    }),
-    async execute(params) {
-      return deps.registry.stopSession(params.sessionId);
-    },
-  };
-
-  const historyHandler: RpcMethodHandler<
-    { sessionId: string; limit?: number; before?: string },
-    { messages: readonly unknown[] }
-  > = {
-    method: 'chat.history',
-    description: '세션의 대화 이력을 조회합니다',
-    authLevel: 'token',
-    schema: z.object({
-      sessionId: z.string(),
-      limit: z.number().int().min(1).max(100).optional(),
-      before: z.string().optional(),
-    }),
-    async execute(params) {
-      const session = deps.registry.getSession(params.sessionId);
-      if (!session) {
-        return { messages: [] };
-      }
-      const conversation = await deps.storage.getConversation(session.sessionKey);
-      const limit = params.limit ?? 100;
-      const messages = conversation?.messages ?? [];
-      return { messages: messages.slice(-limit) };
-    },
-  };
-
-  return [startHandler, sendHandler, stopHandler, historyHandler];
+  return [startHandler, sendHandler];
 }
 
 /** chat.* 메서드 일괄 등록 */

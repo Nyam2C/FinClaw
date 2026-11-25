@@ -9,12 +9,8 @@ import type { WsConnection, JsonRpcNotification } from './rpc/types.js';
  * | StreamEvent.type   | WS method                | 전송 정책   |
  * |--------------------|--------------------------|-------------|
  * | text_delta         | chat.stream.delta        | 150ms 배치  |
- * | tool_use_start     | chat.stream.tool_start   | 즉시        |
- * | tool_use_end       | chat.stream.tool_end     | 즉시        |
  * | done               | chat.stream.end          | 즉시        |
  * | error              | chat.stream.error        | 즉시        |
- *
- * 미매핑: state_change, message_complete, usage_update — 내부 FSM/집계용
  */
 export class GatewayBroadcaster {
   private readonly deltaBuffers = new Map<
@@ -23,29 +19,14 @@ export class GatewayBroadcaster {
   >();
   private static readonly BATCH_INTERVAL_MS = 150;
 
-  /** 채널별 slow consumer 임계값 (bytes) */
-  private static readonly CHANNEL_MAX_BUFFER: Record<string, number> = {
-    'market.tick': 256 * 1024,
-    default: 1024 * 1024,
-  };
+  /** slow consumer 임계값 (bytes) */
+  private static readonly MAX_BUFFER = 1024 * 1024;
 
   /** StreamEvent를 연결에 전송 */
   send(conn: WsConnection, sessionId: string, event: StreamEvent): void {
     switch (event.type) {
       case 'text_delta':
         this.bufferDelta(conn, sessionId, event.delta);
-        break;
-      case 'tool_use_start':
-        this.sendImmediate(conn, 'chat.stream.tool_start', {
-          sessionId,
-          toolCall: event.toolCall,
-        });
-        break;
-      case 'tool_use_end':
-        this.sendImmediate(conn, 'chat.stream.tool_end', {
-          sessionId,
-          result: event.result,
-        });
         break;
       case 'done':
         this.flushDelta(conn.id, sessionId, conn);
@@ -61,7 +42,6 @@ export class GatewayBroadcaster {
           error: event.error.message,
         });
         break;
-      // state_change, message_complete, usage_update → 무시
     }
   }
 
@@ -101,7 +81,7 @@ export class GatewayBroadcaster {
     if (conn.ws.readyState !== conn.ws.OPEN) {
       return;
     }
-    if (conn.ws.bufferedAmount > 1024 * 1024) {
+    if (conn.ws.bufferedAmount > GatewayBroadcaster.MAX_BUFFER) {
       return;
     }
 
@@ -129,10 +109,6 @@ export class GatewayBroadcaster {
     } satisfies JsonRpcNotification);
 
     let sent = 0;
-    const maxBuffer =
-      GatewayBroadcaster.CHANNEL_MAX_BUFFER[channel] ??
-      GatewayBroadcaster.CHANNEL_MAX_BUFFER['default'] ??
-      1024 * 1024;
 
     for (const conn of connections.values()) {
       if (!conn.subscriptions.has(channel)) {
@@ -141,7 +117,7 @@ export class GatewayBroadcaster {
       if (conn.ws.readyState !== conn.ws.OPEN) {
         continue;
       }
-      if (conn.ws.bufferedAmount > maxBuffer) {
+      if (conn.ws.bufferedAmount > GatewayBroadcaster.MAX_BUFFER) {
         continue;
       }
 
@@ -149,34 +125,6 @@ export class GatewayBroadcaster {
       sent++;
     }
     return sent;
-  }
-
-  /** 구독 추가 */
-  subscribe(
-    connectionId: string,
-    channel: string,
-    connections: Map<string, WsConnection>,
-  ): boolean {
-    const conn = connections.get(connectionId);
-    if (!conn) {
-      return false;
-    }
-    conn.subscriptions.add(channel);
-    return true;
-  }
-
-  /** 구독 해제 */
-  unsubscribe(
-    connectionId: string,
-    channel: string,
-    connections: Map<string, WsConnection>,
-  ): boolean {
-    const conn = connections.get(connectionId);
-    if (!conn) {
-      return false;
-    }
-    conn.subscriptions.delete(channel);
-    return true;
   }
 
   /** 종료 알림 broadcast */

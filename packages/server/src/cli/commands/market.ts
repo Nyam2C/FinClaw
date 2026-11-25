@@ -32,11 +32,4 @@ export function register(program: Command, deps: CliDeps): void {
         deps.output(formatKeyValue(data));
       }
     });
-
-  cmd
-    .command('watch <ticker>')
-    .description('watch a stock price (coming soon)')
-    .action((ticker: string) => {
-      deps.output(theme.info(`watch ${ticker}: not yet implemented`));
-    });
 }

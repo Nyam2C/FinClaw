@@ -1,5 +1,3 @@
-import type { PolicyVerdict } from './policy.js';
-
 // ── 도구 그룹 식별자 ──
 
 /** 도구 그룹 식별자 */
@@ -11,15 +9,3 @@ export type ToolGroupId =
   | 'communication' // 커뮤니케이션 (알림, 메시지)
   | 'mcp' // Phase 29 D: MCP (Model Context Protocol) 외부 도구
   | 'custom'; // 사용자 정의
-
-// ── 도구 그룹 정의 ──
-
-/** 도구 그룹 정의 */
-export interface ToolGroup {
-  readonly id: ToolGroupId;
-  readonly displayName: string;
-  readonly description: string;
-  readonly defaultPolicy: PolicyVerdict;
-  /** 이 그룹의 도구가 시스템 프롬프트에 포함될 조건 */
-  readonly includeInPromptWhen: 'always' | 'on-demand' | 'never';
-}

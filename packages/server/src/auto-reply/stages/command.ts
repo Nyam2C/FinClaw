@@ -38,12 +38,6 @@ export async function commandStage(
     return { action: 'continue', data: ctx };
   }
 
-  // TODO: 권한 시스템 구현 시 사용자 역할(ctx.userRoles)과 command.definition.requiredRoles를 비교하도록 변경.
-  // 현재는 requiredRoles가 설정된 명령어는 항상 거부됨 (Phase 8 placeholder).
-  if (command.definition.requiredRoles?.length) {
-    return { action: 'skip', reason: `Insufficient permissions for command: ${parsed.name}` };
-  }
-
   // 명령어 실행
   await command.executor(parsed.args, ctx);
 

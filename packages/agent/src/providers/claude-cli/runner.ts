@@ -2,7 +2,7 @@
 
 import { DEFAULT_CLAUDE_BACKEND, normalizeClaudeModel } from './backends.js';
 import { CliFailoverError, classifyCliError } from './errors.js';
-import { parseCliJson, parseCliJsonl, type CliOutput } from './parsers.js';
+import { parseCliJson, type CliOutput } from './parsers.js';
 import { buildCliQueueKey, enqueueCliRun } from './queue.js';
 import { resolveCliNoOutputTimeoutMs } from './reliability.js';
 import { spawnWithWatchdog } from './spawn.js';
@@ -17,7 +17,7 @@ export interface RunCliAgentRequest {
   abortSignal?: AbortSignal;
   cwd?: string;
   backend?: CliBackendConfig;
-  /** Phase 41: 큐 키 override. inner analyze_market spawn 이 outer ReAct 와 다른 큐를 쓰게 해
+  /** Phase 41: 큐 키 override. route_task sub-agent spawn 이 outer CLI 턴과 다른 큐를 쓰게 해
    *  중첩 spawn 데드락 회피. 미지정 시 buildCliQueueKey(backendId:'claude', ...) 기본. */
   queueKey?: string;
 }
@@ -69,9 +69,7 @@ export async function runCliAgent(req: RunCliAgentRequest): Promise<RunCliAgentR
     args.push('--allowedTools', backend.mcp.allowedTools ?? 'mcp__finclaw__*');
   }
 
-  if (backend.input === 'arg') {
-    args.push(req.prompt);
-  }
+  args.push(req.prompt);
 
   // env (clearEnv 적용)
   const env: NodeJS.ProcessEnv = { ...process.env, ...backend.env };
@@ -96,7 +94,6 @@ export async function runCliAgent(req: RunCliAgentRequest): Promise<RunCliAgentR
       argv: [backend.command, ...args] as [string, ...string[]],
       cwd: req.cwd,
       env,
-      input: backend.input === 'stdin' ? req.prompt : undefined,
       timeoutMs,
       noOutputTimeoutMs,
       signal: req.abortSignal,
@@ -135,21 +132,13 @@ export async function runCliAgent(req: RunCliAgentRequest): Promise<RunCliAgentR
     throw new CliFailoverError(message, { reason, provider, model: modelId });
   }
 
-  // 출력 파싱
-  const outputMode = useResume ? (backend.resumeOutput ?? backend.output) : backend.output;
-  let parsed: CliOutput | undefined;
-  if (outputMode === 'text') {
-    parsed = { text: result.stdout.trim() };
-  } else if (outputMode === 'jsonl') {
-    parsed = parseCliJsonl(result.stdout, backend) ?? { text: result.stdout.trim() };
-  } else {
-    parsed = parseCliJson(result.stdout, backend) ?? { text: result.stdout.trim() };
-  }
+  // 출력 파싱 (--output-format json)
+  const parsed: CliOutput = parseCliJson(result.stdout, backend) ?? { text: result.stdout.trim() };
 
   return {
-    text: parsed?.text ?? '',
-    sessionId: parsed?.sessionId,
-    usage: parsed?.usage,
+    text: parsed.text,
+    sessionId: parsed.sessionId,
+    usage: parsed.usage,
     durationMs: Date.now() - startedAt,
   };
 }

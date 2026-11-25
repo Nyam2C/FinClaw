@@ -46,8 +46,6 @@ function makePipelineCtx(overrides: Partial<PipelineMsgContext> = {}): PipelineM
       supportsEditing: false,
       maxMessageLength: 2000,
     },
-    userRoles: [],
-    isAdmin: false,
     ...overrides,
   };
 }
@@ -57,12 +55,9 @@ function makeExecResult(overrides: Partial<ExecuteStageResult> = {}): ExecuteSta
     content: 'Hello, this is a response.',
     controlTokens: {
       cleanContent: 'Hello, this is a response.',
-      tokens: [],
       hasNoReply: false,
       hasSilentReply: false,
-      hasHeartbeat: false,
       needsDisclaimer: false,
-      needsQuote: false,
     },
     ...overrides,
   };
@@ -86,12 +81,9 @@ describe('deliverResponse', () => {
     const execResult = makeExecResult({
       controlTokens: {
         cleanContent: 'test',
-        tokens: [],
         hasNoReply: false,
         hasSilentReply: true,
-        hasHeartbeat: false,
         needsDisclaimer: false,
-        needsQuote: false,
       },
     });
 
@@ -108,12 +100,9 @@ describe('deliverResponse', () => {
     const execResult = makeExecResult({
       controlTokens: {
         cleanContent: 'AAPL analysis',
-        tokens: [],
         hasNoReply: false,
         hasSilentReply: false,
-        hasHeartbeat: false,
         needsDisclaimer: true,
-        needsQuote: false,
       },
     });
 

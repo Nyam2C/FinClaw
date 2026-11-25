@@ -1,13 +1,10 @@
 // packages/skills-finance/src/market/index.ts
 import type { DatabaseSync } from 'node:sqlite';
-import type { RegisteredToolDefinition, ToolExecutor, ToolRegistry } from '@finclaw/agent';
-import type { SkillMetadata } from '@finclaw/types';
 import { createTickerSymbol } from '@finclaw/types';
 import type { QuoteService } from '../news/portfolio/tracker.js';
 import type { KeyRotator } from '../shared/key-rotator.js';
 import { MarketCache } from './cache.js';
 import { generateSparkline } from './charts.js';
-import { formatQuote, formatForexRate, formatChart } from './formatters.js';
 import { normalizeQuote, normalizeHistorical } from './normalizer.js';
 import { ProviderRegistry, createDefaultRegistry } from './provider-registry.js';
 import type { ProviderMarketQuote, HistoricalPeriod } from './types.js';
@@ -48,11 +45,8 @@ export interface MarketSkillHandle {
   };
 }
 
-/** 스킬을 초기화하고 도구를 등록한다 */
-export async function registerMarketTools(
-  registry: ToolRegistry,
-  config: MarketSkillConfig,
-): Promise<MarketSkillHandle> {
+/** 시세 provider·캐시를 초기화한다 (도구는 route_task 가 노출). */
+export async function createMarketSkill(config: MarketSkillConfig): Promise<MarketSkillHandle> {
   const providers = await createDefaultRegistry({
     finnhubRotator: config.finnhubRotator,
     twelveDataRotator: config.twelveDataRotator,
@@ -61,11 +55,6 @@ export async function registerMarketTools(
   });
   const cache = new MarketCache(config.db);
   const state: MarketSkillState = { providers, cache };
-
-  registerStockPriceTool(registry, state);
-  registerCryptoPriceTool(registry, state);
-  registerForexRateTool(registry, state);
-  registerMarketChartTool(registry, state);
 
   const quoteService: QuoteService = {
     async getQuote(symbol: string) {
@@ -132,151 +121,3 @@ async function getChartFromState(
   const historical = normalizeHistorical(rawResponse);
   return generateSparkline(historical.candles, { currency: historical.currency });
 }
-
-// ── 도구 등록 ──
-
-function registerStockPriceTool(registry: ToolRegistry, state: MarketSkillState): void {
-  const def: RegisteredToolDefinition = {
-    name: 'get_stock_price',
-    description:
-      '주식 실시간/지연 시세를 조회합니다. 미국 주식 티커(예: AAPL, GOOGL, MSFT)를 지원합니다.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        symbol: { type: 'string', description: '주식 티커 심볼 (예: AAPL)' },
-      },
-      required: ['symbol'],
-    },
-    group: 'finance',
-    requiresApproval: false,
-    isTransactional: false,
-    accessesSensitiveData: false,
-    isExternal: true,
-    timeoutMs: 15_000,
-  };
-  const executor: ToolExecutor = async (input) => {
-    try {
-      const quote = await getQuoteFromState(state, input.symbol as string);
-      return { content: formatQuote(quote), isError: false };
-    } catch (error) {
-      return { content: error instanceof Error ? error.message : String(error), isError: true };
-    }
-  };
-  registry.register(def, executor, 'skill');
-}
-
-function registerCryptoPriceTool(registry: ToolRegistry, state: MarketSkillState): void {
-  const def: RegisteredToolDefinition = {
-    name: 'get_crypto_price',
-    description: '암호화폐 실시간 시세를 조회합니다. BTC, ETH, SOL 등 주요 암호화폐를 지원합니다.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        symbol: { type: 'string', description: '암호화폐 심볼 (예: BTC, ETH)' },
-      },
-      required: ['symbol'],
-    },
-    group: 'finance',
-    requiresApproval: false,
-    isTransactional: false,
-    accessesSensitiveData: false,
-    isExternal: true,
-    timeoutMs: 15_000,
-  };
-  const executor: ToolExecutor = async (input) => {
-    try {
-      const quote = await getQuoteFromState(state, input.symbol as string);
-      return { content: formatQuote(quote), isError: false };
-    } catch (error) {
-      return { content: error instanceof Error ? error.message : String(error), isError: true };
-    }
-  };
-  registry.register(def, executor, 'skill');
-}
-
-function registerForexRateTool(registry: ToolRegistry, state: MarketSkillState): void {
-  const def: RegisteredToolDefinition = {
-    name: 'get_forex_rate',
-    description: '외환 환율을 조회합니다. USD/KRW, EUR/USD 등의 통화쌍을 지원합니다.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        from: { type: 'string', description: '기준 통화 (예: USD)' },
-        to: { type: 'string', description: '대상 통화 (예: KRW)' },
-      },
-      required: ['from', 'to'],
-    },
-    group: 'finance',
-    requiresApproval: false,
-    isTransactional: false,
-    accessesSensitiveData: false,
-    isExternal: true,
-    timeoutMs: 15_000,
-  };
-  const executor: ToolExecutor = async (input) => {
-    try {
-      const from = input.from as string;
-      const to = input.to as string;
-      const quote = await getQuoteFromState(state, `${from}/${to}`);
-      return { content: formatForexRate(quote), isError: false };
-    } catch (error) {
-      return { content: error instanceof Error ? error.message : String(error), isError: true };
-    }
-  };
-  registry.register(def, executor, 'skill');
-}
-
-function registerMarketChartTool(registry: ToolRegistry, state: MarketSkillState): void {
-  const def: RegisteredToolDefinition = {
-    name: 'get_market_chart',
-    description:
-      '시세 차트를 텍스트 스파크라인으로 생성합니다. 기간별(1일~5년) 과거 데이터를 시각화합니다.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        symbol: { type: 'string', description: '티커 심볼 (예: AAPL, BTC)' },
-        period: {
-          type: 'string',
-          description: '기간 (1d, 5d, 1m, 3m, 6m, 1y, 5y)',
-          default: '1m',
-          enum: ['1d', '5d', '1m', '3m', '6m', '1y', '5y'],
-        },
-      },
-      required: ['symbol'],
-    },
-    group: 'finance',
-    requiresApproval: false,
-    isTransactional: false,
-    accessesSensitiveData: false,
-    isExternal: true,
-    timeoutMs: 15_000,
-  };
-  const executor: ToolExecutor = async (input) => {
-    try {
-      const symbol = input.symbol as string;
-      const period = (input.period as string) ?? '1m';
-      const sparkline = await getChartFromState(state, symbol, period);
-      return { content: formatChart(symbol, sparkline, period), isError: false };
-    } catch (error) {
-      return { content: error instanceof Error ? error.message : String(error), isError: true };
-    }
-  };
-  registry.register(def, executor, 'skill');
-}
-
-/** 스킬 메타데이터 — Phase 7의 skill registry에 등록 */
-export const MARKET_SKILL_METADATA: SkillMetadata = {
-  name: 'market-data',
-  description: '주식, 암호화폐, 외환 시장 데이터를 조회하고 차트를 생성합니다.',
-  version: '1.0.0',
-  requires: {
-    env: [], // API 키는 선택사항 (무료 티어 가능)
-    optionalEnv: ['ALPHA_VANTAGE_KEY', 'FINNHUB_KEY', 'TWELVE_DATA_KEY', 'COINGECKO_API_KEY'],
-  },
-  tools: [
-    { name: 'get_stock_price', reason: '구조화 조회' },
-    { name: 'get_crypto_price', reason: '구조화 조회' },
-    { name: 'get_forex_rate', reason: '구조화 조회' },
-    { name: 'get_market_chart', reason: '데이터 포매팅' },
-  ],
-};

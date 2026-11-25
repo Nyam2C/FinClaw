@@ -9,7 +9,7 @@ import {
 import { createServer as createHttpsServer } from 'node:https';
 import type { ChatExecutionPort } from '@finclaw/agent';
 import { getEventBus } from '@finclaw/infra';
-import type { ModelRef, StorageAdapter } from '@finclaw/types';
+import type { ModelRef } from '@finclaw/types';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { createAccessLogger } from './access-log.js';
 import { AuthRateLimiter } from './auth/rate-limit.js';
@@ -27,23 +27,19 @@ import { handleHttpRequest } from './router.js';
 import { MethodRegistry } from './rpc/index.js'; // Phase 35
 import { registerAgentRunsMethods } from './rpc/methods/agent-runs.js';
 import { registerAgentMethods, type AgentRpcDeps } from './rpc/methods/agent.js';
-import { registerAuditMethods } from './rpc/methods/audit.js';
 import { registerBrokerageMethods, type BrokerageRpcDeps } from './rpc/methods/brokerage.js';
 import { registerChatMethods } from './rpc/methods/chat.js';
-import { registerConfigMethods } from './rpc/methods/config.js';
 import { registerFinanceMethods, type FinanceRpcDeps } from './rpc/methods/finance.js';
 import { registerMemoryMethods, type MemoryRpcDeps } from './rpc/methods/memory.js';
 import { registerScheduleMethods, type ScheduleRpcDeps } from './rpc/methods/schedule.js';
 import { registerSessionMethods } from './rpc/methods/session.js';
 // 메서드 등록
 import { registerSystemMethods } from './rpc/methods/system.js';
-import { registerTraceMethods } from './rpc/methods/trace.js';
 import type { GatewayServerConfig } from './rpc/types.js';
 import { handleWsConnection } from './ws/connection.js';
 import { startHeartbeat } from './ws/heartbeat.js';
 
 export interface GatewayServerDeps {
-  readonly storage: StorageAdapter;
   readonly defaultModel: ModelRef;
   readonly adapter: ChatExecutionPort;
   /** Phase 23: finance.* RPC 배선용 의존성 (생략 시 해당 메서드는 provider_unavailable 에러) */
@@ -142,13 +138,11 @@ export function createGatewayServer(
 
   // RPC 메서드 등록 (ctx가 생성된 후 deps + registry 주입)
   registerSystemMethods(ctx.methods);
-  registerConfigMethods(ctx.methods);
   registerChatMethods(
     {
       registry: ctx.registry,
       connections: ctx.connections,
       broadcaster: ctx.broadcaster,
-      storage: deps.storage,
       defaultModel: deps.defaultModel,
       adapter: deps.adapter,
       // Phase 24 D: ModelFloorExhaustedError 구조화 로그용 — agent.* 와 logger 공유
@@ -165,22 +159,12 @@ export function createGatewayServer(
     },
     ctx.methods,
   );
-  registerSessionMethods(
-    {
-      registry: ctx.registry,
-      storage: deps.storage,
-    },
-    ctx.methods,
-  );
+  registerSessionMethods({ registry: ctx.registry }, ctx.methods);
   // Phase 26 B: memory.* RPC 등록 (deps 미주입 시 모든 호출이 provider_unavailable).
   registerMemoryMethods(deps.memoryDeps ?? {}, ctx.methods);
   // Phase 26 D: agent.runs.* RPC 등록. agentDeps 또는 financeDeps 의 db 를 재사용
   // (둘 다 같은 storage.db 인스턴스를 가리키도록 main.ts 가 배선).
   registerAgentRunsMethods({ db: deps.agentDeps?.db ?? deps.financeDeps?.db }, ctx.methods);
-  // Phase 30 A9: trace.* RPC 등록 (agentDeps/financeDeps 의 db 재사용).
-  registerTraceMethods({ db: deps.agentDeps?.db ?? deps.financeDeps?.db }, ctx.methods);
-  // Phase 30 C5: audit.* RPC 등록 (감사 로그 조회).
-  registerAuditMethods({ db: deps.agentDeps?.db ?? deps.financeDeps?.db }, ctx.methods);
   if (deps.agentDeps) {
     registerAgentMethods(deps.agentDeps, ctx.methods);
   }

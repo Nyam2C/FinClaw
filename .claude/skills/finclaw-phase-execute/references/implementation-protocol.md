@@ -105,7 +105,7 @@ pnpm --filter @finclaw/x build                               # 단일 패키지 
 옵션 명령 (todo.md 가 명시 안 했으면 생략):
 
 - `pnpm lint` — 보통 phase 끝 무렵 한 번
-- `pnpm test:e2e`, `pnpm test:live` — 사용자 명시 요청 시
+- `pnpm test:live` — 사용자 명시 요청 시
 - `pnpm build` — 패키지 의존 영향 큰 phase
 
 ## 5. 커밋

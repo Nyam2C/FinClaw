@@ -11,7 +11,6 @@ export interface ChannelPlugin<TAccount = unknown> {
   onMessage?(handler: (msg: InboundMessage) => Promise<void>): CleanupFn;
   send?(msg: OutboundMessage): Promise<void>;
   sendTyping?(channelId: string, chatId: string): Promise<void>;
-  addReaction?(messageId: string, emoji: string): Promise<void>;
 }
 
 /** 채널 메타데이터 */

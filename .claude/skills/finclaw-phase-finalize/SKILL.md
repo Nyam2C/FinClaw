@@ -33,7 +33,7 @@ description: FinClaw 의 plans/phase{NN}/ 구현이 끝난 직후 호출하는 p
    - phase 작업이 시작된 시점의 커밋. 일반적으로 직전 phase 의 마지막 커밋 또는 phase 의 plan.md 가 추가된 커밋의 부모.
    - 추정 후 사용자에게 확인 요청 (한 줄: "base SHA 를 `<sha>` 로 잡고 진행할게요. 다른 base 라면 알려주세요.")
 4. **옵션 확인**
-   - e2e/live 테스트 포함 여부 (기본 X)
+   - live 테스트 포함 여부 (기본 X)
    - QA 검증 끼우는 시점 — 빌드/타입/유닛/스토리지 항상, 나머지는 사용자 옵션
 
 ## Phase 1: 입력 수집

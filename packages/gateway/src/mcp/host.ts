@@ -15,7 +15,7 @@ import { registerBridgedTools } from './bridge.js';
  * StreamableHTTP 는 stateful 프로토콜 — initialize → tools/list → tools/call 가 별도 HTTP
  * 요청으로 오므로 mcp-session-id 로 같은 transport/server 를 재사용해야 한다. (요청마다 새
  * 서버를 만드는 stateless 패턴은 tools/list 에서 -32601 로 실패.) 세션 맵은 McpHost 인스턴스에
- * 캡슐화 (모듈 전역 X — gateway DI 규율 유지). 노출 도구는 bridge.ts 의 read-only 우선 필터를 통과.
+ * 캡슐화 (모듈 전역 X — gateway DI 규율 유지). 레지스트리의 도구를 bridge.ts 가 전부 노출.
  */
 export interface McpHost {
   handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void>;
@@ -23,11 +23,6 @@ export interface McpHost {
 
 export function createMcpHost(toolRegistry: ToolRegistry, config: GatewayServerConfig): McpHost {
   const transports = new Map<string, StreamableHTTPServerTransport>();
-  const bridgeConfig = {
-    allowedGroups: config.mcp?.allowedGroups,
-    denyTools: config.mcp?.denyTools,
-    allowTools: config.mcp?.allowTools,
-  };
 
   return {
     async handleRequest(req, res): Promise<void> {
@@ -60,7 +55,7 @@ export function createMcpHost(toolRegistry: ToolRegistry, config: GatewayServerC
           res.end(JSON.stringify({ error: 'No valid session for non-initialize request' }));
           return;
         }
-        // 신규 세션 — stateful transport (session id 발급) + read-only 필터된 도구 등록.
+        // 신규 세션 — stateful transport (session id 발급) + 레지스트리 도구 등록.
         // 명시 타입 — onsessioninitialized 클로저가 created 를 self-reference 하므로 (tsc TS7022).
         const created: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => randomUUID(),
@@ -76,7 +71,7 @@ export function createMcpHost(toolRegistry: ToolRegistry, config: GatewayServerC
           }
         };
         const server = new McpServer({ name: 'finclaw', version: '0.1.0' });
-        registerBridgedTools(server, toolRegistry, bridgeConfig, {
+        registerBridgedTools(server, toolRegistry, {
           userId: authResult.info.userId ?? 'mcp-user',
           sessionId: authResult.info.sessionId ?? 'mcp',
         });

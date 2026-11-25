@@ -6,11 +6,11 @@ FinClaw 는 사용자 본인의 투자 판단·시장 조사·포트폴리오 �
 
 ## 왜 FinClaw 인가
 
-- **금융 도메인에 한정한 축약 코드베이스** — 11 워크스페이스 패키지, OpenClaw 아키텍처의 금융 특화 축소판. 한 사람이 전부 읽고 수정 가능한 크기를 의도.
+- **금융 도메인에 한정한 축약 코드베이스** — 12 워크스페이스 패키지, OpenClaw 아키텍처의 금융 특화 축소판. 한 사람이 전부 읽고 수정 가능한 크기를 의도.
 - **감사 가능성 우선** — 모든 거래 입력·기억·`agent.run` 결과·RAG 주입 ID 가 SQLite (`transactions`, `memories`, `agent_runs`) 에 영속화되며, 회상 시 어떤 기억이 주입됐는지 로그로 남는다.
 - **명시적 선언 기반 기억** — 사용자가 `!finclaw remember`, `기억해`, `메모`, `선호`, `내 (투자) 원칙은 …` 같은 정규식 패턴을 사용할 때만 저장. LLM 자동 추출은 환각 위험으로 의도적 비대상.
 - **읽기 전용 + 수동 입력 거래 이력** — `finance.transaction.add` 는 사용자가 "이미 한 매매" 를 기록하는 경로지 "FinClaw 가 자동 매매" 가 아니다. holdings 는 transactions 로부터 파생.
-- **외부 키 없이 작동하는 mock-only 테스트 스탠스** — 4-tier vitest (unit / storage / e2e / live) 분리. 라이브 API 호출은 `test:live` 로만 격리.
+- **외부 키 없이 작동하는 mock-only 테스트 스탠스** — 3-tier vitest (unit / storage / live) 분리. 라이브 API 호출은 `test:live` 로만 격리.
 
 비대상: 다중 사용자·RBAC·SSO 가 필요한 팀·조직, 자동 매매 목적 사용자, OpenClaw 같은 범용 멀티채널 AI 플랫폼을 찾는 사용자.
 
@@ -33,8 +33,8 @@ corepack prepare pnpm@10.4.1 --activate
 
 ```bash
 pnpm setup            # .env 복사 + pnpm install + ~/.finclaw/ 생성
-# 그 다음 .env 를 편집해 DISCORD_BOT_TOKEN, DISCORD_APPLICATION_ID 입력
-# ANTHROPIC_API_KEY 는 선택 — 기본은 Claude 구독(CLI) 모드 (아래 "Claude 구독(CLI)-only" 참고)
+# 그 다음 .env 를 편집해 DISCORD_BOT_TOKEN 입력
+# 추론은 Claude 구독(CLI) — `claude login` 필요, API 키 불필요 (아래 "Claude 구독(CLI)-only" 참고)
 pnpm build
 ```
 
@@ -50,15 +50,15 @@ pnpm dev:all
 
 부팅이 완료되면 로그에 `Gateway listening on …` 이 찍힌다. Discord 봇이 온라인 상태가 되면 멘션이나 `!finclaw <메시지>` 로 대화할 수 있다.
 
-> ⚠️ **함정**: 로컬 `pnpm dev` 는 `.env` 자동 로드를 하지 않는다. 셸에서 `export` 하거나 `node --env-file=.env` 를 쓰거나, Docker 경로(`pnpm dev:all`) 를 사용해야 한다. Docker compose 는 `env_file: .env` 로 자동 주입한다.
+> ⚠️ **함정**: `main()` 은 **현재 작업 디렉터리**의 `.env` 만 읽는다 (`process.loadEnvFile`, 이미 export 된 값은 덮어쓰지 않음). 레포 루트에서 `pnpm dev` 하면 루트 `.env` 가 로드되고, 다른 디렉터리에서 실행하면 셸 `export` 가 필요하다. Docker compose 는 `env_file: .env` 로 자동 주입한다.
 
 ### Claude 구독(CLI)-only (기본 모드)
 
-FinClaw 는 기본적으로 **Anthropic API 키 없이 Claude 구독(`claude` CLI 로그인)만으로** 구동한다 (`provider: 'claude-cli'`). `claude` CLI 가 추론 백엔드이고, FinClaw 의 금융 도구는 **in-process HTTP MCP**(`/mcp`)로 노출되어 CLI 가 호출한다.
+FinClaw 는 **Anthropic API 키 없이 Claude 구독(`claude` CLI 로그인)만으로** 구동한다 (`provider: 'claude-cli'`, 유일한 백엔드). 실행마다 `claude -p --output-format json` 자식 프로세스를 띄우고, FinClaw 의 도구는 **in-process HTTP MCP**(`/mcp`)로 노출되어 CLI 가 자기 루프 안에서 직접 호출한다.
 
-- **선행 조건:** `claude` CLI 설치 + `claude login`(구독 인증). `ANTHROPIC_API_KEY` 불필요.
-- **읽기 전용:** 자동 claude 에 노출되는 도구는 **조회 전용**(시세/뉴스/차트/포트폴리오/알림목록/날짜시간)이다. 매수·변경류(알림 생성·삭제, 스케줄, 브로커리지 동기화)와 임의 파일읽기·웹페치는 기본 차단되며 `gateway.mcp.allowTools` 로만 명시 opt-in 한다 — **주식 매수 권한은 사람에게만.**
-- **API(SDK) 모드로 전환:** `provider: 'anthropic-sdk'` + `ANTHROPIC_API_KEY` 설정 시 기존 SDK 경로(스트리밍·도구 ReAct 루프·자동화 cron)를 쓴다. 키 없이 `anthropic-sdk` 를 선택하면 부팅이 종료된다. (키가 있으면 CLI 모드에서도 SDK 가 인증 만료 시 폴백 안전판으로 휴면 대기.)
+- **선행 조건:** `claude` CLI 설치 + `claude login`(구독 인증). `ANTHROPIC_API_KEY` 불필요 — 설정돼 있어도 CLI 자식 프로세스 env 에서 지운다(구독 인증 강제).
+- **읽기 전용:** `/mcp` 는 등록된 도구를 전부 노출하며, 등록 도구는 모두 **조회 전용**이다 — `get_current_datetime`, `route_task`, `list_alerts`, `get_alert_history`, 그리고 플러그인 MCP 도구(`mcp:*`). 알림 생성·삭제, 스케줄, 브로커리지 동기화, 거래 기록 같은 변경은 LLM 도구가 아니라 Web/TUI/CLI 의 RPC 로만 한다 — **주식 매수 권한은 사람에게만.**
+- **격리:** CLI 내장 도구(Bash/Edit/Read 등)는 `--tools ""` 로 막고, `--strict-mcp-config` 로 사용자 전역 MCP 설정을 배제한다.
 
 ## 기능
 
@@ -70,25 +70,22 @@ Discord 멘션 또는 `!finclaw <메시지>` 로 자연어 대화. 메시지 한
 Normalize → Command → MemoryCapture → ACK → Context → MemoryRetrieval → Execute → Deliver
 ```
 
-- **Command**: `!finclaw help|reset|status|price|portfolio|alert` 등 인-채팅 명령어. (`/price`·`/portfolio`·`/alert` 는 placeholder — 실 기능은 LLM 자연어 호출.)
+- **Command**: `!finclaw help|reset|status` 인-채팅 명령어. 시세·포트폴리오·알림은 자연어 대화로 요청한다.
 - **MemoryCapture**: 정규식 5종(`!finclaw remember …`, `기억해: …`, `메모: …`, `선호: …`, `내 (투자) 원칙은 …`) 매칭 시 `memories` 테이블에 저장. SHA-256 dedup, 임베딩 실패 시 FTS-only fallback.
 - **MemoryRetrieval**: 매 발화마다 hybrid (vector + FTS5) RAG 검색. 임계값 0.65, 신선도 반감기 90 일, 상한 3 개. 발화에서 추출된 티커별 거래 이력 3 건도 함께 시스템 프롬프트의 "사용자 배경지식" 섹션에 주입.
 
 ### 2. 금융 스킬 (LLM 도구)
 
-대화 도중 LLM 이 호출하는 function-calling 도구. 키 미설정 시 해당 도구는 **등록 자체를 건너뛴다** (graceful degradation).
+대화 도중 `claude` CLI 가 `/mcp` 로 호출하는 도구 (전부 조회 전용). 키 미설정 시 해당 도구는 **등록 자체를 건너뛴다** (graceful degradation).
 
-| 카테고리   | 도구                                                            | 외부 의존                               |
-| ---------- | --------------------------------------------------------------- | --------------------------------------- |
-| 시세       | `get_stock_price`, `get_market_chart`                           | `ALPHA_VANTAGE_KEY`                     |
-| 시세       | `get_crypto_price`                                              | (선택) `COINGECKO_API_KEY`              |
-| 시세       | `get_forex_rate`                                                | Frankfurter (키 불필요)                 |
-| 뉴스       | `get_financial_news`                                            | `ALPHA_VANTAGE_KEY` (RSS 자동 fallback) |
-| 분석       | `analyze_market`                                                | `ANTHROPIC_API_KEY` (Opus floor 강제)   |
-| 포트폴리오 | `get_portfolio_summary`                                         | (없음)                                  |
-| 알림       | `set_alert`, `list_alerts`, `remove_alert`, `get_alert_history` | (없음, 내부 SQLite)                     |
+| 도구                                 | 내용                                                                                                                                                                                                     | 등록 조건                                                                                                                                                                                                |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `route_task(intent, query, symbol?)` | 도메인 작업 위임. intent: `price_lookup` · `chart_data` · `news_summary` · `portfolio_calc` (함수 직접 호출) / `market_analysis` (sub-agent `claude -p` 재호출, `prompts/sub-agents/market_analysis.md`) | 시세 키 1개 이상 (`FINNHUB_KEY` / `TWELVE_DATA_KEY` / `ALPHA_VANTAGE_KEY` / `COINGECKO_API_KEY`). 뉴스 의존 intent 는 뉴스 키(`NEWSDATA_API_KEY` / `FINNHUB_KEY` / `ALPHA_VANTAGE_KEY`) 없으면 에러 결과 |
+| `list_alerts`, `get_alert_history`   | 알림 조회 (내부 SQLite). 알림 생성은 RPC `finance.alert.create` 로만                                                                                                                                     | 시세 + 뉴스 키                                                                                                                                                                                           |
+| `get_current_datetime`               | 현재 시각                                                                                                                                                                                                | 항상                                                                                                                                                                                                     |
+| `mcp:*`                              | 플러그인 MCP 도구 (`FINCLAW_PLUGINS_DIR`, 기본 `~/.finclaw/plugins`). 정책 `require-approval`                                                                                                            | 플러그인 있을 때                                                                                                                                                                                         |
 
-추가로 일반 스킬 3 종이 항상 등록된다: `get_current_datetime`, `web_fetch` (사설 IP 차단 SSRF 가드), `read_local_file` (`FINCLAW_FILE_ROOT` 루트 강제).
+시세 프로바이더 우선순위는 Finnhub → Twelve Data → Alpha Vantage → CoinGecko → Frankfurter (외환, 키 불필요 — 단 위 시세 키가 하나는 있어야 `route_task` 가 등록된다).
 
 ### 3. 자동화 (cron 스케줄러, Phase 28)
 
@@ -100,30 +97,29 @@ Web Settings 또는 `schedule.create` RPC 로 cron 표현식과 prompt 를 등�
 
 ### 4. 운영 인터페이스
 
-| 인터페이스                | 진입점                               | 주요 기능                                                                                                                 |
-| ------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| **Web UI** (Lit + Vite)   | 브라우저, gateway WS                 | 5 탭 — Chat / Market / Portfolio (보유종목 + 거래 이력 + 거래 추가 모달) / Alerts / Settings (기억 / 자동화 / agent_runs) |
-| **TUI** (Ink + React)     | `finclaw tui`                        | 5 탭 — chat / market / portfolio / alerts / settings                                                                      |
-| **CLI** (commander)       | `finclaw <cmd>`                      | `start` / `health` / `status` / `agent {list,status}` / `market quote` / `news` / `alert {add,list}` / `tui`              |
-| **Discord 슬래시 커맨드** | `/ask`, `/market`, `/news`, `/alert` | **현재 모두 placeholder 응답** — 실 기능은 자연어 대화 경로로 사용                                                        |
+| 인터페이스              | 진입점               | 주요 기능                                                                                                                 |
+| ----------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **Web UI** (Lit + Vite) | 브라우저, gateway WS | 5 탭 — Chat / Market / Portfolio (보유종목 + 거래 이력 + 거래 추가 모달) / Alerts / Settings (기억 / 자동화 / agent_runs) |
+| **TUI** (Ink + React)   | `finclaw tui`        | 4 탭 — chat / market / portfolio / alerts                                                                                 |
+| **CLI** (commander)     | `finclaw <cmd>`      | `start` / `health` / `status` / `agent {list,status}` / `market quote` / `news` / `alert {add,list}` / `tui`              |
 
-### 5. Gateway JSON-RPC (39 개 메서드)
+### 5. Gateway JSON-RPC (34 개 메서드)
 
-HTTP `POST /rpc` + WebSocket `ws://…/ws` 에서 동일 JSON-RPC 2.0 스키마로 호출 가능. Zod v4 스키마 검증, 4 단계 권한 (`none / api_key / token / session`).
+HTTP `POST /rpc` + WebSocket `ws://…/ws` 에서 동일 JSON-RPC 2.0 스키마로 호출 가능. Zod v4 스키마 검증, 3 단계 권한 (`none / api_key / token`). 같은 서버의 `/mcp` 는 `claude` CLI 용 MCP 엔드포인트다.
 
 | 그룹           | 메서드                                                                                                 |
 | -------------- | ------------------------------------------------------------------------------------------------------ |
 | `system.*`     | `health`, `info`, `ping`                                                                               |
-| `config.*`     | `get`, `update`, `reload` (**stub**, Phase 10 미완)                                                    |
-| `chat.*`       | `start`, `send`, `stop`, `history`                                                                     |
-| `session.*`    | `get`, `reset`, `list`                                                                                 |
+| `chat.*`       | `start`, `send`                                                                                        |
+| `session.*`    | `get`                                                                                                  |
 | `agent.*`      | `list`, `status`, `run`                                                                                |
 | `agent.runs.*` | `list`, `get` (감사 이력)                                                                              |
 | `memory.*`     | `list`, `delete`, `search` (hybrid/FTS)                                                                |
 | `finance.*`    | `quote`, `news`, `alert.create`, `alert.list`, `portfolio.get`, `transaction.{add,list,update,delete}` |
-| `schedule.*`   | `create`, `list`, `update`, `delete`, `runNow`, `history`, `enable`, `disable`, `testCron`             |
+| `schedule.*`   | `create`, `list`, `update`, `delete`, `runNow`, `history`, `enable`, `disable`                         |
+| `brokerage.*`  | `sync.run`, `health.get` (KIS read-only 잔고 동기화)                                                   |
 
-WebSocket notification: `chat.stream.{delta,end,error,tool_start,tool_end}`, `portfolio.changed`, `schedule.completed`.
+WebSocket notification: `chat.stream.{delta,end,error}`, `portfolio.changed`, `schedule.completed`.
 
 ### 6. 기억 / RAG (Phase 26)
 
@@ -131,7 +127,7 @@ WebSocket notification: `chat.stream.{delta,end,error,tool_start,tool_end}`, `po
 - **회상:** hybrid vector + FTS, 임계값 0.65, 신선도 반감기 90 일, 상한 3 개.
 - **agent.run 결과 → memory:** output 길이 > 100자 + error 없음 시 `type='financial'` 로 자동 저장 (`agent_runs.memory_id` 링크).
 - **임베딩 프로바이더:** `VOYAGE_API_KEY` 또는 `OPENAI_API_KEY` 가 있으면 `createEmbeddingProvider('auto')` 시도. 실패/미설정 시 모든 경로 FTS-only fallback (best-effort, 파이프라인 차단 없음).
-- **OpenAI 임베딩 주의:** vec0 DDL 이 1024D 이라 OpenAI 1536D 는 schema mismatch — Voyage `voyage-finance-2` 권장.
+- **OpenAI 임베딩:** vec0 DDL 이 1024D 라 OpenAI `text-embedding-3-small` 은 `dimensions: 1024` truncation 으로 맞춘다. Voyage `voyage-finance-2` 권장.
 
 ## 아키텍처
 
@@ -147,6 +143,7 @@ graph TD
   channelDiscord["@finclaw/channel-discord"]
   skillsFinance["@finclaw/skills-finance"]
   skillsGeneral["@finclaw/skills-general"]
+  gateway["@finclaw/gateway"]
   server["@finclaw/server"]
   tui["@finclaw/tui"]
   web["@finclaw/web"]
@@ -164,8 +161,12 @@ graph TD
   skillsFinance --> storage
   skillsFinance --> agent
   skillsGeneral --> types
-  skillsGeneral --> infra
   skillsGeneral --> agent
+  gateway --> types
+  gateway --> infra
+  gateway --> storage
+  gateway --> agent
+  gateway --> skillsFinance
   tui --> types
   web --> types
 
@@ -175,18 +176,20 @@ graph TD
   server --> storage
   server --> agent
   server --> channelDiscord
+  server --> gateway
   server --> skillsFinance
   server --> skillsGeneral
   server --> tui
 ```
 
-순환 의존 없음. `types` 가 유일한 leaf, `server` 가 모든 패키지를 흡수해 부팅. `tui` / `web` 은 런타임에 게이트웨이 WebSocket 으로 통신하지만 코드상으로는 `types` 만 import.
+순환 의존 없음. `types` 가 유일한 leaf, `server` 가 `web` 을 뺀 모든 패키지를 흡수해 부팅. `tui` / `web` 은 런타임에 게이트웨이 WebSocket 으로 통신하지만 코드상으로는 `types` 만 import.
 
 ### 런타임 토폴로지
 
 | 프로세스                          | 진입점                                                 | 점유 포트                                    | 역할                                                                             |
 | --------------------------------- | ------------------------------------------------------ | -------------------------------------------- | -------------------------------------------------------------------------------- |
 | `@finclaw/server` (Node 22+, ESM) | `packages/server/src/main.ts` (`main()`)               | `GATEWAY_PORT` (기본 `3000`, host `0.0.0.0`) | Discord 수신 · 파이프라인 · LLM · 스토리지 · gateway · cron 을 1 프로세스에 흡수 |
+| `claude` CLI (자식 프로세스)      | 실행마다 `claude -p --output-format json` spawn        | (없음)                                       | 추론. 도구는 server 의 `/mcp` 로 HTTP 호출                                       |
 | `@finclaw/web`                    | `packages/web/src/main.ts` (Vite 빌드 또는 `vite dev`) | Vite 기본 `5173`                             | 브라우저 클라이언트, gateway WS + JSON-RPC                                       |
 | `@finclaw/tui`                    | `packages/tui/src/index.ts`                            | (stdin/stdout)                               | gateway WebSocket 으로 chat 세션 유지하는 ink/React TUI                          |
 
@@ -202,7 +205,8 @@ sequenceDiagram
   participant P as AutoReplyPipeline
   participant DB as SQLite (storage)
   participant Rn as Runner (agent)
-  participant LLM as Anthropic API
+  participant LLM as claude CLI (claude -p)
+  participant M as Gateway /mcp (ToolRegistry)
 
   U->>D: 메시지
   D->>R: discordAdapter.onMessage → router.route
@@ -214,10 +218,12 @@ sequenceDiagram
   P->>D: ackStage (typing + reaction)
   P->>P: context → memoryRetrieval (hybrid 검색)
   P->>DB: searchVector + searchFts → mergeHybridResults
-  P->>Rn: executeStage (Runner 생성, dispatcher 빌드)
-  Rn->>LLM: provider.stream (model resolve + fallback)
-  LLM-->>Rn: tool_use / text 스트림
-  Rn-->>P: assistant text + toolCalls
+  P->>Rn: executeStage (Runner 생성)
+  Rn->>LLM: 자식 프로세스 spawn (--resume, --mcp-config)
+  LLM->>M: 도구 호출 (HTTP MCP, CLI 내부 루프)
+  M-->>LLM: 도구 결과
+  LLM-->>Rn: 최종 텍스트 (JSON 1회)
+  Rn-->>P: assistant text
   P->>DB: agent_runs 영속화 + memory hook
   P->>D: deliver (chunking + 마크다운 다듬기)
   D->>U: 응답
@@ -230,29 +236,30 @@ sequenceDiagram
 
 ## 패키지 구조
 
-| 패키지                     | 역할                                                                                        | workspace 의존                                                                                               |
-| -------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `@finclaw/types`           | 모든 패키지 공유 contract (브랜드 타입 + enum)                                              | (none)                                                                                                       |
-| `@finclaw/infra`           | logger, eventbus, fetch, ports, ConcurrencyLane, ALS context, SSRF, gateway-lock            | `types`                                                                                                      |
-| `@finclaw/config`          | JSON5 설정 로딩, Zod 스키마, env 치환, strict 검증                                          | `types`, `infra`                                                                                             |
-| `@finclaw/storage`         | SQLite (`node:sqlite`) + sqlite-vec, 스키마 v12, transactions/agent_runs/schedules/memories | `types`                                                                                                      |
-| `@finclaw/agent`           | LLM provider abstraction, model catalog/router, fallback chain, tool registry, runner       | `types`, `infra`                                                                                             |
-| `@finclaw/channel-discord` | Discord 채널 어댑터 (discord.js v14)                                                        | `types`, `infra`                                                                                             |
-| `@finclaw/skills-finance`  | market / news / alerts 3 스킬 도구 + RSS, 시세 캐시                                         | `types`, `infra`, `storage`, `agent`                                                                         |
-| `@finclaw/skills-general`  | datetime / file-read / web-fetch                                                            | `types`, `infra`, `agent`                                                                                    |
-| `@finclaw/server`          | 진입점 + 게이트웨이 (HTTP/JSON-RPC + WebSocket), auto-reply 파이프라인, 자동화, CLI         | `types`, `infra`, `config`, `storage`, `agent`, `channel-discord`, `skills-finance`, `skills-general`, `tui` |
-| `@finclaw/tui`             | Ink + React 기반 터미널 UI (gateway WS 클라이언트)                                          | `types`                                                                                                      |
-| `@finclaw/web`             | Lit + Vite 기반 웹 UI (gateway WS 클라이언트 + 마크다운)                                    | `types`                                                                                                      |
+| 패키지                     | 역할                                                                                        | workspace 의존                                                                                                          |
+| -------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `@finclaw/types`           | 모든 패키지 공유 contract (브랜드 타입 + enum)                                              | (none)                                                                                                                  |
+| `@finclaw/infra`           | logger, eventbus, fetch, ports, ConcurrencyLane, ALS context, SSRF, cron, circuit-breaker   | `types`                                                                                                                 |
+| `@finclaw/config`          | JSON5 설정 로딩, Zod 스키마, env 치환, strict 검증                                          | `types`, `infra`                                                                                                        |
+| `@finclaw/storage`         | SQLite (`node:sqlite`) + sqlite-vec, 스키마 v12, transactions/agent_runs/schedules/memories | `types`                                                                                                                 |
+| `@finclaw/agent`           | `claude` CLI provider (spawn·큐·세션 resume), tool registry (정책·가드·감사), Runner        | `types`, `infra`                                                                                                        |
+| `@finclaw/channel-discord` | Discord 채널 어댑터 (discord.js v14)                                                        | `types`, `infra`                                                                                                        |
+| `@finclaw/skills-finance`  | market / news / alerts / brokerage(KIS) 서비스 + 알림 조회 도구, 시세 캐시                  | `types`, `infra`, `storage`, `agent`                                                                                    |
+| `@finclaw/skills-general`  | `get_current_datetime`, `route_task` 도구                                                   | `types`, `agent`                                                                                                        |
+| `@finclaw/gateway`         | HTTP/JSON-RPC + WebSocket 서버, `/mcp` (in-process HTTP MCP), 인증, access log              | `types`, `infra`, `storage`, `agent`, `skills-finance`                                                                  |
+| `@finclaw/server`          | 진입점, auto-reply 파이프라인, route_task 디스패처, 자동화, 플러그인, CLI                   | `types`, `infra`, `config`, `storage`, `agent`, `channel-discord`, `gateway`, `skills-finance`, `skills-general`, `tui` |
+| `@finclaw/tui`             | Ink + React 기반 터미널 UI (gateway WS 클라이언트)                                          | `types`                                                                                                                 |
+| `@finclaw/web`             | Lit + Vite 기반 웹 UI (gateway WS 클라이언트 + 마크다운)                                    | `types`                                                                                                                 |
 
 신규 컨트리뷰터를 위한 코드 읽기 순서:
 
 1. `packages/server/src/main.ts` — `main()` 한 곳에서 모든 wiring (env → 로거 → config → storage → discord → agent/tools → 파이프라인 → router → gateway → scheduler).
 2. `packages/server/src/process/message-router.ts` — Discord InboundMessage → dedupe → bind matching → queue → lane → pipeline.
-3. `packages/server/src/auto-reply/pipeline.ts` — 8 단계 스테이지 호출 + abort/observer.
+3. `packages/server/src/auto-reply/pipeline.ts` — 8 단계 스테이지 호출 + abort 신호 + (선택) OTel span.
 4. `packages/server/src/auto-reply/stages/` — 각 스테이지 구현.
-5. `packages/agent/src/execution/runner.ts` — Anthropic stream 처리 + tool_use loop.
+5. `packages/agent/src/execution/runner.ts` + `providers/claude-cli/` — `claude -p` 1회 실행, 결과 텍스트 수집 (도구 루프는 CLI 내부).
 6. `packages/storage/src/database.ts` + `index.ts` — 스키마 (v12) + `createStorage` 팩토리.
-7. `packages/server/src/gateway/server.ts` + `rpc/index.ts` + `rpc/methods/` — JSON-RPC 표면.
+7. `packages/gateway/src/server.ts` + `rpc/index.ts` + `rpc/methods/` + `mcp/` — JSON-RPC·MCP 표면.
 8. `packages/server/src/automation/scheduler.ts` — cron 폴러.
 
 ## 환경변수
@@ -261,20 +268,25 @@ sequenceDiagram
 
 ### 필수 (없으면 부팅 차단)
 
-| 변수                     | 설명                                                                                |
-| ------------------------ | ----------------------------------------------------------------------------------- |
-| `ANTHROPIC_API_KEY`      | Anthropic Claude SDK 키 (선택 — `anthropic-sdk` 모드에서만 필수. CLI 모드는 불필요) |
-| `DISCORD_BOT_TOKEN`      | Discord 봇 로그인 토큰                                                              |
-| `DISCORD_APPLICATION_ID` | Discord 애플리케이션 ID                                                             |
+| 변수                | 설명                   |
+| ------------------- | ---------------------- |
+| `DISCORD_BOT_TOKEN` | Discord 봇 로그인 토큰 |
 
-미설정 시: `[fatal] Missing required env: <NAME>` 로그 후 `process.exit(1)`.
+미설정 시: `[fatal] Missing required env: <NAME>` 로그 후 `process.exit(1)`. 추론은 env 키가 아니라 `claude login` 구독 인증을 쓴다 (`ANTHROPIC_API_KEY` 는 CLI 자식 env 에서 제거됨).
 
 ### 선택 — 금융 데이터
 
-| 변수                | 동작                                                                    |
-| ------------------- | ----------------------------------------------------------------------- |
-| `ALPHA_VANTAGE_KEY` | 미설정 시 market/news 도구 등록 자체를 건너뜀                           |
-| `COINGECKO_API_KEY` | 미설정 시 crypto 시세만 비활성 (market 등록은 둘 중 하나만 있어도 진행) |
+키는 CSV(`KEY=a,b,c`) 또는 인덱스(`KEY_1`, `KEY_2` … `KEY_10`) 형식으로 여러 개 넣어 rotation 할 수 있다.
+
+| 변수                | 동작                |
+| ------------------- | ------------------- |
+| `FINNHUB_KEY`       | 시세 (1순위) + 뉴스 |
+| `TWELVE_DATA_KEY`   | 시세 (2순위)        |
+| `ALPHA_VANTAGE_KEY` | 시세 (3순위) + 뉴스 |
+| `COINGECKO_API_KEY` | 암호화폐 시세       |
+| `NEWSDATA_API_KEY`  | 영문 뉴스           |
+
+시세 키가 하나도 없으면 `route_task`·알림 도구 등록을 건너뛴다. 뉴스 키(`FINNHUB_KEY` / `ALPHA_VANTAGE_KEY` / `NEWSDATA_API_KEY`)가 없으면 뉴스 의존 intent 와 알림 도구가 비활성.
 
 ### 선택 — 증권사 연동 (한국투자증권 KIS, read-only)
 
@@ -286,9 +298,7 @@ sequenceDiagram
 | `KIS_ACCOUNT_NO`           | 계좌번호 CANO (8자리)                    |
 | `KIS_ACCOUNT_PRODUCT_CODE` | 계좌상품코드 ACNT_PRDT_CD (기본 `01`)    |
 
-`KIS_APP_KEY`/`KIS_APP_SECRET`/`KIS_ACCOUNT_NO` 중 하나라도 미설정 시 brokerage 도구 등록을 건너뛴다(`KIS not configured` 로그). KIS 연동은 **read-only**(잔고 조회만, 매매 없음)이며, 동기화된 보유 종목은 `portfolio_holdings.source='kis'` 로 저장되어 거래 파생(`source='tx'`) holdings 와 분리된다.
-
-> ⚠️ **CLI 모드는 읽기 전용 도구만:** CLI 모드(`provider:'claude-cli'`, 기본)에서도 도구는 in-process MCP 로 활성이지만 **조회 전용 화이트리스트**로 제한된다. `brokerage_sync_holdings`(KIS 동기화)·뉴스 메모리화 cron 같은 **변경/자동화** 도구는 read-only deny 라 CLI 모드에서 비활성이며, 매일 뉴스 브리프 cron 도 seed 되지 않는다 (그 brief 가 KIS 동기화에 의존하기 때문). 이런 자동화가 필요하면 `provider:'anthropic-sdk'` + `ANTHROPIC_API_KEY` 로 SDK 모드를 쓴다.
+`KIS_APP_KEY`/`KIS_APP_SECRET`/`KIS_ACCOUNT_NO` 중 하나라도 미설정 시 brokerage 동기화 서비스를 건너뛴다(`KIS not configured` 로그). `BROKERAGE_PROVIDER` 는 기본 `kis` (`toss` 는 미구현 — 경고 후 skip). KIS 연동은 **read-only**(잔고 조회만, 매매 없음)이며, 동기화는 LLM 도구가 아니라 RPC `brokerage.sync.run` (Web Settings) 으로만 실행된다. 동기화된 보유 종목은 `portfolio_holdings.source='kis'` 로 저장되어 거래 파생(`source='tx'`) holdings 와 분리된다.
 
 ### 선택 — Gateway / Web UI 인증
 
@@ -303,34 +313,32 @@ sequenceDiagram
 
 ### 선택 — 저장소 / 파일
 
-| 변수                | 기본값                                                                         |
-| ------------------- | ------------------------------------------------------------------------------ |
-| `FINCLAW_DB_PATH`   | 로컬: `~/.finclaw/db.sqlite` / Docker: `/data/db.sqlite`                       |
-| `FINCLAW_FILE_ROOT` | `~/.finclaw/workspace` (`read_local_file` 도구 루트)                           |
-| `FINCLAW_CONFIG`    | (없음 — fallback chain: `~/.finclaw/config/finclaw.json5` → `./finclaw.json5`) |
+| 변수                  | 기본값                                                                         |
+| --------------------- | ------------------------------------------------------------------------------ |
+| `FINCLAW_DB_PATH`     | 로컬: `~/.finclaw/db.sqlite` / Docker: `/data/db.sqlite`                       |
+| `FINCLAW_CONFIG`      | (없음 — fallback chain: `~/.finclaw/config/finclaw.json5` → `./finclaw.json5`) |
+| `FINCLAW_PLUGINS_DIR` | `~/.finclaw/plugins`                                                           |
 
 ### 선택 — 임베딩 (Phase 26 RAG)
 
-| 변수             | 동작                                                                                     |
-| ---------------- | ---------------------------------------------------------------------------------------- |
-| `VOYAGE_API_KEY` | 둘 중 하나 있으면 hybrid 검색 활성. 없으면 모든 경로 FTS-only fallback                   |
-| `OPENAI_API_KEY` | Voyage fallback. 단 vec0 DDL 이 1024D 이라 OpenAI 1536D 는 schema mismatch (Voyage 권장) |
+| 변수             | 동작                                                                   |
+| ---------------- | ---------------------------------------------------------------------- |
+| `VOYAGE_API_KEY` | 둘 중 하나 있으면 hybrid 검색 활성. 없으면 모든 경로 FTS-only fallback |
+| `OPENAI_API_KEY` | Voyage fallback. 1024D 로 truncation 해 vec0 에 맞춤 (Voyage 권장)     |
 
 ## 설정 파일 (`finclaw.json5`)
 
-`config.example.json5` 을 복사. 해석 우선순위: `FINCLAW_CONFIG` → `~/.finclaw/config/finclaw.json5` → `./finclaw.json5`. 모든 섹션이 `z.strictObject()` — 알 수 없는 키가 있으면 부팅이 차단된다.
+`config.example.json5` 을 복사 (파일 자체가 선택 — 없으면 기본값). 해석 우선순위: `FINCLAW_CONFIG` → `~/.finclaw/config/finclaw.json5` → `./finclaw.json5`. 모든 섹션이 `z.strictObject()` — 알 수 없는 키가 있으면 부팅이 차단된다. 값의 `${ENV}` 는 환경변수로 치환된다.
 
-| 섹션       | 주요 키                                                                                        |
-| ---------- | ---------------------------------------------------------------------------------------------- | ---- | ------------------------ |
-| `gateway`  | `port`, `host`, `tls`, `corsOrigins`                                                           |
-| `agents`   | `defaults.{model,provider,maxConcurrent,maxTokens,temperature}`, `entries`                     |
-| `channels` | `discord.{botToken,applicationId,…}`, `cli.enabled`, `web.{enabled,port}` (`${ENV}` 치환 지원) |
-| `session`  | `mainKey`, `resetPolicy`(`daily                                                                | idle | never`), `idleTimeoutMs` |
-| `logging`  | `level`(`trace..fatal`), `file`, `redactSensitive`                                             |
-| `models`   | `definitions`, `aliases`, `defaultModel`, `fallbacks`                                          |
-| `finance`  | `dataProviders[]`, `newsFeeds[]`, `alertDefaults`, `portfolios`                                |
-| `routing`  | `roles.{fetch,chat,analysis,summarize}`, `automation`, `override` (Phase 24)                   |
-| `plugins`  | `enabled[]`, `disabled[]`                                                                      |
+| 키           | 내용                                                                   |
+| ------------ | ---------------------------------------------------------------------- |
+| `provider`   | `'claude-cli'` 만 허용 (유일한 백엔드, 생략 가능)                      |
+| `cliBackend` | `command`, `timeoutMs`, `watchdog.{fresh,resume}.noOutputTimeoutRatio` |
+| `rag`        | `rerank.{enabled,topKFirst}`                                           |
+| `accessLog`  | `retentionDays`                                                        |
+| `gateway`    | `auth.token` (`finclaw tui` 가 게이트웨이에 보낼 토큰)                 |
+
+게이트웨이 포트는 config 가 아니라 `GATEWAY_PORT` env, 바인딩 호스트는 코드 고정 `0.0.0.0` 이다.
 
 ## 명령어
 
@@ -346,26 +354,23 @@ sequenceDiagram
 | `pnpm format` / `format:fix` | `oxfmt --check .` / `oxfmt --write .`                |
 | `pnpm test`                  | unit (mock 만)                                       |
 | `pnpm test:storage`          | DB 격리 (`maxWorkers=1`)                             |
-| `pnpm test:e2e`              | localhost gateway + tmp DB (timeout 120s)            |
-| `pnpm test:live`             | 실제 외부 API 키 사용 (수동)                         |
+| `pnpm test:live`             | 실제 `claude` CLI 호출 (수동)                        |
 | `pnpm test:ci`               | unit + storage 병렬 (CI)                             |
-| `pnpm test:all`              | unit + storage + e2e 모두                            |
 | `pnpm test:coverage`         | v8 커버리지 (임계 70/70/70/55)                       |
 
 추가 보조 스크립트: `scripts/build-docker.sh`, `scripts/build-skills.ts`, `scripts/verify-pack-includes-prompts.sh`, `scripts/calver.ts`, `scripts/write-build-info.ts`, `scripts/check-dep-versions.ts`.
 
 ## 운영
 
-### 테스트 (4-tier)
+### 테스트 (3-tier)
 
-| Tier        | Config                     | 격리                                    | 외부 의존                          |
-| ----------- | -------------------------- | --------------------------------------- | ---------------------------------- |
-| **unit**    | `vitest.config.ts`         | local: `max(4, min(16, cpus))` / CI: 3  | mock 만, env isolated              |
-| **storage** | `vitest.storage.config.ts` | `maxWorkers=1` (DB 충돌 방지)           | tmp SQLite DB                      |
-| **e2e**     | `vitest.e2e.config.ts`     | local: `cpu*0.25` / CI: 2, 120s timeout | localhost gateway + tmp DB         |
-| **live**    | `vitest.live.config.ts`    | `maxWorkers=1`, 60s timeout             | 실제 API 키 (Anthropic, Voyage 등) |
+| Tier        | Config                     | 격리                                   | 외부 의존                       |
+| ----------- | -------------------------- | -------------------------------------- | ------------------------------- |
+| **unit**    | `vitest.config.ts`         | local: `max(4, min(16, cpus))` / CI: 3 | mock 만, env isolated           |
+| **storage** | `vitest.storage.config.ts` | `maxWorkers=1` (DB 충돌 방지)          | tmp SQLite DB                   |
+| **live**    | `vitest.live.config.ts`    | `maxWorkers=1`, 60s timeout            | 실제 `claude` CLI (구독 로그인) |
 
-`test/setup.ts` + `test-env.ts` 가 `beforeAll` 에 sensitive 키(`ANTHROPIC_API_KEY`, `DISCORD_TOKEN`, `DATABASE_URL`, `NODE_OPTIONS` 등) 를 삭제하고, `HOME` / `DB_PATH` 를 tmpdir 로 강제 설정한다 — 테스트가 사용자 DB 를 건드리지 않는다.
+`test/setup.ts` + `test-env.ts` 가 `beforeAll` 에 sensitive 키(`DISCORD_BOT_TOKEN`, `GATEWAY_JWT_SECRET`, 시세·뉴스·임베딩·KIS 키, `FINCLAW_*` 경로, `NODE_OPTIONS` 등) 를 삭제하고, `HOME` / `FINCLAW_DB_PATH` 를 tmpdir 로 강제 설정한다 — 테스트가 사용자 DB 를 건드리지 않는다.
 
 CI (`.github/workflows/ci.yml`): `lint` → `format` → `typecheck` → `build` → `test:ci`. pnpm 버전은 `package.json#packageManager`, Node 버전은 `.node-version` 에서 자동 감지.
 
@@ -379,10 +384,12 @@ pnpm dev:all   # docker compose up --build
 
 | 서비스   | 이미지          | 포트 (host:container)            | 마운트                              | 헬스체크              |
 | -------- | --------------- | -------------------------------- | ----------------------------------- | --------------------- |
-| `server` | `finclaw:local` | `${FINCLAW_PORT:-3000}:3000`     | `finclaw-data:/data` (named volume) | `GET /healthz` 매 30s |
+| `server` | `finclaw:local` | `${GATEWAY_PORT:-3000}:3000`     | `finclaw-data:/data` (named volume) | `GET /healthz` 매 30s |
 | `web`    | `finclaw:local` | `${FINCLAW_WEB_PORT:-5173}:5173` | -                                   | disabled              |
 
-빌드 흐름 (`Dockerfile`): `node:22-bookworm-slim` 기반 multi-stage. builder 에서 `pnpm install --frozen-lockfile` → `pnpm build` + `pnpm --filter @finclaw/web build`. runner 는 non-root `USER node` 로 `node packages/server/dist/main.js` 실행. web 컨테이너는 compose 가 override 해 `pnpm exec vite preview --host 0.0.0.0 --port 5173`.
+빌드 흐름 (`Dockerfile`): `node:22-bookworm-slim` 기반 multi-stage. builder 에서 `pnpm install --frozen-lockfile` → `pnpm build` + `pnpm --filter @finclaw/web build`. runner 는 non-root `USER node` 로 `node packages/server/dist/main.js` 실행. web 컨테이너는 compose 가 override 해 `pnpm exec vite preview --host 0.0.0.0 --port 5173`. 컨테이너 안 server 는 항상 `3000` 에서 listen 하고, `.env` 의 `GATEWAY_PORT` 는 호스트 쪽 포트만 바꾼다.
+
+> ⚠️ 이미지에는 `claude` CLI 가 들어 있지 않다. 컨테이너에서 추론을 돌리려면 CLI 설치와 로그인 정보가 별도로 필요하다.
 
 이미지만 빌드: `bash scripts/build-docker.sh [name] [tag]` (기본 `finclaw:dev`).
 
@@ -421,8 +428,7 @@ curl -X POST http://localhost:3000/rpc \
 
 | 증상                                                                         | 원인                                                            | 대응                                                                                       |
 | ---------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `[fatal] Missing required env: DISCORD_BOT_TOKEN` (또는 DISCORD\_\*)         | `requireEnv()` throw                                            | `.env` 채우거나 export. 로컬은 `.env` 자동로드 없음 — `node --env-file=.env` 필요          |
-| `[fatal] provider=anthropic-sdk requires ANTHROPIC_API_KEY`                  | SDK 모드인데 키 없음                                            | `ANTHROPIC_API_KEY` 채우거나 `provider:'claude-cli'`(키 불필요)로 전환                     |
+| `[fatal] Missing required env: DISCORD_BOT_TOKEN`                            | `requireEnv()` throw                                            | `.env` 채우거나 export. `.env` 는 현재 작업 디렉터리 것만 자동 로드                        |
 | WS 인증 실패                                                                 | `GATEWAY_JWT_SECRET=` (빈 값) 라인이 있으면 `??` fallback 안 됨 | 라인을 제거하거나 명시적 값 입력                                                           |
 | `pnpm dev:all` 즉시 종료 + `.env not found`                                  | `scripts/dev-all.sh` 의 사전 체크                               | `pnpm setup` 또는 `cp .env.example .env`                                                   |
 | `Read/Write/Edit ENOENT` (WSL `/mnt/c/...`)                                  | WSL2 ↔ Windows 크로스 파일시스템 캐시                           | 같은 파일을 다시 Read 하면 해소                                                            |
@@ -431,7 +437,6 @@ curl -X POST http://localhost:3000/rpc \
 | `commit-msg` hook 이 한글 subject 거부                                       | dash + C.UTF-8 grep conventional 검증                           | subject 는 ASCII conventional commits 로                                                   |
 | `[fatal] Port 3000 is in use by …`                                           | `assertPortAvailable` + `inspectPortOccupant`                   | 점유 프로세스 종료 또는 `GATEWAY_PORT` 변경                                                |
 | `Failed to create embedding provider — memory.search will use FTS-only` warn | Voyage/OpenAI 키 둘 다 없거나 생성 실패                         | 의도된 graceful fallback. 무시 가능. 키 채우면 hybrid 활성                                 |
-| OpenAI 임베딩 schema mismatch                                                | vec0 DDL 1024D vs OpenAI 1536D                                  | Voyage `voyage-finance-2` 사용 권장                                                        |
 
 ## 보안
 
@@ -439,17 +444,16 @@ curl -X POST http://localhost:3000/rpc \
   - `FINCLAW_API_KEY` 설정 시 → API key 인증 활성 (`X-API-Key` 헤더, 단일 키).
   - JWT (HS256) — WebSocket `?token=`, HTTP `Authorization: Bearer …` 모두 지원.
   - secret 미설정 시 `'dev-secret'` fallback — 프로덕션 사용 금지.
+- **네트워크 노출:** gateway 는 `0.0.0.0` 에 바인딩하고 CORS origin 은 `*` 다 (코드 고정). 같은 네트워크에서 접근 가능하므로 `GATEWAY_JWT_SECRET` 을 반드시 설정한다.
 - **Non-root 컨테이너:** `Dockerfile` 의 `USER node`, `/data` 디렉토리 owner = node:node.
-- **민감 파일 퍼미션 검사:** `audit.ts` 가 `.env`, `finclaw.db*` 의 0o004(world)/0o040(group) 비트 검사 (POSIX 한정, WSL/Windows 자동 skip).
-- **위험 환경변수 감지:** `LD_PRELOAD`, `LD_LIBRARY_PATH`, `NODE_OPTIONS`, `NODE_DEBUG`, `UV_THREADPOOL_SIZE` 가 설정되어 있으면 warn.
-- **테스트 격리:** `test-env.ts` 가 `ANTHROPIC_API_KEY` 등 sensitive 키를 테스트 시작 시 삭제.
+- **테스트 격리:** `test-env.ts` 가 `DISCORD_BOT_TOKEN`·API 키 등 sensitive 키를 테스트 시작 시 삭제.
 - **Strict config:** `z.strictObject()` 로 알 수 없는 키 거부.
-- **Web 도구 SSRF 가드:** `web_fetch` 가 사설 IP / 사설 호스트 차단.
+- **LLM 도구는 조회 전용:** `/mcp` 로 노출되는 도구에 상태 변경·파일 읽기·웹 페치가 없다. CLI 내장 도구는 `--tools ""` 로 차단.
 - **Conventional commits 강제:** `lefthook.yml` (변경 이력 감사 가능성).
 
 ## 기여 / 개발 워크플로우
 
-- 브랜치 명명: `feature/<topic>`, `chore/<topic>`, `fix/<topic>`. (현 활성: `feature/automation`)
+- 브랜치 명명: `feature/<topic>`, `chore/<topic>`, `fix/<topic>`.
 - 커밋 subject: ASCII Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:` …) — 한글 subject 는 lefthook 이 거부.
 - PR 전 권장 시퀀스: `pnpm typecheck && pnpm lint && pnpm format && pnpm test:ci`.
 - 신규 패키지 추가 시: `pnpm-workspace.yaml` glob 에 자동 포함, `tsconfig.json` references 에 추가, `composite: true` 유지, workspace 의존은 `workspace:*` 프로토콜.
@@ -459,10 +463,10 @@ curl -X POST http://localhost:3000/rpc \
 
 - **런타임:** Node.js 22+ (ESM, `node:sqlite`, `process.loadEnvFile`)
 - **언어:** TypeScript (strict mode, project references), TypeScript-Go (`tsgo`) 로 typecheck
-- **테스트:** Vitest 4 (4-tier)
+- **테스트:** Vitest 4 (3-tier)
 - **린트 / 포매팅:** oxlint / oxfmt (Rust 기반)
 - **DB:** SQLite (`node:sqlite` 내장) + sqlite-vec, FTS5
-- **AI:** Anthropic Claude SDK (`@anthropic-ai/sdk`)
+- **AI:** `claude` CLI (Claude 구독, `claude -p`) + `@modelcontextprotocol/sdk` (in-process HTTP MCP)
 - **채널:** discord.js v14
 - **Web UI:** Lit + Vite + marked + DOMPurify
 - **TUI:** Ink + React

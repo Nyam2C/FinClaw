@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { DEFAULT_CLAUDE_BACKEND } from '../../../src/providers/claude-cli/backends.js';
-import { parseCliJson, parseCliJsonl } from '../../../src/providers/claude-cli/parsers.js';
+import { parseCliJson } from '../../../src/providers/claude-cli/parsers.js';
 
 describe('parseCliJson (claude format)', () => {
   it('parses claude CLI result format', () => {
@@ -36,24 +36,5 @@ describe('parseCliJson (claude format)', () => {
 
   it('returns undefined for invalid JSON', () => {
     expect(parseCliJson('not json', DEFAULT_CLAUDE_BACKEND)).toBeUndefined();
-  });
-});
-
-describe('parseCliJsonl', () => {
-  it('accumulates text across lines + picks first sessionId', () => {
-    const stdout = [
-      JSON.stringify({ thread_id: 't1', text: 'hello' }),
-      JSON.stringify({ text: 'world' }),
-      JSON.stringify({ usage: { input_tokens: 5 } }),
-    ].join('\n');
-    const codexBackend = { ...DEFAULT_CLAUDE_BACKEND, sessionIdFields: ['thread_id'] };
-    const r = parseCliJsonl(stdout, codexBackend);
-    expect(r?.text).toBe('hello\nworld');
-    expect(r?.sessionId).toBe('t1');
-    expect(r?.usage?.input).toBe(5);
-  });
-
-  it('returns undefined for empty stdout', () => {
-    expect(parseCliJsonl('', DEFAULT_CLAUDE_BACKEND)).toBeUndefined();
   });
 });

@@ -138,7 +138,6 @@ export class FinClawApp extends LitElement {
   @state() private connected = false;
   @state() private chatState: ChatState = {
     messages: [],
-    tools: [],
     status: 'idle',
     error: null,
     streamBuffer: '',

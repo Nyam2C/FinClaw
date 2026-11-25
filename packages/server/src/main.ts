@@ -1,13 +1,7 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 // packages/server/src/main.ts
-import {
-  BUILT_IN_MODELS,
-  buildModelAliasIndex,
-  DEFAULT_FALLBACK_CHAIN,
-  InMemoryModelCatalog,
-  ProfileHealthMonitor,
-} from '@finclaw/agent';
+import { ProfileHealthMonitor } from '@finclaw/agent';
 import { DiscordAccountSchema, DiscordAdapter } from '@finclaw/channel-discord';
 import { ConfigValidationError, loadConfig, validateConfigStrict } from '@finclaw/config';
 import { createGatewayServer, type GatewayServerConfig } from '@finclaw/gateway';
@@ -17,7 +11,6 @@ import {
   ConcurrencyLane,
   createLogger,
   formatPortOccupant,
-  getEventBus,
   inspectPortOccupant,
   loadDotenv,
   PortInUseError,
@@ -30,13 +23,12 @@ import {
   purgeAccessLog,
   type EmbeddingProvider,
 } from '@finclaw/storage';
-import type { ChannelPlugin, ConfigValidationIssue, FinClawConfig } from '@finclaw/types';
+import type { ChannelPlugin, ConfigValidationIssue } from '@finclaw/types';
 import { deliverScheduleResult } from './automation/delivery.js';
 import { initChannels } from './channels/index.js';
 import { DEFAULT_MODEL, defaultConfig } from './composition/constants.js';
 import { buildProviders } from './composition/providers.js';
 import { buildAutomation, buildExecution, buildPipeline } from './composition/runtime.js';
-import { buildScheduleRpc } from './composition/schedule-rpc.js';
 import { registerSkills } from './composition/skills.js';
 import { ProcessLifecycle } from './process/lifecycle.js';
 import { MessageRouter } from './process/message-router.js';
@@ -85,14 +77,15 @@ async function main(): Promise<void> {
 
   // 1. env 검증
   const discordToken = requireEnv('DISCORD_BOT_TOKEN');
-  const discordAppId = requireEnv('DISCORD_APPLICATION_ID');
 
-  // 1a. GATEWAY_PORT strict 검증 (config 전면 도입 전 과도기)
+  // 1a. GATEWAY_PORT 검증
   const gatewayPortRaw = process.env.GATEWAY_PORT;
   const gatewayPort = gatewayPortRaw ? Number(gatewayPortRaw) : defaultConfig.port;
-  validateConfigStrict({
-    gateway: { host: defaultConfig.host, port: gatewayPort },
-  });
+  if (!Number.isInteger(gatewayPort) || gatewayPort < 1 || gatewayPort > 65535) {
+    throw new ConfigValidationError(`Invalid GATEWAY_PORT: ${gatewayPortRaw}`, {
+      issues: [{ path: 'GATEWAY_PORT', message: 'must be an integer 1-65535', severity: 'error' }],
+    });
+  }
 
   // 2. 기반 (로거, 라이프사이클, 스토리지)
   const logger = createLogger({ name: 'finclaw', level: 'info' });
@@ -134,15 +127,12 @@ async function main(): Promise<void> {
     }
   }
 
-  // 2b. 채널 도크 자동 등록 (discord, http-webhook)
+  // 2b. 채널 도크 자동 등록 (discord)
   initChannels(logger);
 
   // 3. Discord 클라이언트 먼저 로그인 (alerts가 DM 전달 핸들을 필요로 함)
   const discordAdapter = new DiscordAdapter();
-  const discordAccount = DiscordAccountSchema.parse({
-    botToken: discordToken,
-    applicationId: discordAppId,
-  });
+  const discordAccount = DiscordAccountSchema.parse({ botToken: discordToken });
   const cleanup = await discordAdapter.setup(discordAccount);
   lifecycle.register(cleanup);
   logger.info('Discord adapter logged in');
@@ -159,12 +149,7 @@ async function main(): Promise<void> {
     },
   });
 
-  const scheduleRpc = buildScheduleRpc(storage);
-
-  // 4a. 모델 카탈로그 + 별칭 인덱스 + 프로필 건강 모니터.
-  // (스킬 등록보다 먼저 생성 — Phase 24 E 의 analyze_market 등록 시점에 주입 필요.)
-  const modelCatalog = new InMemoryModelCatalog(BUILT_IN_MODELS);
-  const modelAliasIndex = buildModelAliasIndex(modelCatalog);
+  // 4a. 프로필 건강 모니터.
   const profileHealth = new ProfileHealthMonitor();
 
   // Phase 36: skills/tools/KIS/mcp/plugins 등록 (구 363-559 흡수)
@@ -173,11 +158,7 @@ async function main(): Promise<void> {
       toolRegistry,
       storage,
       logger,
-      finclawConfig,
       discordAdapter,
-      profileHealth,
-      modelCatalog,
-      scheduleRpc,
       lifecycle,
     });
 
@@ -186,9 +167,6 @@ async function main(): Promise<void> {
     storage,
     providerAdapter,
     lanes,
-    toolRegistry,
-    modelCatalog,
-    modelAliasIndex,
     profileHealth,
     logger,
     defaultModel: DEFAULT_MODEL,
@@ -213,11 +191,9 @@ async function main(): Promise<void> {
   });
 
   // 6. MessageRouter
-  const routerConfig: FinClawConfig = {};
   const router = new MessageRouter({
-    config: routerConfig,
     logger,
-    onProcess: (ctx, match, signal) => pipeline.process(ctx, match, signal),
+    onProcess: (ctx) => pipeline.process(ctx),
   });
 
   // 7. Discord onMessage 등록 (client는 이미 위에서 로그인 완료)
@@ -257,21 +233,16 @@ async function main(): Promise<void> {
   // gateway 생성 직전에 호출 → lifecycle ⑤(scheduler.stop) 가 ⑦(gateway.stop) 보다 먼저 등록.
   const { scheduler, setDeliveryHook } = buildAutomation({
     storage,
-    toolRegistry,
     runnerFactory,
     defaultModel: DEFAULT_MODEL,
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     logger,
     profileHealth,
-    modelCatalog,
-    modelAliasIndex,
     tracer,
-    embeddingProvider,
     lifecycle,
   });
 
   const gateway = createGatewayServer(gatewayConfig, {
-    storage,
     defaultModel: DEFAULT_MODEL,
     adapter,
     toolRegistry, // Phase 40 A: /mcp in-process 호출용 (top-level — agentDeps.toolRegistry 와 동일 인스턴스)
@@ -301,9 +272,6 @@ async function main(): Promise<void> {
       defaultModel: DEFAULT_MODEL,
       logger,
       profileId: 'default',
-      modelCatalog,
-      modelAliasIndex,
-      fallbackChain: DEFAULT_FALLBACK_CHAIN,
       // Phase 26 D: agent.run 종료 후 output → memory 저장 훅 (rpc-engineer 가 호출 위치 결정).
       attachMemoryService,
       // Phase 26 D: agent_runs 영속화 + agent.runs.* RPC 가 사용 (server.ts 에서 재패스).
@@ -357,24 +325,6 @@ async function main(): Promise<void> {
   logger.info('finance.* / memory.* / agent.* RPC methods wired');
   lifecycle.register(() => gateway.stop());
 
-  // Phase 29 E6: dev 모드에서만 hot reload — prompts 디렉터리 watch.
-  if (process.env.NODE_ENV !== 'production') {
-    const { createHotReloader } = await import('@finclaw/gateway');
-    const promptsPath = join(import.meta.dirname, '..', 'prompts', 'finclaw.system.ko.md');
-    const hotReloader = createHotReloader(
-      { configPath: promptsPath, debounceMs: 500, validateBeforeApply: false, mode: 'watch' },
-      gateway.ctx,
-      () => ({ success: true }),
-    );
-    hotReloader.on('change', (e) => {
-      logger.info('Prompts hot-reloaded', { event: 'prompts.reloaded', path: e.path });
-    });
-    await hotReloader.start();
-    lifecycle.register(async () => {
-      hotReloader.stop();
-    });
-  }
-
   // Phase 28: gateway 생성 후 delivery hook 활성화. broadcaster/connections 는 gateway.ctx 에서 가져온다.
   // Phase 36: deliveryHook let 은 buildAutomation 내부로 이동 — setter 로 같은 시점(구 864) 대입.
   setDeliveryHook((args) =>
@@ -393,8 +343,6 @@ async function main(): Promise<void> {
   await gateway.start();
   scheduler.start();
   logger.info(`Gateway listening on ${gatewayConfig.host}:${gatewayConfig.port}`);
-
-  getEventBus().emit('system:ready');
 }
 
 if (!process.env.VITEST) {

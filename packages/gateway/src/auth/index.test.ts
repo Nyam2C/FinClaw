@@ -45,7 +45,6 @@ describe('Auth Chain', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.info.level).toBe('none');
-        expect(result.info.permissions).toEqual([]);
       }
     });
 
@@ -53,7 +52,6 @@ describe('Auth Chain', () => {
       const token = createJwt({
         sub: 'user-1',
         clientId: 'client-1',
-        permissions: ['chat:read', 'chat:write'],
         exp: Math.floor(Date.now() / 1000) + 3600,
       });
       const result = await authenticate(
@@ -122,7 +120,6 @@ describe('validateApiKey', () => {
     if (result.ok) {
       expect(result.info.level).toBe('api_key');
       expect(result.info.clientId).toBeDefined();
-      expect(result.info.permissions).toContain('chat:read');
     }
   });
 
