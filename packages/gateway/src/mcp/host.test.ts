@@ -3,7 +3,7 @@ import type { ToolRegistry } from '@finclaw/agent';
 import { describe, expect, it, vi } from 'vitest';
 import { signToken } from '../auth/sign.js';
 import type { GatewayServerConfig } from '../rpc/types.js';
-import { createMcpHost } from './host.js';
+import { createMcpHost, MCP_IDLE_TTL_MS, sweepIdleTransports } from './host.js';
 
 // MCP transport 핸드셰이크(initialize/tools.list/tools.call)는 SDK 책임 + A8 라이브 spike 로 검증됨.
 // 본 테스트는 우리 코드의 HTTP 게이트만 검증: (1) 인증 401, (2) 세션 없는 비-initialize 요청 400.
@@ -65,5 +65,27 @@ describe('createMcpHost.handleRequest', () => {
       res,
     );
     expect(res.statusCode).toBe(400);
+  });
+});
+
+describe('sweepIdleTransports (B12)', () => {
+  it('10분 넘게 유휴인 transport 만 close·삭제, 활성은 유지', () => {
+    const idle = { close: vi.fn().mockResolvedValue(undefined) };
+    const active = { close: vi.fn().mockResolvedValue(undefined) };
+    const transports = new Map([
+      ['idle', { transport: idle, lastSeenAt: 0 }],
+      ['active', { transport: active, lastSeenAt: 9 * 60_000 }],
+    ]);
+    sweepIdleTransports(transports, MCP_IDLE_TTL_MS + 1);
+    expect([...transports.keys()]).toEqual(['active']);
+    expect(idle.close).toHaveBeenCalledOnce();
+    expect(active.close).not.toHaveBeenCalled();
+  });
+
+  it('경계: 정확히 10분은 유지', () => {
+    const t = { close: vi.fn().mockResolvedValue(undefined) };
+    const transports = new Map([['s', { transport: t, lastSeenAt: 0 }]]);
+    sweepIdleTransports(transports, MCP_IDLE_TTL_MS);
+    expect(transports.size).toBe(1);
   });
 });
