@@ -26,7 +26,6 @@ export function validateApiKey(key: string, allowedKeys: readonly string[]): Aut
     info: {
       level: 'api_key',
       clientId: keyHash.toString('hex').slice(0, 8),
-      permissions: ['chat:read', 'chat:write', 'chat:execute'],
     },
   };
 }

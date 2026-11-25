@@ -109,6 +109,6 @@ async function handleSingleRequest(
 
 /** 필요한 인증 레벨 충족 여부 */
 export function hasRequiredAuth(auth: AuthInfo, required: AuthLevel): boolean {
-  const levels: AuthLevel[] = ['none', 'api_key', 'token', 'session'];
+  const levels: AuthLevel[] = ['none', 'api_key', 'token'];
   return levels.indexOf(auth.level) >= levels.indexOf(required);
 }

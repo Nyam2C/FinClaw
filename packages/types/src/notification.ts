@@ -26,6 +26,3 @@ export interface ChatStreamErrorParams {
   readonly sessionId: string;
   readonly error: string;
 }
-
-/** 브로드캐스트 채널 */
-export type BroadcastChannel = 'config.updated' | 'session.event' | 'system.status' | 'market.tick';

@@ -1,5 +1,4 @@
 // packages/server/src/gateway/rpc/methods/session.ts
-import type { StorageAdapter } from '@finclaw/types';
 import { z } from 'zod/v4';
 import type { ChatRegistry } from '../../registry.js';
 import { RpcErrors } from '../errors.js';
@@ -8,7 +7,6 @@ import type { RpcMethodHandler } from '../types.js';
 
 export interface SessionMethodsDeps {
   readonly registry: ChatRegistry;
-  readonly storage: StorageAdapter;
 }
 
 interface SessionSummary {
@@ -52,38 +50,7 @@ export function createSessionMethods(deps: SessionMethodsDeps): readonly RpcMeth
     },
   };
 
-  const resetHandler: RpcMethodHandler<{ sessionId: string }, { reset: boolean }> = {
-    method: 'session.reset',
-    description: '세션 대화 이력을 초기화합니다',
-    authLevel: 'token',
-    schema: z.object({ sessionId: z.string() }),
-    async execute(params) {
-      const session = deps.registry.getSession(params.sessionId);
-      if (!session) {
-        return { reset: false };
-      }
-      await deps.storage.deleteConversation(session.sessionKey);
-      return { reset: true };
-    },
-  };
-
-  const listHandler: RpcMethodHandler<
-    Record<string, never>,
-    { sessions: readonly SessionSummary[] }
-  > = {
-    method: 'session.list',
-    description: '현재 연결의 활성 세션 목록을 조회합니다',
-    authLevel: 'token',
-    schema: z.object({}),
-    async execute(_params, ctx) {
-      const sessions = ctx.connectionId
-        ? deps.registry.listSessionsByConnection(ctx.connectionId)
-        : deps.registry.listSessions();
-      return { sessions: sessions.map(summarize) };
-    },
-  };
-
-  return [getHandler, resetHandler, listHandler];
+  return [getHandler];
 }
 
 /** session.* 메서드 일괄 등록 */

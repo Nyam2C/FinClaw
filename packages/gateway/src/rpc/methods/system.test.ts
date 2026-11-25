@@ -33,7 +33,7 @@ function makeServerCtx(methods: MethodRegistry): GatewayServerContext {
 }
 
 const baseCtx = {
-  auth: { level: 'none' as const, permissions: [] as const },
+  auth: { level: 'none' as const },
   remoteAddress: '127.0.0.1',
 };
 

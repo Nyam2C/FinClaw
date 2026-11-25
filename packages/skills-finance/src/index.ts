@@ -11,11 +11,6 @@ export type {
 export { PortfolioStore } from './news/portfolio/store.js';
 export { createPortfolioTracker } from './news/portfolio/tracker.js';
 export { analyzeMarket } from './news/analysis/market-analysis.js';
-export type {
-  AnalyzeRunner,
-  AnalyzeRunnerRequest,
-  AnalyzeRunnerResult,
-} from './news/analysis/market-analysis.js';
 export type { AnalysisOptions, MarketAnalysis } from './news/types.js';
 export { registerAlertTools } from './alerts/index.js';
 export type {

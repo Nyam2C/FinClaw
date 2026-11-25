@@ -52,10 +52,7 @@ export async function authenticate(
   // 인증 없음 (public 엔드포인트만 접근 가능)
   return {
     ok: true,
-    info: {
-      level: 'none',
-      permissions: [],
-    },
+    info: { level: 'none' },
   };
 }
 

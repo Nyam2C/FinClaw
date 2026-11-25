@@ -166,7 +166,7 @@ async function handleInfoRequest(
     JSON.stringify({
       name: 'finclaw-gateway',
       version: loadVersion(),
-      capabilities: ['streaming', 'batch', 'subscriptions'],
+      capabilities: ['streaming', 'batch'],
     }),
   );
 }

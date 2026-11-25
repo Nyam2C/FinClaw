@@ -13,8 +13,6 @@ import {
   createDeliveryDispatcher,
   createDiscordDeliveryHandler,
   createLogDeliveryHandler,
-  createWebSocketDeliveryHandler,
-  type BroadcasterPort,
   type DeliveryHandler,
   type DiscordClientPort,
 } from './delivery.js';
@@ -51,8 +49,6 @@ export interface AlertSkillConfig {
   readonly newsAggregator: NewsAggregator;
   readonly logger: FinClawLogger;
   readonly discordClient?: DiscordClientPort;
-  readonly broadcaster?: BroadcasterPort;
-  readonly connections?: Map<string, unknown>;
   readonly monitorConfig?: Partial<AlertMonitorConfig>;
 }
 
@@ -80,14 +76,6 @@ export async function registerAlertTools(
   const handlers: DeliveryHandler[] = [createLogDeliveryHandler({ logger: config.logger })];
   if (config.discordClient) {
     handlers.push(createDiscordDeliveryHandler({ client: config.discordClient }));
-  }
-  if (config.broadcaster && config.connections) {
-    handlers.push(
-      createWebSocketDeliveryHandler({
-        broadcaster: config.broadcaster,
-        connections: config.connections,
-      }),
-    );
   }
 
   const deliveryDispatcher = createDeliveryDispatcher({ handlers, logger: config.logger });

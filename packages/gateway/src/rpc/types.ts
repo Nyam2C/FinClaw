@@ -3,7 +3,6 @@ import type {
   RpcRequest,
   RpcResponse,
   JsonRpcNotification,
-  BroadcastChannel,
   SessionKey,
 } from '@finclaw/types';
 // packages/server/src/gateway/rpc/types.ts
@@ -15,21 +14,17 @@ export type {
   RpcResponse,
   RpcError,
   RpcMethod,
-  WsEvent,
-  GatewayStatus,
   JsonRpcNotification,
-  BroadcastChannel,
 } from '@finclaw/types';
 export { RPC_ERROR_CODES } from '@finclaw/types';
 
 // === 인증 타입 ===
 
-/** 인증 레벨 (4-layer) */
+/** 인증 레벨 (3-layer) */
 export type AuthLevel =
   | 'none' // 공개 (health, info, ping)
   | 'api_key' // API 키 (외부 서비스)
-  | 'token' // JWT 토큰 (웹 클라이언트)
-  | 'session'; // 세션 스코프 (활성 채팅 세션 전용)
+  | 'token'; // JWT 토큰 (웹 클라이언트)
 
 /** 인증 정보 */
 export interface AuthInfo {
@@ -37,19 +32,7 @@ export interface AuthInfo {
   readonly clientId?: string;
   readonly userId?: string;
   readonly sessionId?: string;
-  readonly permissions: readonly Permission[];
 }
-
-/** 권한 */
-export type Permission =
-  | 'chat:read'
-  | 'chat:write'
-  | 'chat:execute'
-  | 'config:read'
-  | 'config:write'
-  | 'agent:read'
-  | 'agent:manage'
-  | 'system:admin';
 
 /** 인증 결과 */
 export type AuthResult =
@@ -149,15 +132,9 @@ export interface ActiveSession {
   readonly abortController: AbortController;
   /** 선택된 모델 (session.get의 `model` 필드는 이 객체의 `.model`을 문자열로 평탄화해 반환) */
   readonly model: ModelRef;
-  /** 대화 이력 저장 키 — storage.upsertConversation/deleteConversation에 사용 */
+  /** 대화 이력 저장 키 */
   readonly sessionKey: SessionKey;
 }
-
-/** 레지스트리 이벤트 */
-export type RegistryEvent =
-  | { readonly type: 'session_started'; readonly session: ActiveSession }
-  | { readonly type: 'session_completed'; readonly sessionId: string; readonly durationMs: number }
-  | { readonly type: 'session_error'; readonly sessionId: string; readonly error: Error };
 
 // ── Phase 11 타입 ──
 

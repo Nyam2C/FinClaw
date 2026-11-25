@@ -41,10 +41,6 @@ export interface DiscordClientPort {
   };
 }
 
-export interface BroadcasterPort {
-  broadcastToChannel(connections: Map<string, unknown>, channel: string, data: unknown): number;
-}
-
 // ─── Discord Delivery ───
 export function createDiscordDeliveryHandler(deps: { client: DiscordClientPort }): DeliveryHandler {
   return {
@@ -53,27 +49,6 @@ export function createDiscordDeliveryHandler(deps: { client: DiscordClientPort }
       const user = await deps.client.users.fetch(alert.userId);
       const dmChannel = await user.createDM();
       await dmChannel.send(formatAlertMessage(alert, evaluation));
-    },
-  };
-}
-
-// ─── WebSocket Delivery ───
-export function createWebSocketDeliveryHandler(deps: {
-  broadcaster: BroadcasterPort;
-  connections: Map<string, unknown>;
-}): DeliveryHandler {
-  return {
-    channel: 'websocket',
-    async deliver(alert, evaluation) {
-      deps.broadcaster.broadcastToChannel(deps.connections, 'alerts', {
-        type: 'alert.triggered',
-        userId: alert.userId, // R3: 클라이언트 필터링용
-        alertId: alert.id,
-        name: alert.name,
-        message: evaluation.message,
-        currentValue: evaluation.currentValue,
-        triggeredAt: Date.now(),
-      });
     },
   };
 }

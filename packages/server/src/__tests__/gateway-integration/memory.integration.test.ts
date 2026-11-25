@@ -56,7 +56,7 @@ function makeServerCtx(): GatewayServerContext {
 }
 
 const tokenCtx = {
-  auth: { level: 'token' as const, permissions: [] },
+  auth: { level: 'token' as const },
   remoteAddress: '127.0.0.1',
 };
 
@@ -175,7 +175,7 @@ describe('memory.* RPC methods', () => {
       registerMemoryMethods({ db: database.db }, methods);
       const result = await dispatchRpc(
         { jsonrpc: '2.0', id: 1, method: 'memory.list', params: {} },
-        { auth: { level: 'none', permissions: [] }, remoteAddress: '127.0.0.1' },
+        { auth: { level: 'none' }, remoteAddress: '127.0.0.1' },
         makeServerCtx(),
       );
       expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.UNAUTHORIZED);

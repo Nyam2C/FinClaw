@@ -44,7 +44,7 @@ function makeServerCtx(): GatewayServerContext {
 }
 
 const tokenCtx = {
-  auth: { level: 'token' as const, permissions: [] },
+  auth: { level: 'token' as const },
   remoteAddress: '127.0.0.1',
 };
 

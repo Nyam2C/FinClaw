@@ -39,7 +39,7 @@ function makeServerCtx(
 }
 
 function makeAuth(level: AuthInfo['level'] = 'none'): AuthInfo {
-  return { level, permissions: [] };
+  return { level };
 }
 
 describe('RPC Dispatcher', () => {
@@ -245,10 +245,6 @@ describe('RPC Dispatcher', () => {
 
     it('api_key < token', () => {
       expect(hasRequiredAuth(makeAuth('api_key'), 'token')).toBe(false);
-    });
-
-    it('session >= session', () => {
-      expect(hasRequiredAuth(makeAuth('session'), 'session')).toBe(true);
     });
   });
 });

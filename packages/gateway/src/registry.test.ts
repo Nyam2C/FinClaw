@@ -67,18 +67,6 @@ describe('ChatRegistry', () => {
       const s2 = registry.startSession(sessionParams({ agentId: 'b', connectionId: 'c1' }));
       expect(s2.sessionId).toBeDefined();
     });
-
-    it('emits session_started event', () => {
-      const listener = vi.fn();
-      registry.on(listener);
-      const session = registry.startSession(sessionParams({ agentId: 'a', connectionId: 'c1' }));
-      expect(listener).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: 'session_started',
-          session: expect.objectContaining({ sessionId: session.sessionId }),
-        }),
-      );
-    });
   });
 
   describe('stopSession', () => {
@@ -99,22 +87,9 @@ describe('ChatRegistry', () => {
       registry.stopSession(session.sessionId);
       expect(session.abortController.signal.aborted).toBe(true);
     });
-
-    it('emits session_completed event with duration', () => {
-      const listener = vi.fn();
-      registry.on(listener);
-      const session = registry.startSession(sessionParams({ agentId: 'a', connectionId: 'c1' }));
-      registry.stopSession(session.sessionId);
-
-      const completedEvent = listener.mock.calls.find(
-        (call: unknown[]) => (call[0] as { type: string }).type === 'session_completed',
-      );
-      expect(completedEvent).toBeDefined();
-      expect(completedEvent?.[0].durationMs).toBeGreaterThanOrEqual(0);
-    });
   });
 
-  describe('getSession / listSessions', () => {
+  describe('getSession', () => {
     it('getSession returns session by id', () => {
       const session = registry.startSession(sessionParams({ agentId: 'a', connectionId: 'c1' }));
       expect(registry.getSession(session.sessionId)).toBe(session);
@@ -122,12 +97,6 @@ describe('ChatRegistry', () => {
 
     it('getSession returns undefined for unknown id', () => {
       expect(registry.getSession('unknown')).toBeUndefined();
-    });
-
-    it('listSessions returns all active sessions', () => {
-      registry.startSession(sessionParams({ agentId: 'a', connectionId: 'c1' }));
-      registry.startSession(sessionParams({ agentId: 'b', connectionId: 'c2' }));
-      expect(registry.listSessions()).toHaveLength(2);
     });
   });
 

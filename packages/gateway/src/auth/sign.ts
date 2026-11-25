@@ -8,7 +8,6 @@ export interface SignTokenClaims {
   readonly sessionId?: string;
   /** 만료 (epoch seconds). 미지정 시 발급 + 15분. */
   readonly exp?: number;
-  readonly permissions?: readonly string[];
 }
 
 /**
@@ -22,7 +21,6 @@ export function signToken(claims: SignTokenClaims, secret: string): string {
     JSON.stringify({
       sub: claims.sub,
       ...(claims.sessionId ? { sessionId: claims.sessionId } : {}),
-      ...(claims.permissions ? { permissions: claims.permissions } : {}),
       exp,
     }),
   );
