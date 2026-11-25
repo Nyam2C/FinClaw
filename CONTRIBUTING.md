@@ -21,7 +21,7 @@ FinClaw 는 1인 레포지만, 변경 이력이 곧 감사 기록이다. 사람�
 
 - [Conventional Commits](https://www.conventionalcommits.org/) — `type(scope): subject`. `lefthook` 의 `commit-msg` 훅이 강제한다.
   - `type`: `feat` `fix` `docs` `style` `refactor` `perf` `test` `build` `ci` `chore` `revert`
-  - `scope`: phase 작업이면 `phaseNN`, 아니면 패키지·영역 이름 (`agent`, `gateway`, `storage` …). 생략 가능.
+  - `scope`: phase 작업이면 `phaseNN`, 아니면 패키지·영역 이름 (`agent`, `gateway`, `storage`, `mac` …). 생략 가능.
   - `subject`: **ASCII**, 명령형, 72자 이내, 마침표 없음. (한글 subject 는 훅이 거부한다. 본문은 한글 가능.)
 - 커밋 하나 = 논리적 변경 하나. phase 작업은 **밀스톤 단위**로 끊고, 각 커밋은 단독으로 빌드·테스트를 통과해야 한다.
 - 본문에는 "무엇"이 아니라 "왜"를 쓴다. 되돌리기 쉬워야 하는 변경(삭제 등)은 별도 커밋으로 분리한다.
