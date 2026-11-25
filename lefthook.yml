@@ -9,7 +9,7 @@ pre-commit:
       run: npx oxlint --config oxlintrc.json {staged_files}
     format-check:
       glob: '*.{ts,mts,js,mjs,json,md}'
-      run: npx oxfmt --check {staged_files}
+      run: npx oxfmt --check --no-error-on-unmatched-pattern {staged_files}
     typecheck:
       run: npx tsgo --noEmit
 
