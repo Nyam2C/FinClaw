@@ -68,21 +68,6 @@ export function extractCitedMemoryIds(
   return matched;
 }
 
-/**
- * Phase 8 테스트용 Mock 어댑터
- * RunnerExecutionAdapter는 실제 Runner를 사용하지만, Mock은 단위 테스트에서 유지.
- */
-export class MockExecutionAdapter implements ExecutionAdapter {
-  constructor(private readonly defaultResponse: string = 'Mock response') {}
-
-  async execute(_ctx: PipelineMsgContext, _signal: AbortSignal): Promise<ExecutionResult> {
-    return {
-      content: this.defaultResponse,
-      usage: { inputTokens: 0, outputTokens: 0 },
-    };
-  }
-}
-
 export interface RunnerExecutionAdapterDeps {
   readonly runnerFactory: RunnerFactory;
   readonly defaultModel: ModelRef;

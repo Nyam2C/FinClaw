@@ -19,6 +19,7 @@ describe('buildProviders — Phase 41 CLI-only', () => {
     const b = buildProviders({
       finclawConfig: { provider: 'claude-cli' } as unknown as FinClawConfig,
       logger,
+      mcpEndpoint: { url: 'http://127.0.0.1:0/mcp', jwtSecret: 'test' },
     });
     expect(b.providerAdapter).toBeDefined();
     expect(b.toolRegistry).toBeDefined();

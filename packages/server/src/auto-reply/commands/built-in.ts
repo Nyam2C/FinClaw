@@ -26,7 +26,6 @@ export function registerBuiltInCommands(registry: CommandRegistry, deps: BuiltIn
       aliases: ['h', '도움말'],
       description: '사용 가능한 명령어 목록을 표시합니다',
       usage: '/help [명령어]',
-      category: 'general',
     },
     async (args) => {
       if (args.length > 0) {
@@ -55,7 +54,6 @@ export function registerBuiltInCommands(registry: CommandRegistry, deps: BuiltIn
       aliases: ['clear', '초기화'],
       description: '현재 대화 세션을 초기화합니다',
       usage: '/reset',
-      category: 'general',
     },
     createResetCommand({ storage: deps.storage }),
   );
@@ -68,7 +66,6 @@ export function registerBuiltInCommands(registry: CommandRegistry, deps: BuiltIn
         aliases: ['상태'],
         description: 'FinClaw 서버 상태를 표시합니다',
         usage: '/status',
-        category: 'general',
       },
       createStatusCommand({
         toolRegistry: deps.toolRegistry,

@@ -11,7 +11,6 @@ import {
   ConcurrencyLane,
   createLogger,
   formatPortOccupant,
-  getEventBus,
   inspectPortOccupant,
   loadDotenv,
   PortInUseError,
@@ -24,7 +23,7 @@ import {
   purgeAccessLog,
   type EmbeddingProvider,
 } from '@finclaw/storage';
-import type { ChannelPlugin, ConfigValidationIssue, FinClawConfig } from '@finclaw/types';
+import type { ChannelPlugin, ConfigValidationIssue } from '@finclaw/types';
 import { deliverScheduleResult } from './automation/delivery.js';
 import { initChannels } from './channels/index.js';
 import { DEFAULT_MODEL, defaultConfig } from './composition/constants.js';
@@ -194,11 +193,9 @@ async function main(): Promise<void> {
   });
 
   // 6. MessageRouter
-  const routerConfig: FinClawConfig = {};
   const router = new MessageRouter({
-    config: routerConfig,
     logger,
-    onProcess: (ctx, match, signal) => pipeline.process(ctx, match, signal),
+    onProcess: (ctx) => pipeline.process(ctx),
   });
 
   // 7. Discord onMessage 등록 (client는 이미 위에서 로그인 완료)
@@ -349,8 +346,6 @@ async function main(): Promise<void> {
   await gateway.start();
   scheduler.start();
   logger.info(`Gateway listening on ${gatewayConfig.host}:${gatewayConfig.port}`);
-
-  getEventBus().emit('system:ready');
 }
 
 if (!process.env.VITEST) {

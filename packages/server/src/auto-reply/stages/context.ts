@@ -22,7 +22,6 @@ export function contextStage(
       mentions: normalized.mentions,
       urls: normalized.urls,
       channelCapabilities,
-      userRoles: [],
     },
   };
 }

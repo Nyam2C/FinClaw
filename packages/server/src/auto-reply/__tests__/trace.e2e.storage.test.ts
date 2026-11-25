@@ -4,7 +4,6 @@
 import type { FinClawLogger } from '@finclaw/infra';
 import { openDatabase } from '@finclaw/storage';
 import {
-  createAgentId,
   createChannelId,
   createSessionKey,
   createTimestamp,
@@ -13,9 +12,7 @@ import {
 } from '@finclaw/types';
 import { describe, expect, it, vi } from 'vitest';
 import { createTracer } from '../../observability/tracer.js';
-import type { BindingMatch } from '../../process/binding-matcher.js';
 import { InMemoryCommandRegistry } from '../commands/registry.js';
-import { MockExecutionAdapter } from '../execution-adapter.js';
 import { AutoReplyPipeline } from '../pipeline.js';
 
 function makeLogger(): FinClawLogger {
@@ -55,14 +52,6 @@ function makeCtx(): MsgContext {
   };
 }
 
-function makeMatch(): BindingMatch {
-  return {
-    agentId: createAgentId('default'),
-    rule: { agentId: createAgentId('default'), priority: 0 },
-    matchTier: 'default',
-  };
-}
-
 describe('Phase 30 A15 — pipeline produces span tree', () => {
   it('records >=6 spans (root + 6 stage spans) for a normal Discord message', async () => {
     const db = openDatabase({ path: ':memory:', enableWAL: false });
@@ -72,12 +61,15 @@ describe('Phase 30 A15 — pipeline produces span tree', () => {
     const pipeline = new AutoReplyPipeline(
       {
         commandPrefix: '/',
-        maxResponseLength: 2000,
         timeoutMs: 10_000,
-        respectMarketHours: false,
       },
       {
-        executionAdapter: new MockExecutionAdapter('AI response'),
+        executionAdapter: {
+          execute: async () => ({
+            content: 'AI response',
+            usage: { inputTokens: 0, outputTokens: 0 },
+          }),
+        },
         commandRegistry: new InMemoryCommandRegistry(),
         logger: makeLogger(),
         getChannel: () => channel,
@@ -85,7 +77,7 @@ describe('Phase 30 A15 — pipeline produces span tree', () => {
       },
     );
 
-    await pipeline.process(makeCtx(), makeMatch(), AbortSignal.timeout(10_000));
+    await pipeline.process(makeCtx());
 
     const rows = db.db.prepare('SELECT trace_id, name FROM spans').all() as Array<{
       trace_id: string;

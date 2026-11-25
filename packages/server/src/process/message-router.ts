@@ -7,18 +7,14 @@ import {
   type LaneId,
 } from '@finclaw/infra';
 // packages/server/src/process/message-router.ts
-import type { InboundMessage, MsgContext, SessionKey, AgentId } from '@finclaw/types';
-import type { FinClawConfig } from '@finclaw/types';
-import { createTimestamp } from '@finclaw/types';
-import { matchBinding, extractBindingRules, type BindingMatch } from './binding-matcher.js';
+import type { InboundMessage, MsgContext, SessionKey } from '@finclaw/types';
 import { MessageQueue, type QueueEntry } from './message-queue.js';
 import { deriveRoutingSessionKey } from './session-key.js';
 
 export interface MessageRouterDeps {
-  config: FinClawConfig;
   logger: FinClawLogger;
-  /** 메시지 처리 콜백 — AbortSignal로 interrupt 모드 지원 */
-  onProcess: (ctx: MsgContext, match: BindingMatch, signal: AbortSignal) => Promise<void>;
+  /** 메시지 처리 콜백 */
+  onProcess: (ctx: MsgContext) => Promise<void>;
 }
 
 /**
@@ -27,33 +23,28 @@ export interface MessageRouterDeps {
  * 흐름:
  * 1.   세션 키 도출 (deriveRoutingSessionKey)
  * 1.5  Dedupe 중복 체크 (5초 TTL)
- * 2.   바인딩 매칭 (matchBinding — 4계층)
- * 3.   메시지 큐 삽입/즉시 처리 결정
+ * 2.   EventBus 이벤트 발행 ('channel:message')
+ * 3.   세션별 FIFO 큐 삽입/즉시 처리 결정
  * 4.   동시성 레인 acquire (ConcurrencyLaneManager)
  * 5.   MsgContext 생성 (buildMsgContext)
- * 5.5  AbortController 생성 → activeControllers Map
- * 6.   EventBus 이벤트 발행 ('channel:message')
- * 6.5  runWithContext() ALS 래핑
- * 7.   처리 콜백 호출 (onProcess)
+ * 6.   runWithContext() ALS 래핑 후 처리 콜백 호출 (onProcess)
  */
 export class MessageRouter {
   private readonly queue: MessageQueue;
   private readonly laneManager: ConcurrencyLaneManager;
   private readonly dedupe: Dedupe<boolean>;
-  /** interrupt 모드: 세션별 활성 AbortController */
-  private readonly activeControllers = new Map<string, AbortController>();
   private readonly deps: MessageRouterDeps;
   private entryCounter = 0;
 
   constructor(deps: MessageRouterDeps) {
     this.deps = deps;
-    this.queue = new MessageQueue({ mode: 'queue', maxSize: 50 });
+    this.queue = new MessageQueue();
     this.laneManager = new ConcurrencyLaneManager();
     this.dedupe = new Dedupe({ ttlMs: 5000 });
   }
 
   async route(msg: InboundMessage): Promise<void> {
-    const { logger, config } = this.deps;
+    const { logger } = this.deps;
 
     // 1. 세션 키 도출
     // NOTE: accountId는 키 생성에 미사용 (deriveRoutingSessionKey 참조). senderId를 전달하나 키에 불포함.
@@ -71,17 +62,9 @@ export class MessageRouter {
     }
     void this.dedupe.execute(msg.id, async () => true); // ID 등록
 
-    // 2. 바인딩 매칭
-    const rules = extractBindingRules(config);
-    const defaultAgentId = getDefaultAgentId(config);
-    const match = matchBinding(msg, rules, defaultAgentId);
+    logger.debug(`Routing message (session: ${sessionKey as string})`);
 
-    logger.debug(
-      `Routing message to agent ${match.agentId as string} ` +
-        `(match: ${match.matchTier}, session: ${sessionKey as string})`,
-    );
-
-    // 6. EventBus 이벤트 발행
+    // 2. EventBus 이벤트 발행
     getEventBus().emit('channel:message', msg.channelId as string, msg.id);
 
     // 3. 큐에 삽입
@@ -89,28 +72,14 @@ export class MessageRouter {
       id: `msg-${++this.entryCounter}`,
       message: msg,
       sessionKey,
-      enqueuedAt: createTimestamp(Date.now()),
-      priority: 0,
     };
 
-    const enqueueResult = this.queue.enqueue(entry);
-
-    // interrupt 모드: 기존 처리 취소
-    if (enqueueResult === 'interrupt') {
-      const key = sessionKey as string;
-      const existing = this.activeControllers.get(key);
-      if (existing) {
-        existing.abort();
-        this.activeControllers.delete(key);
-      }
-    }
-
-    if (enqueueResult === true || enqueueResult === 'interrupt') {
-      await this.processNext(sessionKey, match);
+    if (this.queue.enqueue(entry)) {
+      await this.processNext(sessionKey);
     }
   }
 
-  private async processNext(sessionKey: SessionKey, match: BindingMatch): Promise<void> {
+  private async processNext(sessionKey: SessionKey): Promise<void> {
     const entry = this.queue.dequeue(sessionKey);
     if (!entry) {
       return;
@@ -119,53 +88,30 @@ export class MessageRouter {
     this.queue.markProcessing(sessionKey);
     const key = sessionKey as string;
 
-    // 4. 동시성 레인 획득
-    // TODO(Phase 8): laneId를 BindingMatch 또는 config에서 도출. 현재 main 고정.
+    // 4. 동시성 레인 획득 (main 고정)
     const laneId: LaneId = 'main';
     const handle = await this.laneManager.acquire(laneId, key);
 
-    // 5.5 AbortController 생성
-    const controller = new AbortController();
-    this.activeControllers.set(key, controller);
-
     try {
       // 5. MsgContext 생성
-      const ctx = buildMsgContext(entry.message, sessionKey, match);
+      const ctx = buildMsgContext(entry.message, sessionKey);
 
-      // 6.5 runWithContext() ALS 래핑
+      // 6. runWithContext() ALS 래핑 후 처리 콜백 호출
       await runWithContext({ requestId: entry.id, startedAt: Date.now() }, async () => {
-        // 7. 처리 콜백 호출
-        await this.deps.onProcess(ctx, match, controller.signal);
+        await this.deps.onProcess(ctx);
       });
     } catch (err) {
       this.deps.logger.error(`Message processing failed: ${String(err)}`);
     } finally {
-      this.activeControllers.delete(key);
       handle.release();
-      const hasMore = this.queue.markDone(sessionKey);
-      if (hasMore) {
-        // NOTE: 이전 match를 재사용. 같은 세션 내 메시지는 동일 바인딩을 가정.
-        void this.processNext(sessionKey, match);
+      if (this.queue.markDone(sessionKey)) {
+        void this.processNext(sessionKey);
       }
     }
   }
-
-  /** 리소스 정리 */
-  dispose(): void {
-    for (const controller of this.activeControllers.values()) {
-      controller.abort();
-    }
-    this.activeControllers.clear();
-    this.laneManager.dispose();
-    this.dedupe.clear();
-  }
 }
 
-function buildMsgContext(
-  msg: InboundMessage,
-  sessionKey: SessionKey,
-  _match: BindingMatch,
-): MsgContext {
+function buildMsgContext(msg: InboundMessage, sessionKey: SessionKey): MsgContext {
   const discordChannelId = msg.metadata?.discordChannelId;
   return {
     body: msg.body,
@@ -183,10 +129,4 @@ function buildMsgContext(
     media: msg.media,
     timestamp: msg.timestamp,
   };
-}
-
-function getDefaultAgentId(config: FinClawConfig): AgentId {
-  const entries = config.agents?.entries ?? {};
-  const firstAgent = Object.keys(entries)[0];
-  return (firstAgent ?? 'default') as AgentId;
 }

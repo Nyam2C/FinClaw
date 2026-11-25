@@ -212,6 +212,11 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
     failed: pluginResult.failed,
     mcpServers: pluginResult.mcpHandles.length,
   });
+  for (const d of pluginResult.diagnostics) {
+    if (d.severity !== 'info') {
+      logger.warn(`Plugin ${d.pluginName} (${d.phase}): ${d.message}`);
+    }
+  }
   lifecycle.register(async () => {
     for (const h of pluginResult.mcpHandles) {
       await h.shutdown();

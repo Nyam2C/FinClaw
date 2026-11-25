@@ -4,43 +4,18 @@ import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ToolRegistry } from '@finclaw/agent';
 import { getNodeMajorVersion } from '@finclaw/infra';
-import type {
-  PluginDiagnostic,
-  PluginHookName,
-  PluginService,
-  PluginCommand,
-  RouteRegistration,
-  ChannelPlugin,
-} from '@finclaw/types';
+import type { PluginDiagnostic } from '@finclaw/types';
 import { createJiti } from 'jiti';
 import { discoverPlugins, validatePluginPath } from './discovery.js';
 import { parseManifest } from './manifest.js';
 import { bridgeMCPTools, registerMCPTools } from './mcp-tool-bridge.js';
 import { createMCPClient, type MCPClientHandle } from './mcp-transport.js';
-import { registerToSlot } from './registry.js';
 
 // ─── 타입 ───
-
-// TODO(review): PluginExports 인터페이스가 런타임 타입 검증에 사용되지 않음 — 활용처 확보 또는 제거 검토.
-/** 플러그인 모듈 exports (register || activate) */
-export interface PluginExports {
-  readonly register?: (api: PluginBuildApi) => void;
-  readonly activate?: (api: PluginBuildApi) => void;
-  readonly deactivate?: () => Promise<void>;
-}
 
 /** 플러그인 등록 API — register() 콜백에 주입 */
 export interface PluginBuildApi {
   readonly pluginName: string;
-  registerChannel(channel: ChannelPlugin): void;
-  registerHook(
-    hookName: PluginHookName,
-    handler: (...args: unknown[]) => Promise<unknown>,
-    opts?: { priority?: number },
-  ): void;
-  registerService(service: PluginService): void;
-  registerCommand(command: Omit<PluginCommand, 'pluginName'>): void;
-  registerRoute(route: Omit<RouteRegistration, 'pluginName'>): void;
   addDiagnostic(diagnostic: Omit<PluginDiagnostic, 'pluginName'>): void;
 }
 
@@ -50,6 +25,7 @@ export interface LoadResult {
   failed: Array<{ pluginName: string; phase: string; error: string }>;
   /** Phase 29 D8: 활성화된 MCP client 핸들 (server 종료 시 shutdown). */
   mcpHandles: MCPClientHandle[];
+  diagnostics: PluginDiagnostic[];
 }
 
 // ─── jiti Lazy 싱글턴 ───
@@ -65,12 +41,6 @@ function getOrCreateJiti(): ReturnType<typeof createJiti> {
     extensions: ['.ts', '.mts', '.js', '.mjs', '.json'],
   });
   return jitiLoader;
-}
-
-// TODO(review): resetJiti() — 현재 테스트에서 미사용. 필요 시 테스트 격리에 활용, 불필요 시 제거.
-/** 테스트용 jiti 리셋 */
-export function resetJiti(): void {
-  jitiLoader = null;
 }
 
 // ─── 3-Tier 모듈 로더 ───
@@ -99,31 +69,11 @@ async function loadPluginModule(entryPath: string): Promise<Record<string, unkno
 
 // ─── createPluginBuildApi ───
 
-function createPluginBuildApi(pluginName: string): PluginBuildApi {
+function createPluginBuildApi(pluginName: string, diagnostics: PluginDiagnostic[]): PluginBuildApi {
   return {
     pluginName,
-    registerChannel(ch) {
-      registerToSlot('channels', ch);
-    },
-    registerHook(hookName, handler, opts) {
-      registerToSlot('hooks', {
-        name: hookName,
-        handler,
-        pluginName,
-        priority: opts?.priority ?? 0,
-      });
-    },
-    registerService(svc) {
-      registerToSlot('services', svc);
-    },
-    registerCommand(cmd) {
-      registerToSlot('commands', { ...cmd, pluginName });
-    },
-    registerRoute(route) {
-      registerToSlot('routes', { ...route, pluginName });
-    },
     addDiagnostic(diag) {
-      registerToSlot('diagnostics', { ...diag, pluginName });
+      diagnostics.push({ ...diag, pluginName });
     },
   };
 }
@@ -131,13 +81,14 @@ function createPluginBuildApi(pluginName: string): PluginBuildApi {
 // ─── 진단 기록 헬퍼 ───
 
 function recordDiagnostic(
+  diagnostics: PluginDiagnostic[],
   pluginName: string,
   severity: PluginDiagnostic['severity'],
   phase: PluginDiagnostic['phase'],
   message: string,
   error?: Error,
 ): void {
-  registerToSlot('diagnostics', {
+  diagnostics.push({
     pluginName,
     timestamp: Date.now(),
     severity,
@@ -171,7 +122,7 @@ export async function loadPlugins(
   /** Phase 29 D8: MCP 도구 등록 대상 ToolRegistry (미주입 시 mcpServers skip + warn). */
   toolRegistry?: ToolRegistry,
 ): Promise<LoadResult> {
-  const result: LoadResult = { loaded: [], failed: [], mcpHandles: [] };
+  const result: LoadResult = { loaded: [], failed: [], mcpHandles: [], diagnostics: [] };
 
   // Stage 1: Discovery
   const discovered = discoverPlugins(searchPaths);
@@ -184,7 +135,7 @@ export async function loadPlugins(
       const rawManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
       const parsed = parseManifest(rawManifest);
       if (!parsed.ok) {
-        recordDiagnostic(pluginName, 'error', 'manifest', parsed.error);
+        recordDiagnostic(result.diagnostics, pluginName, 'error', 'manifest', parsed.error);
         result.failed.push({ pluginName, phase: 'manifest', error: parsed.error });
         continue;
       }
@@ -200,7 +151,7 @@ export async function loadPlugins(
       const mod = await loadPluginModule(entryPath);
 
       // Stage 5: Register
-      const api = createPluginBuildApi(pluginName);
+      const api = createPluginBuildApi(pluginName, result.diagnostics);
       const registerFn = (mod.register ?? mod.activate) as
         | ((api: PluginBuildApi) => unknown)
         | undefined;
@@ -214,6 +165,7 @@ export async function loadPlugins(
           typeof (registerResult as Record<string, unknown>).then === 'function'
         ) {
           recordDiagnostic(
+            result.diagnostics,
             pluginName,
             'warn',
             'register',
@@ -233,6 +185,7 @@ export async function loadPlugins(
               result.mcpHandles.push(handle);
             } catch (mcpErr) {
               recordDiagnostic(
+                result.diagnostics,
                 pluginName,
                 'error',
                 'register',
@@ -243,6 +196,7 @@ export async function loadPlugins(
           }
         } else {
           recordDiagnostic(
+            result.diagnostics,
             pluginName,
             'warn',
             'register',
@@ -250,13 +204,6 @@ export async function loadPlugins(
           );
         }
       }
-
-      // 등록 완료
-      registerToSlot('plugins', {
-        manifest,
-        status: 'active',
-        loadedAt: Date.now(),
-      });
 
       result.loaded.push(pluginName);
     } catch (err) {
@@ -269,6 +216,7 @@ export async function loadPlugins(
 
       const error = err instanceof Error ? err : new Error(String(err));
       recordDiagnostic(
+        result.diagnostics,
         pluginName,
         'error',
         phase as PluginDiagnostic['phase'],
@@ -281,19 +229,8 @@ export async function loadPlugins(
         phase,
         error: error.message,
       });
-
-      // 실패한 플러그인도 plugins 슬롯에 에러 상태로 기록
-      registerToSlot('plugins', {
-        manifest: { name: pluginName, version: '0.0.0', main: '', type: 'service' },
-        status: 'error',
-        error: error.message,
-        loadedAt: Date.now(),
-      });
     }
   }
 
   return result;
 }
-
-// TODO(review): loadPluginModule — 내부 구현 함수이나 export됨. 테스트 외 외부 사용처 없으면 unexport 검토.
-export { createPluginBuildApi, loadPluginModule };

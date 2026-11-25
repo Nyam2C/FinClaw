@@ -7,7 +7,7 @@ import {
   type ModelRef,
 } from '@finclaw/types';
 import { describe, it, expect } from 'vitest';
-import { MockExecutionAdapter, RunnerExecutionAdapter } from '../execution-adapter.js';
+import { RunnerExecutionAdapter } from '../execution-adapter.js';
 import type { PipelineMsgContext } from '../pipeline-context.js';
 import type { RetrievalResult } from '../stages/memory-retrieval.js';
 
@@ -39,26 +39,8 @@ function makePipelineCtx(): PipelineMsgContext {
       supportsEditing: false,
       maxMessageLength: 2000,
     },
-    userRoles: [],
   };
 }
-
-describe('MockExecutionAdapter', () => {
-  it('기본 응답을 반환한다', async () => {
-    const adapter = new MockExecutionAdapter();
-    const result = await adapter.execute(makePipelineCtx(), AbortSignal.timeout(5000));
-
-    expect(result.content).toBe('Mock response');
-    expect(result.usage).toEqual({ inputTokens: 0, outputTokens: 0 });
-  });
-
-  it('커스텀 응답을 반환한다', async () => {
-    const adapter = new MockExecutionAdapter('Custom answer');
-    const result = await adapter.execute(makePipelineCtx(), AbortSignal.timeout(5000));
-
-    expect(result.content).toBe('Custom answer');
-  });
-});
 
 const DEFAULT_MODEL: ModelRef = {
   provider: 'anthropic',

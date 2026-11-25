@@ -73,29 +73,6 @@ describe('commandStage', () => {
     }
     expect(result.reason).toContain('h');
   });
-
-  it('requiredRoles가 있으면 skip (권한 부족)을 반환한다', async () => {
-    const registry = new InMemoryCommandRegistry();
-    registry.register(
-      {
-        name: 'admin',
-        aliases: [],
-        description: 'Admin command',
-        usage: '/admin',
-        category: 'admin',
-        requiredRoles: ['admin'],
-      },
-      vi.fn(),
-    );
-
-    const result = await commandStage('/admin', registry, '/', makeCtx());
-
-    expect(result.action).toBe('skip');
-    if (result.action !== 'skip') {
-      return;
-    }
-    expect(result.reason).toContain('permissions');
-  });
 });
 
 describe('InMemoryCommandRegistry', () => {
@@ -108,7 +85,6 @@ describe('InMemoryCommandRegistry', () => {
         aliases: ['t'],
         description: 'Test command',
         usage: '/test',
-        category: 'general',
       },
       executor,
     );
@@ -126,42 +102,12 @@ describe('InMemoryCommandRegistry', () => {
         aliases: ['t'],
         description: 'Test',
         usage: '/test',
-        category: 'general',
       },
       vi.fn(),
     );
 
     expect(registry.get('t')).toBeDefined();
     expect(registry.get('t')?.definition.name).toBe('test');
-  });
-
-  it('명령어를 해제한다', () => {
-    const registry = new InMemoryCommandRegistry();
-    registry.register(
-      {
-        name: 'test',
-        aliases: ['t'],
-        description: 'Test',
-        usage: '/test',
-        category: 'general',
-      },
-      vi.fn(),
-    );
-
-    expect(registry.unregister('test')).toBe(true);
-    expect(registry.get('test')).toBeUndefined();
-    expect(registry.get('t')).toBeUndefined();
-  });
-
-  it('카테고리별로 명령어를 필터링한다', () => {
-    const registry = new InMemoryCommandRegistry();
-    registerBuiltInCommands(registry, { storage: {} as StorageAdapter });
-
-    const general = registry.listByCategory('general');
-    expect(general.length).toBeGreaterThan(0);
-    for (const cmd of general) {
-      expect(cmd.category).toBe('general');
-    }
   });
 
   it('명령어를 파싱한다', () => {

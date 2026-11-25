@@ -16,9 +16,6 @@ export interface PipelineMsgContext extends MsgContext {
   // --- 채널 확장 ---
   readonly channelCapabilities: ChannelCapabilities;
 
-  // --- 사용자 확장 ---
-  readonly userRoles: readonly string[];
-
   // --- 기억 capture (Phase 26 B) ---
   /** capture 단계가 명시적 선언을 저장했을 때 deliver 가 꼬리표 부착에 사용 */
   readonly capturedMemory?: {

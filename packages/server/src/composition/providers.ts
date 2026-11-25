@@ -9,7 +9,7 @@ import type { FinClawConfig } from '@finclaw/types';
 export interface BuildProvidersDeps {
   readonly finclawConfig: FinClawConfig;
   readonly logger: FinClawLogger;
-  readonly mcpEndpoint?: { readonly url: string; readonly jwtSecret: string };
+  readonly mcpEndpoint: { readonly url: string; readonly jwtSecret: string };
 }
 
 export interface ProvidersBundle {
@@ -23,26 +23,18 @@ export function buildProviders({
   logger,
   mcpEndpoint,
 }: BuildProvidersDeps): ProvidersBundle {
-  const cliBackend =
-    finclawConfig.cliBackend || mcpEndpoint
-      ? {
-          ...DEFAULT_CLAUDE_BACKEND,
-          command: finclawConfig.cliBackend?.command ?? 'claude',
-          ...(finclawConfig.cliBackend?.watchdog
-            ? { reliability: { watchdog: finclawConfig.cliBackend.watchdog } }
-            : {}),
-          ...(mcpEndpoint
-            ? {
-                mcp: {
-                  url: mcpEndpoint.url,
-                  mintToken: () =>
-                    signToken({ sub: 'finclaw', sessionId: 'mcp' }, mcpEndpoint.jwtSecret),
-                  allowedTools: 'mcp__finclaw__*',
-                },
-              }
-            : {}),
-        }
-      : undefined;
+  const cliBackend = {
+    ...DEFAULT_CLAUDE_BACKEND,
+    command: finclawConfig.cliBackend?.command ?? 'claude',
+    ...(finclawConfig.cliBackend?.watchdog
+      ? { reliability: { watchdog: finclawConfig.cliBackend.watchdog } }
+      : {}),
+    mcp: {
+      url: mcpEndpoint.url,
+      mintToken: () => signToken({ sub: 'finclaw', sessionId: 'mcp' }, mcpEndpoint.jwtSecret),
+      allowedTools: 'mcp__finclaw__*',
+    },
+  };
   const providerAdapter = new CliProviderAdapter({
     backend: cliBackend,
     defaultTimeoutMs: finclawConfig.cliBackend?.timeoutMs ?? 60_000,

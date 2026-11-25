@@ -155,9 +155,7 @@ export function buildPipeline(deps: BuildPipelineDeps): PipelineBundle {
   const pipeline = new AutoReplyPipeline(
     {
       commandPrefix: '!finclaw ',
-      maxResponseLength: 2000,
       timeoutMs: 60_000,
-      respectMarketHours: false,
     },
     {
       executionAdapter: adapter,
