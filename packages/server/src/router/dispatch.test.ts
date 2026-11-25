@@ -6,7 +6,7 @@ import type {
   QuoteService,
 } from '@finclaw/skills-finance';
 import type { NewsItem, Portfolio } from '@finclaw/types';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { buildRouteDispatcher, type DispatcherDeps } from './dispatch.js';
 
 const quoteService: QuoteService = {
@@ -161,5 +161,38 @@ describe('route_task dispatcher — market_analysis 서브에이전트 (D2)', ()
     expect(seen[0]?.signal.aborted).toBe(true);
     expect(seen[0]?.session).toEqual({ kind: 'none' });
     expect(r.isError).toBe(true);
+  });
+
+  it('동시 2호출은 서브에이전트 spawn 이 순차 실행된다 (전용 lane maxConcurrent 1)', async () => {
+    let open: () => void = () => {};
+    const opened = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const seen: DriverRequest[] = [];
+    const driver: AgentDriver = async function* (req) {
+      seen.push(req);
+      if (seen.length === 1) {
+        await opened;
+      }
+      yield { type: 'error', runId: req.runId, reason: 'unknown', message: 'x' };
+    };
+    const news = [
+      { title: 't', source: 's', publishedAt: '2026-11-26', summary: 'x' },
+    ] as unknown as NewsItem[];
+    const d = buildRouteDispatcher({
+      ...deps,
+      driver,
+      newsAggregator: { fetchNews: async () => news },
+    });
+    const both = Promise.all([
+      d({ intent: 'market_analysis', query: 'a' }),
+      d({ intent: 'market_analysis', query: 'b' }),
+    ]);
+    await vi.waitFor(() => expect(seen).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(seen).toHaveLength(1); // 둘째는 첫째가 끝날 때까지 대기
+    open();
+    await both;
+    expect(seen).toHaveLength(2);
   });
 });

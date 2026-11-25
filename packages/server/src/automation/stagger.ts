@@ -66,6 +66,8 @@ export function nextStaggeredRunAt(
   schedule: { readonly id: string; readonly cron: string; readonly staggerMs?: number | string },
   fromMs: number,
 ): number | null {
-  const next = computeNextRunAt(parseCron(schedule.cron), fromMs);
-  return next === null ? null : next + staggerOffsetMs(schedule.id, resolveCronStaggerMs(schedule));
+  const off = staggerOffsetMs(schedule.id, resolveCronStaggerMs(schedule));
+  // 그리드를 off 만큼 이동해 계산 — [정각, 정각+off) 에서 불러도 이번 시간대 발화를 건너뛰지 않는다. 결과 > fromMs.
+  const next = computeNextRunAt(parseCron(schedule.cron), fromMs - off);
+  return next === null ? null : next + off;
 }
