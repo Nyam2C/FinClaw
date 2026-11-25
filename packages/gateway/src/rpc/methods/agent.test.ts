@@ -1,8 +1,8 @@
 // packages/server/src/gateway/rpc/methods/agent.test.ts
+import type { AgentEvent, AgentRunPort, AgentRunRequest } from '@finclaw/agent';
 import { ConcurrencyLane, resetEventBus } from '@finclaw/infra';
-import { getAgentRun, openDatabase, type Database } from '@finclaw/storage';
 import type { AttachMemoryPort, RpcMethod } from '@finclaw/types';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GatewayServerContext } from '../../context.js';
 import { RpcErrors } from '../errors.js';
 import { dispatchRpc, MethodRegistry } from '../index.js';
@@ -55,27 +55,39 @@ function call(method: string, params: unknown) {
   );
 }
 
-function makeRunnerResult(overrides: Record<string, unknown> = {}) {
-  return {
-    status: 'completed' as const,
-    messages: [
-      { role: 'user' as const, content: 'hi' },
-      { role: 'assistant' as const, content: 'hello world' },
-    ],
-    usage: { inputTokens: 10, outputTokens: 5 },
-    durationMs: 123,
-    ...overrides,
+const USAGE = { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 };
+
+function fakeRuntime(outcome: 'done' | 'error' = 'done', gate?: Promise<void>) {
+  const calls: AgentRunRequest[] = [];
+  const runtime: AgentRunPort = {
+    async *run(req) {
+      calls.push(req);
+      if (gate && calls.length === 1) {
+        await gate;
+      }
+      const runId = `run-${calls.length}`;
+      const ev: AgentEvent =
+        outcome === 'done'
+          ? {
+              type: 'done',
+              runId,
+              cliSessionId: 'c',
+              text: 'hello world',
+              usage: USAGE,
+              durationMs: 1,
+              numTurns: 1,
+            }
+          : { type: 'error', runId, reason: 'unknown', message: 'runner exploded' };
+      yield ev;
+    },
+    reset: async () => false,
   };
+  return { runtime, calls };
 }
 
 function makeDeps(overrides: Partial<AgentRpcDeps> = {}): AgentRpcDeps {
-  const runnerMock = {
-    execute: vi.fn().mockResolvedValue(makeRunnerResult()),
-  };
   return {
-    toolRegistry: {
-      list: () => [],
-    } as never,
+    toolRegistry: { list: () => [] } as never,
     agents: [
       {
         id: 'finclaw-partner',
@@ -83,21 +95,12 @@ function makeDeps(overrides: Partial<AgentRpcDeps> = {}): AgentRpcDeps {
         description: '개인 금융 파트너. 시세 조회·뉴스·포트폴리오·알림 관리.',
       },
     ],
-    runnerFactory: vi.fn(() => runnerMock as never),
-    agentRunLane: new ConcurrencyLane({
-      maxConcurrent: 1,
-      maxQueueSize: 10,
-      waitTimeoutMs: 5_000,
-    }),
+    runtime: fakeRuntime().runtime,
+    agentRunLane: new ConcurrencyLane({ maxConcurrent: 1, maxQueueSize: 10, waitTimeoutMs: 5_000 }),
     profileHealth: {
       getHealth: vi.fn().mockReturnValue('healthy'),
       recordResult: vi.fn(),
     } as never,
-    systemPrompt: 'test system prompt',
-    defaultModel: {
-      provider: 'anthropic',
-      model: 'claude-sonnet-4-6',
-    },
     logger: {
       trace: vi.fn(),
       debug: vi.fn(),
@@ -183,273 +186,95 @@ describe('agent.* RPC methods', () => {
       );
     });
 
-    it('executes runner and returns output', async () => {
-      const runner = { execute: vi.fn().mockResolvedValue(makeRunnerResult()) };
-      const runnerFactory = vi.fn(() => runner as never);
-      registerAgentMethods(makeDeps({ runnerFactory }), methods);
+    it('fake done → output·runId·tokenUsage 반환 + oneShot 요청 + stats 갱신', async () => {
+      const { runtime, calls } = fakeRuntime();
+      registerAgentMethods(makeDeps({ runtime }), methods);
       const result = await call('agent.run', { agentId: 'finclaw-partner', prompt: 'hi' });
       const r = (
         result as {
-          result: {
-            output: string;
-            tokenUsage: { input: number; output: number };
-            stopReason: string;
-          };
+          result: { output: string; runId: string; tokenUsage: unknown; stopReason: string };
         }
       ).result;
-      expect(runnerFactory).toHaveBeenCalledTimes(1);
-      expect(runner.execute).toHaveBeenCalledTimes(1);
-      expect(r.output).toBe('hello world');
-      expect(r.tokenUsage).toEqual({ input: 10, output: 5 });
-      expect(r.stopReason).toBe('completed');
-    });
-
-    it('updates stats after successful run', async () => {
-      const deps = makeDeps();
-      registerAgentMethods(deps, methods);
-      await call('agent.run', { agentId: 'finclaw-partner', prompt: 'hi' });
-      const status = await call('agent.status', { agentId: 'finclaw-partner' });
-      const r = (
-        status as {
-          result: { totalCalls: number; lastCallAt: number | null; lastError: string | null };
-        }
-      ).result;
-      expect(r.totalCalls).toBe(1);
-      expect(r.lastCallAt).not.toBeNull();
-      expect(r.lastError).toBeNull();
-      expect(deps.profileHealth.recordResult).toHaveBeenCalledWith('default', {
-        success: true,
-        modelId: 'claude-sonnet-4-6',
+      expect(r).toMatchObject({
+        output: 'hello world',
+        runId: 'run-1',
+        tokenUsage: { input: 10, output: 5 },
+        stopReason: 'completed',
       });
+      expect(calls[0]).toMatchObject({ mode: 'oneShot', input: 'hi', agentId: 'finclaw-partner' });
+      expect(String(calls[0]?.sessionKey)).toMatch(/^agent-run-/);
+      const status = (await call('agent.status', { agentId: 'finclaw-partner' })) as {
+        result: { totalCalls: number; lastError: string | null };
+      };
+      expect(status.result).toMatchObject({ totalCalls: 1, lastError: null });
     });
 
-    it('records lastError on runner failure', async () => {
-      const runner = { execute: vi.fn().mockRejectedValue(new Error('runner exploded')) };
-      const runnerFactory = vi.fn(() => runner as never);
-      const deps = makeDeps({ runnerFactory });
-      registerAgentMethods(deps, methods);
+    it('fake error → lastError 기록 + RPC 에러', async () => {
+      registerAgentMethods(makeDeps({ runtime: fakeRuntime('error').runtime }), methods);
       const result = await call('agent.run', { agentId: 'finclaw-partner', prompt: 'hi' });
       expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.INTERNAL_ERROR);
-      const status = await call('agent.status', { agentId: 'finclaw-partner' });
-      const r = (status as { result: { lastError: string | null; totalCalls: number } }).result;
-      expect(r.lastError).toContain('runner exploded');
-      expect(r.totalCalls).toBe(0);
-      expect(deps.profileHealth.recordResult).toHaveBeenCalledWith('default', false);
+      const status = (await call('agent.status', { agentId: 'finclaw-partner' })) as {
+        result: { lastError: string | null; totalCalls: number };
+      };
+      expect(status.result.lastError).toContain('runner exploded');
+      expect(status.result.totalCalls).toBe(0);
     });
 
-    describe('persistence (Phase 26 D)', () => {
-      let database: Database;
-
-      beforeEach(() => {
-        database = openDatabase({ path: ':memory:' });
-      });
-
-      afterEach(() => {
-        database.close();
-      });
-
-      it('persists agent_runs row with prompt/output on success', async () => {
-        const longOutput = 'A'.repeat(150); // > 100자 → attach 도 호출됨
-        const runner = {
-          execute: vi.fn().mockResolvedValue(
-            makeRunnerResult({
-              messages: [
-                { role: 'user' as const, content: 'analyze AAPL' },
-                { role: 'assistant' as const, content: longOutput },
-              ],
-            }),
-          ),
-        };
-        const runnerFactory = vi.fn(() => runner as never);
-        const deps = makeDeps({ runnerFactory, db: database.db });
-        registerAgentMethods(deps, methods);
-
-        const result = await call('agent.run', {
+    it('done 이면 attach({agentRunId: done.runId, sessionKey}) 호출, error 면 미호출', async () => {
+      const attach = vi.fn().mockResolvedValue(undefined);
+      registerAgentMethods(
+        makeDeps({ attachMemoryService: { attach } as AttachMemoryPort }),
+        methods,
+      );
+      await call('agent.run', { agentId: 'finclaw-partner', prompt: 'hi' });
+      expect(attach).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agentRunId: 'run-1',
+          prompt: 'hi',
+          output: 'hello world',
           agentId: 'finclaw-partner',
-          prompt: 'analyze AAPL',
-        });
-        const r = (result as { result: { runId?: string; output: string } }).result;
-        expect(r.runId).toBeTruthy();
-        expect(r.output).toBe(longOutput);
+          sessionKey: expect.stringMatching(/^agent-run-/),
+        }),
+      );
+      methods = new MethodRegistry();
+      attach.mockClear();
+      registerAgentMethods(
+        makeDeps({
+          runtime: fakeRuntime('error').runtime,
+          attachMemoryService: { attach } as AttachMemoryPort,
+        }),
+        methods,
+      );
+      await call('agent.run', { agentId: 'finclaw-partner', prompt: 'hi' });
+      expect(attach).not.toHaveBeenCalled();
+    });
 
-        const stored = getAgentRun(database.db, r.runId as string);
-        expect(stored).not.toBeNull();
-        expect(stored?.prompt).toBe('analyze AAPL');
-        expect(stored?.output).toBe(longOutput);
-        expect(stored?.error).toBeUndefined();
-        expect(stored?.tokensInput).toBe(10);
-        expect(stored?.tokensOutput).toBe(5);
-        // 도구 호출은 CLI 내부에서 일어나므로 tool_calls 는 기록하지 않음
-        expect(stored?.toolCalls).toBeUndefined();
-      });
-
-      it('calls attachMemoryService.attach with run.id + sessionKey on success', async () => {
-        const longOutput = 'B'.repeat(150);
-        const runner = {
-          execute: vi.fn().mockResolvedValue(
-            makeRunnerResult({
-              messages: [
-                { role: 'user' as const, content: 'hi' },
-                { role: 'assistant' as const, content: longOutput },
-              ],
-            }),
-          ),
-        };
-        const attach = vi.fn().mockResolvedValue({ memoryId: 'mem-123' });
-        const attachMemoryService: AttachMemoryPort = { attach };
-        const runnerFactory = vi.fn(() => runner as never);
-        const deps = makeDeps({
-          runnerFactory,
-          db: database.db,
-          attachMemoryService,
-        });
-        registerAgentMethods(deps, methods);
-
-        const result = await call('agent.run', { agentId: 'finclaw-partner', prompt: 'hi' });
-        const r = (result as { result: { runId?: string } }).result;
-        expect(r.runId).toBeTruthy();
-
-        expect(attach).toHaveBeenCalledTimes(1);
-        const arg = attach.mock.calls[0]?.[0] as {
-          agentRunId: string;
-          agentId: string;
-          prompt: string;
-          output: string;
-          sessionKey: string;
-          createdAt: number;
-        };
-        expect(arg.agentRunId).toBe(r.runId);
-        expect(arg.agentId).toBe('finclaw-partner');
-        expect(arg.prompt).toBe('hi');
-        expect(arg.output).toBe(longOutput);
-        expect(arg.sessionKey).toContain('agent-run-');
-        expect(typeof arg.createdAt).toBe('number');
-      });
-
-      it('persists agent_runs row with error on runner failure (no attach call)', async () => {
-        const runner = { execute: vi.fn().mockRejectedValue(new Error('boom')) };
-        const attach = vi.fn().mockResolvedValue({ memoryId: 'mem-x' });
-        const attachMemoryService: AttachMemoryPort = { attach };
-        const runnerFactory = vi.fn(() => runner as never);
-        const deps = makeDeps({
-          runnerFactory,
-          db: database.db,
-          attachMemoryService,
-        });
-        registerAgentMethods(deps, methods);
-
-        const result = await call('agent.run', { agentId: 'finclaw-partner', prompt: 'hi' });
-        expect((result as { error: { code: number } }).error.code).toBe(RpcErrors.INTERNAL_ERROR);
-
-        // attach 는 호출되지 않아야 함 (output 없음)
-        expect(attach).not.toHaveBeenCalled();
-
-        // agent_runs 에는 error 채운 row 가 있어야 함
-        const all = database.db
-          .prepare('SELECT * FROM agent_runs ORDER BY created_at DESC')
-          .all() as Array<{ error: string | null; output: string }>;
-        expect(all).toHaveLength(1);
-        expect(all[0]?.error).toContain('boom');
-        expect(all[0]?.output).toBe('');
-      });
-
-      it('swallows attach failure — RPC still succeeds with runId', async () => {
-        const longOutput = 'C'.repeat(150);
-        const runner = {
-          execute: vi.fn().mockResolvedValue(
-            makeRunnerResult({
-              messages: [
-                { role: 'user' as const, content: 'hi' },
-                { role: 'assistant' as const, content: longOutput },
-              ],
-            }),
-          ),
-        };
-        const attach = vi.fn().mockRejectedValue(new Error('attach exploded'));
-        const attachMemoryService: AttachMemoryPort = { attach };
-        const runnerFactory = vi.fn(() => runner as never);
-        const deps = makeDeps({
-          runnerFactory,
-          db: database.db,
-          attachMemoryService,
-        });
-        registerAgentMethods(deps, methods);
-
-        const result = await call('agent.run', { agentId: 'finclaw-partner', prompt: 'hi' });
-        const r = (result as { result: { runId?: string; output: string } }).result;
-        // attach 실패에도 RPC 응답은 정상
-        expect(r.runId).toBeTruthy();
-        expect(r.output).toBe(longOutput);
-
-        // agent_runs 행은 저장되었음
-        const stored = getAgentRun(database.db, r.runId as string);
-        expect(stored).not.toBeNull();
-        expect(stored?.error).toBeUndefined();
-
-        // attach.attach_failed 경고 로그가 한 번 emit 됨
-        expect(deps.logger.warn).toHaveBeenCalledWith(
-          'agent.run.memory.attach_failed',
-          expect.objectContaining({ error: 'attach exploded' }),
-        );
-      });
-
-      it('skips persistence when db is undefined (still returns runId=undefined)', async () => {
-        const longOutput = 'D'.repeat(150);
-        const runner = {
-          execute: vi.fn().mockResolvedValue(
-            makeRunnerResult({
-              messages: [
-                { role: 'user' as const, content: 'hi' },
-                { role: 'assistant' as const, content: longOutput },
-              ],
-            }),
-          ),
-        };
-        const attach = vi.fn();
-        const attachMemoryService: AttachMemoryPort = { attach };
-        const runnerFactory = vi.fn(() => runner as never);
-        // db 미주입 — attach 도 호출 안 됨
-        const deps = makeDeps({ runnerFactory, attachMemoryService });
-        registerAgentMethods(deps, methods);
-
-        const result = await call('agent.run', { agentId: 'finclaw-partner', prompt: 'hi' });
-        const r = (result as { result: { runId?: string; output: string } }).result;
-        expect(r.output).toBe(longOutput);
-        expect(r.runId).toBeUndefined();
-        expect(attach).not.toHaveBeenCalled();
-      });
+    it('attach 실패는 swallow — RPC 는 runId 와 함께 성공', async () => {
+      const attach = vi.fn().mockRejectedValue(new Error('embed down'));
+      const deps = makeDeps({ attachMemoryService: { attach } as AttachMemoryPort });
+      registerAgentMethods(deps, methods);
+      const result = await call('agent.run', { agentId: 'finclaw-partner', prompt: 'hi' });
+      expect((result as { result: { runId: string } }).result.runId).toBe('run-1');
+      expect(deps.logger.warn).toHaveBeenCalledWith(
+        'agent.run.memory.attach_failed',
+        expect.anything(),
+      );
     });
 
     it('queues concurrent requests on agent-run lane (maxConcurrent=1)', async () => {
-      // 2 concurrent calls — second must wait for first to complete
-      let resolveFirst!: (v: ReturnType<typeof makeRunnerResult>) => void;
-      const firstPromise = new Promise<ReturnType<typeof makeRunnerResult>>((resolve) => {
-        resolveFirst = resolve;
+      let release: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
       });
-      const runner = {
-        execute: vi
-          .fn()
-          .mockImplementationOnce(() => firstPromise)
-          .mockImplementationOnce(() => Promise.resolve(makeRunnerResult({ durationMs: 50 }))),
-      };
-      const runnerFactory = vi.fn(() => runner as never);
-      const deps = makeDeps({ runnerFactory });
-      registerAgentMethods(deps, methods);
-
+      const { runtime, calls } = fakeRuntime('done', gate);
+      registerAgentMethods(makeDeps({ runtime }), methods);
       const p1 = call('agent.run', { agentId: 'finclaw-partner', prompt: 'first' });
       const p2 = call('agent.run', { agentId: 'finclaw-partner', prompt: 'second' });
-
-      // yield so p2 reaches the lane.acquire (which should queue)
       await new Promise((r) => setTimeout(r, 10));
-      expect(runner.execute).toHaveBeenCalledTimes(1);
-
-      // now release first
-      resolveFirst(makeRunnerResult());
-      await p1;
-      await p2;
-
-      expect(runner.execute).toHaveBeenCalledTimes(2);
-      expect(runnerFactory).toHaveBeenCalledTimes(2);
+      expect(calls).toHaveLength(1);
+      release();
+      await Promise.all([p1, p2]);
+      expect(calls).toHaveLength(2);
     });
   });
 });

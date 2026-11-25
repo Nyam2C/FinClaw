@@ -69,10 +69,10 @@ export function createAppChat(gateway: AppGateway, sessionId: string): AppChat {
         break;
       }
       case 'chat.stream.end': {
-        const _endParams = p as unknown as ChatStreamEndParams;
+        const endParams = p as unknown as ChatStreamEndParams;
         const assistantMsg: ChatMessage = {
           role: 'assistant',
-          content: state.streamBuffer,
+          content: endParams.result.text, // Q9: 화면 = 저장본 = Discord (S5)
           timestamp: Date.now(),
         };
         setState({

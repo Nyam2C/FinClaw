@@ -183,7 +183,8 @@ async function main(): Promise<void> {
     });
 
   // Phase 36: 실행 레이어 (tracer + runnerFactory + adapter) — 구 561-591
-  const { tracer, runnerFactory, adapter, runtime, attachMemoryService } = buildExecution({
+  // runnerFactory/adapter 는 M5 삭제 전까지 buildExecution 이 생성만 한다 — destructure 하지 않음(미사용 lint)
+  const { tracer, runtime, attachMemoryService } = buildExecution({
     storage,
     providerAdapter,
     lanes,
@@ -259,18 +260,15 @@ async function main(): Promise<void> {
   // gateway 생성 직전에 호출 → lifecycle ⑤(scheduler.stop) 가 ⑦(gateway.stop) 보다 먼저 등록.
   const { scheduler, setDeliveryHook } = buildAutomation({
     storage,
-    runnerFactory,
-    defaultModel: DEFAULT_MODEL,
-    systemPrompt: DEFAULT_SYSTEM_PROMPT,
+    runtime,
     logger,
-    profileHealth,
     tracer,
     lifecycle,
   });
 
   const gateway = createGatewayServer(gatewayConfig, {
     defaultModel: DEFAULT_MODEL,
-    adapter,
+    runtime,
     toolRegistry, // Phase 40 A: /mcp in-process 호출용 (top-level — agentDeps.toolRegistry 와 동일 인스턴스)
     financeDeps: {
       quoteService: marketHandle?.quoteService,
@@ -291,17 +289,13 @@ async function main(): Promise<void> {
     agentDeps: {
       toolRegistry,
       agents: AGENT_METADATA,
-      runnerFactory,
+      runtime,
       agentRunLane,
       profileHealth,
-      systemPrompt: DEFAULT_SYSTEM_PROMPT,
-      defaultModel: DEFAULT_MODEL,
       logger,
       profileId: 'default',
       // Phase 26 D: agent.run 종료 후 output → memory 저장 훅 (rpc-engineer 가 호출 위치 결정).
       attachMemoryService,
-      // Phase 26 D: agent_runs 영속화 + agent.runs.* RPC 가 사용 (server.ts 에서 재패스).
-      db: storage.db,
       // Phase 30 hotfix P0-1: agent.run RPC 진입을 span 으로 감싸 traceId 강제.
       tracer,
     },

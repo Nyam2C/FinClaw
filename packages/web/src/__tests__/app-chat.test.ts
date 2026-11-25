@@ -4,6 +4,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createAppChat, type AppChat, type ChatState } from '../app-chat.js';
 import type { AppGateway, NotificationHandler } from '../app-gateway.js';
 
+const ZERO = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+
 function createMockGateway(): AppGateway & {
   fireNotification: (method: string, params: Record<string, unknown>) => void;
 } {
@@ -74,12 +76,16 @@ describe('createAppChat', () => {
     await chat.sendMessage('hi');
 
     gateway.fireNotification('chat.stream.delta', { sessionId: SESSION, delta: 'Response' });
-    gateway.fireNotification('chat.stream.end', { sessionId: SESSION, result: null });
+    gateway.fireNotification('chat.stream.end', {
+      sessionId: SESSION,
+      runId: 'r1',
+      result: { text: 'Final answer', usage: ZERO },
+    });
 
     const state = chat.getState();
     expect(state.messages).toHaveLength(2); // user + assistant
     expect(state.messages[1]?.role).toBe('assistant');
-    expect(state.messages[1]?.content).toBe('Response');
+    expect(state.messages[1]?.content).toBe('Final answer');
     expect(state.streamBuffer).toBe('');
     expect(state.status).toBe('idle');
   });
@@ -163,7 +169,10 @@ describe('createAppChat', () => {
     });
 
     // Complete first stream
-    gateway.fireNotification('chat.stream.end', { sessionId: SESSION, result: null });
+    gateway.fireNotification('chat.stream.end', {
+      sessionId: SESSION,
+      result: { text: '', usage: ZERO },
+    });
 
     // Now second message should be processed
     // Need microtask to flush

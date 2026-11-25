@@ -1,8 +1,25 @@
-import type { StreamEvent } from '@finclaw/agent';
+import type { AgentEvent } from '@finclaw/agent';
 // packages/server/src/gateway/broadcaster.test.ts
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { GatewayBroadcaster } from './broadcaster.js';
 import type { WsConnection } from './rpc/types.js';
+
+const ZERO = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+const DONE: AgentEvent = {
+  type: 'done',
+  runId: 'run-1',
+  cliSessionId: 'c',
+  text: 'final',
+  usage: ZERO,
+  durationMs: 100,
+  numTurns: 1,
+};
+const ERROR: AgentEvent = {
+  type: 'error',
+  runId: 'run-1',
+  reason: 'unknown',
+  message: 'something broke',
+};
 
 function createMockConn(id: string = 'conn-1'): WsConnection {
   const sent: string[] = [];
@@ -41,8 +58,8 @@ describe('GatewayBroadcaster', () => {
       vi.useFakeTimers();
       const conn = createMockConn();
 
-      broadcaster.send(conn, 'sess-1', { type: 'text_delta', delta: 'Hello' });
-      broadcaster.send(conn, 'sess-1', { type: 'text_delta', delta: ' World' });
+      broadcaster.send(conn, 'sess-1', 'run-1', { type: 'text_delta', text: 'Hello' });
+      broadcaster.send(conn, 'sess-1', 'run-1', { type: 'text_delta', text: ' World' });
 
       // 아직 전송되지 않음
       expect(conn.ws.send).not.toHaveBeenCalled();
@@ -53,22 +70,14 @@ describe('GatewayBroadcaster', () => {
       expect(conn.ws.send).toHaveBeenCalledTimes(1);
       const msg = JSON.parse((conn.ws.send as ReturnType<typeof vi.fn>).mock.calls[0][0]);
       expect(msg.method).toBe('chat.stream.delta');
-      expect(msg.params.delta).toBe('Hello World');
+      expect(msg.params).toEqual({ sessionId: 'sess-1', runId: 'run-1', delta: 'Hello World' });
     });
 
     it('flushes remaining delta on done event', () => {
       const conn = createMockConn();
 
-      broadcaster.send(conn, 'sess-1', { type: 'text_delta', delta: 'partial' });
-      broadcaster.send(conn, 'sess-1', {
-        type: 'done',
-        result: {
-          status: 'completed',
-          messages: [],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          durationMs: 100,
-        },
-      } as StreamEvent);
+      broadcaster.send(conn, 'sess-1', 'run-1', { type: 'text_delta', text: 'partial' });
+      broadcaster.send(conn, 'sess-1', 'run-1', DONE);
 
       // delta flush + done = 2 messages
       expect(conn.ws.send).toHaveBeenCalledTimes(2);
@@ -78,23 +87,34 @@ describe('GatewayBroadcaster', () => {
 
       const doneMsg = JSON.parse((conn.ws.send as ReturnType<typeof vi.fn>).mock.calls[1][0]);
       expect(doneMsg.method).toBe('chat.stream.end');
+      expect(doneMsg.params.runId).toBe('run-1');
+      expect(doneMsg.params.result.text).toBe('final');
+    });
+
+    it('start 이벤트는 아무것도 보내지 않는다', () => {
+      const conn = createMockConn();
+      broadcaster.send(conn, 'sess-1', 'run-1', {
+        type: 'start',
+        runId: 'run-1',
+        cliSessionId: 'c',
+        model: 'm',
+      });
+      expect(conn.ws.send).not.toHaveBeenCalled();
     });
   });
 
   describe('immediate events', () => {
     it('sends error immediately with flush', () => {
       const conn = createMockConn();
-      broadcaster.send(conn, 'sess-1', { type: 'text_delta', delta: 'buf' });
-      broadcaster.send(conn, 'sess-1', {
-        type: 'error',
-        error: new Error('something broke'),
-      } as StreamEvent);
+      broadcaster.send(conn, 'sess-1', 'run-1', { type: 'text_delta', text: 'buf' });
+      broadcaster.send(conn, 'sess-1', 'run-1', ERROR);
 
       // delta flush + error = 2
       expect(conn.ws.send).toHaveBeenCalledTimes(2);
       const errMsg = JSON.parse((conn.ws.send as ReturnType<typeof vi.fn>).mock.calls[1][0]);
       expect(errMsg.method).toBe('chat.stream.error');
       expect(errMsg.params.error).toBe('something broke');
+      expect(errMsg.params.reason).toBe('unknown');
     });
   });
 
@@ -103,10 +123,7 @@ describe('GatewayBroadcaster', () => {
       const conn = createMockConn();
       Object.defineProperty(conn.ws, 'bufferedAmount', { value: 2 * 1024 * 1024 });
 
-      broadcaster.send(conn, 'sess-1', {
-        type: 'error',
-        error: new Error('x'),
-      } as StreamEvent);
+      broadcaster.send(conn, 'sess-1', 'run-1', ERROR);
 
       expect(conn.ws.send).not.toHaveBeenCalled();
     });
@@ -115,10 +132,7 @@ describe('GatewayBroadcaster', () => {
       const conn = createMockConn();
       Object.defineProperty(conn.ws, 'readyState', { value: 3 }); // CLOSED
 
-      broadcaster.send(conn, 'sess-1', {
-        type: 'error',
-        error: new Error('x'),
-      } as StreamEvent);
+      broadcaster.send(conn, 'sess-1', 'run-1', ERROR);
 
       expect(conn.ws.send).not.toHaveBeenCalled();
     });

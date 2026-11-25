@@ -1,14 +1,15 @@
-import type { ChatExecutionPort } from '@finclaw/agent';
+import type { AgentEvent, AgentRunPort, AgentRunRequest } from '@finclaw/agent';
 import { resetEventBus } from '@finclaw/infra';
 import type { ModelRef } from '@finclaw/types';
+import { createSessionKey } from '@finclaw/types';
 // packages/server/src/gateway/rpc/methods/chat.test.ts
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { GatewayBroadcaster } from '../../broadcaster.js';
 import type { GatewayServerContext } from '../../context.js';
 import { ChatRegistry } from '../../registry.js';
 import { RpcErrors } from '../errors.js';
 import { dispatchRpc, MethodRegistry } from '../index.js';
-import type { GatewayServerConfig } from '../types.js';
+import type { GatewayServerConfig, WsConnection } from '../types.js';
 import { registerChatMethods } from './chat.js';
 
 const TEST_MODEL: ModelRef = {
@@ -16,15 +17,52 @@ const TEST_MODEL: ModelRef = {
   model: 'claude-test',
 };
 
-function makeStubAdapter(): ChatExecutionPort {
+const ZERO = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+
+function gatedRuntime() {
+  let open: () => void = () => {};
+  const opened = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  const calls: AgentRunRequest[] = [];
+  const runtime: AgentRunPort = {
+    async *run(req) {
+      calls.push(req);
+      yield { type: 'text_delta', text: '안녕' } satisfies AgentEvent;
+      await opened;
+      yield {
+        type: 'done',
+        runId: req.runId ?? '',
+        cliSessionId: 'c',
+        text: '안녕하세요',
+        usage: ZERO,
+        durationMs: 1,
+        numTurns: 1,
+      };
+    },
+    reset: vi.fn().mockResolvedValue(true),
+  };
+  return { runtime, calls, open: () => open() };
+}
+
+function mockConn(
+  id = 'conn-1',
+): WsConnection & { sent: Array<{ method: string; params: Record<string, unknown> }> } {
+  const sent: Array<{ method: string; params: Record<string, unknown> }> = [];
   return {
-    execute: async () => ({ content: '', usage: { inputTokens: 0, outputTokens: 0 } }),
-    executeForTui: async () => ({
-      messageId: 'test-msg-id',
-      content: '',
-      usage: { inputTokens: 0, outputTokens: 0 },
-    }),
-  } as unknown as ChatExecutionPort;
+    id,
+    ws: {
+      readyState: 1,
+      OPEN: 1,
+      bufferedAmount: 0,
+      send: (data: string) => sent.push(JSON.parse(data)),
+    } as unknown as WsConnection['ws'],
+    auth: { level: 'token' as const },
+    connectedAt: Date.now(),
+    lastPongAt: Date.now(),
+    subscriptions: new Set<string>(),
+    sent,
+  } as WsConnection & { sent: Array<{ method: string; params: Record<string, unknown> }> };
 }
 
 function makeServerCtx(): GatewayServerContext {
@@ -65,7 +103,7 @@ describe('chat.* RPC methods', () => {
         connections: ctx.connections,
         broadcaster: ctx.broadcaster,
         defaultModel: TEST_MODEL,
-        adapter: makeStubAdapter(),
+        runtime: gatedRuntime().runtime,
       },
       ctx.methods,
     );
@@ -137,6 +175,90 @@ describe('chat.* RPC methods', () => {
         ctx,
       );
       expect((passed as { error?: { code: number } }).error?.code).not.toBe(RpcErrors.UNAUTHORIZED);
+    });
+  });
+
+  describe('chat.send (D9)', () => {
+    async function startSession(runtime: AgentRunPort, conn?: WsConnection) {
+      ctx = makeServerCtx();
+      registerChatMethods(
+        {
+          registry: ctx.registry,
+          connections: ctx.connections,
+          broadcaster: ctx.broadcaster,
+          defaultModel: TEST_MODEL,
+          runtime,
+        },
+        ctx.methods,
+      );
+      if (conn) {
+        ctx.connections.set(conn.id, conn);
+      }
+      const session = ctx.registry.startSession({
+        agentId: 'default',
+        connectionId: conn?.id ?? 'gone',
+        model: TEST_MODEL,
+        sessionKey: createSessionKey('tui:local:default'),
+      });
+      return session.sessionId;
+    }
+
+    const send = (sessionId: string) =>
+      dispatchRpc(
+        { jsonrpc: '2.0', id: 1, method: 'chat.send', params: { sessionId, message: '안녕' } },
+        { auth: { level: 'token' }, remoteAddress: '127.0.0.1' },
+        ctx,
+      );
+
+    it('run 종료 전에 {runId} 를 즉시 돌려준다', async () => {
+      const g = gatedRuntime();
+      const sessionId = await startSession(g.runtime, mockConn());
+      const res = (await send(sessionId)) as { result: { runId: string } };
+      expect(res.result.runId).toMatch(/[0-9a-f-]{36}/);
+      expect(g.calls[0]).toMatchObject({
+        mode: 'chat',
+        input: '안녕',
+        runId: res.result.runId,
+        model: 'claude-test',
+      });
+      g.open();
+    });
+
+    it('delta(runId) → end(result.text) 로 브로드캐스트', async () => {
+      const g = gatedRuntime();
+      const conn = mockConn();
+      const sessionId = await startSession(g.runtime, conn);
+      const { result } = (await send(sessionId)) as { result: { runId: string } };
+      g.open();
+      await vi.waitFor(() => expect(conn.sent.map((m) => m.method)).toContain('chat.stream.end'));
+      expect(conn.sent[0]).toEqual({
+        jsonrpc: '2.0',
+        method: 'chat.stream.delta',
+        params: { sessionId, runId: result.runId, delta: '안녕' },
+      });
+      expect(conn.sent.at(-1)?.params).toMatchObject({
+        sessionId,
+        runId: result.runId,
+        result: { text: '안녕하세요' },
+      });
+    });
+
+    it('연결이 없어도 run 은 끝까지 돈다 (S9)', async () => {
+      const g = gatedRuntime();
+      const done = vi.fn();
+      const runtime: AgentRunPort = {
+        async *run(req) {
+          for await (const ev of g.runtime.run(req)) {
+            yield ev;
+          }
+          done();
+        },
+        reset: g.runtime.reset,
+      };
+      const sessionId = await startSession(runtime);
+      await send(sessionId);
+      g.open();
+      await vi.waitFor(() => expect(done).toHaveBeenCalled());
     });
   });
 });

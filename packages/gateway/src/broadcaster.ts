@@ -1,52 +1,62 @@
 // packages/server/src/gateway/broadcaster.ts
-import type { StreamEvent } from '@finclaw/agent';
+import type { AgentEvent } from '@finclaw/agent';
+import type {
+  ChatStreamDeltaParams,
+  ChatStreamEndParams,
+  ChatStreamErrorParams,
+} from '@finclaw/types';
 import type { WsConnection, JsonRpcNotification } from './rpc/types.js';
 
 /**
- * GatewayBroadcaster — LLM 스트리밍 → WebSocket 알림 변환
+ * GatewayBroadcaster — AgentEvent → WebSocket 알림 변환
  *
- * 스트리밍 알림 프로토콜:
- * | StreamEvent.type   | WS method                | 전송 정책   |
- * |--------------------|--------------------------|-------------|
- * | text_delta         | chat.stream.delta        | 150ms 배치  |
- * | done               | chat.stream.end          | 즉시        |
- * | error              | chat.stream.error        | 즉시        |
+ * | AgentEvent.type | WS method         | 전송 정책                      |
+ * |-----------------|-------------------|--------------------------------|
+ * | text_delta      | chat.stream.delta | 150ms 배치                     |
+ * | done            | chat.stream.end   | 즉시 (남은 delta flush 후)     |
+ * | error           | chat.stream.error | 즉시 (남은 delta flush 후)     |
+ * | start           | (전송 안 함)      |                                |
  */
 export class GatewayBroadcaster {
   private readonly deltaBuffers = new Map<
     string,
-    { text: string; timer: ReturnType<typeof setTimeout> }
+    { runId: string; text: string; timer: ReturnType<typeof setTimeout> }
   >();
   private static readonly BATCH_INTERVAL_MS = 150;
 
   /** slow consumer 임계값 (bytes) */
   private static readonly MAX_BUFFER = 1024 * 1024;
 
-  /** StreamEvent를 연결에 전송 */
-  send(conn: WsConnection, sessionId: string, event: StreamEvent): void {
+  /** AgentEvent 를 연결에 전송 (모든 chat.stream.* 에 runId). */
+  send(conn: WsConnection, sessionId: string, runId: string, event: AgentEvent): void {
     switch (event.type) {
       case 'text_delta':
-        this.bufferDelta(conn, sessionId, event.delta);
+        this.bufferDelta(conn, sessionId, runId, event.text);
         break;
       case 'done':
         this.flushDelta(conn.id, sessionId, conn);
         this.sendImmediate(conn, 'chat.stream.end', {
           sessionId,
-          result: event.result,
-        });
+          runId,
+          result: { text: event.text, usage: event.usage, costUsd: event.costUsd },
+        } satisfies ChatStreamEndParams);
         break;
       case 'error':
         this.flushDelta(conn.id, sessionId, conn);
         this.sendImmediate(conn, 'chat.stream.error', {
           sessionId,
-          error: event.error.message,
-        });
+          runId,
+          error: event.message,
+          reason: event.reason,
+        } satisfies ChatStreamErrorParams);
         break;
+      default:
+        break; // start·tool_use·tool_result — M6 전까지 미전송
     }
   }
 
   /** text_delta 150ms 배치 */
-  private bufferDelta(conn: WsConnection, sessionId: string, delta: string): void {
+  private bufferDelta(conn: WsConnection, sessionId: string, runId: string, delta: string): void {
     const key = `${conn.id}:${sessionId}`;
     const existing = this.deltaBuffers.get(key);
     if (existing) {
@@ -55,6 +65,7 @@ export class GatewayBroadcaster {
     }
 
     this.deltaBuffers.set(key, {
+      runId,
       text: delta,
       timer: setTimeout(
         () => this.flushDelta(conn.id, sessionId, conn),
@@ -72,7 +83,11 @@ export class GatewayBroadcaster {
     clearTimeout(buf.timer);
     this.deltaBuffers.delete(key);
     if (buf.text.length > 0) {
-      this.sendImmediate(conn, 'chat.stream.delta', { sessionId, delta: buf.text });
+      this.sendImmediate(conn, 'chat.stream.delta', {
+        sessionId,
+        runId: buf.runId,
+        delta: buf.text,
+      } satisfies ChatStreamDeltaParams);
     }
   }
 

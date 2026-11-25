@@ -4,18 +4,11 @@
 
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
-import type { ProfileHealthMonitor, RunnerFactory } from '@finclaw/agent';
-import { extractAssistantText } from '@finclaw/agent';
+import type { AgentRunPort } from '@finclaw/agent';
 import type { ConcurrencyLane, FinClawLogger } from '@finclaw/infra';
 import { nextRunAt as computeNextRunAt, parseCron } from '@finclaw/infra';
-import {
-  addAgentRun,
-  findDueSchedules,
-  getSchedule,
-  markScheduleRun,
-  updateSchedule,
-} from '@finclaw/storage';
-import type { ModelRef, Schedule, SchedulerPort } from '@finclaw/types';
+import { findDueSchedules, getSchedule, markScheduleRun, updateSchedule } from '@finclaw/storage';
+import type { Schedule, SchedulerPort } from '@finclaw/types';
 import { createAgentId, createSessionKey } from '@finclaw/types';
 import type { FinclawTracer } from '../observability/tracer.js';
 import { resolveCronStaggerMs } from './stagger.js';
@@ -35,17 +28,14 @@ export interface SchedulerCallbacks {
 
 export interface SchedulerDeps extends SchedulerCallbacks {
   readonly db: DatabaseSync;
-  readonly runnerFactory: RunnerFactory;
+  /** Phase 46: cron = runtime oneShot (비영속·recall 없음 — Q4). agent_runs 1행은 runtime 이 기록. */
+  readonly runtime: AgentRunPort;
   /** schedule 동시 실행 1개로 제한하는 lane. main.ts 에서 maxConcurrent:1 로 주입. */
   readonly lane: ConcurrencyLane;
-  readonly defaultModel: ModelRef;
-  readonly systemPrompt: string;
   readonly logger: FinClawLogger;
-  readonly profileHealth: ProfileHealthMonitor;
-  readonly profileId?: string;
   /** 연속 실패 임계 (3 = AUTOMATION_MAX_CONSECUTIVE_FAILURES). 기본 3. */
   readonly maxConsecutiveFailures?: number;
-  /** 기본 timeout (ms). schedule.timeoutMs 가 우선. 기본 60_000. */
+  /** schedule.timeoutMs 가 없을 때의 상한(ms). 미지정 시 runtime 타임아웃만 [TQ4]. */
   readonly defaultTimeoutMs?: number;
   /**
    * Phase 30 hotfix P0-1: schedule 실행을 새 span 으로 감싸 active trace context 강제.
@@ -193,77 +183,39 @@ export class SchedulerService implements SchedulerPort {
     let output = '';
     let error: string | undefined;
     // Phase 30 hotfix P0-1: schedule 실행을 새 trace 로 감싸 trace_id 가 agent_runs 에 비어있지 않게.
-    // tracer 미주입 시 traceCtx 는 빈 객체 — addAgentRun 의 traceId 부착도 자연 skip.
     const tracer = this.deps.tracer;
-    const withSchedSpan = <T>(
-      fn: (ctx?: { traceId: string; parentSpanId?: string }) => Promise<T>,
-    ): Promise<T> => {
-      if (!tracer) {
-        return fn(undefined);
-      }
-      return tracer.withSpan(
-        'scheduler.run',
-        { scheduleId: s.id, agentId: s.agentId as string, manual: opts.manual },
-        async (ctx) => fn({ traceId: ctx.traceId, parentSpanId: ctx.spanId }),
-      );
-    };
-    return withSchedSpan(async (traceCtx) => {
+    const withSchedSpan = <T>(fn: () => Promise<T>): Promise<T> =>
+      tracer
+        ? tracer.withSpan(
+            'scheduler.run',
+            { scheduleId: s.id, agentId: s.agentId as string, manual: opts.manual },
+            async () => fn(),
+          )
+        : fn();
+    return withSchedSpan(async () => {
       try {
         const sessionKey = createSessionKey(`schedule-${s.id}-${randomUUID()}`);
-        const agentIdBrand = createAgentId(s.agentId as string);
-        const abortController = new AbortController();
-        const timeoutMs = s.timeoutMs ?? this.deps.defaultTimeoutMs ?? 60_000;
-        const timer = setTimeout(() => abortController.abort(), timeoutMs);
-
-        try {
-          const result = await this.deps.runnerFactory().execute({
-            agentId: agentIdBrand,
-            sessionKey,
-            model: this.deps.defaultModel,
-            systemPrompt: this.deps.systemPrompt,
-            messages: [{ role: 'user', content: s.prompt }],
-            abortSignal: abortController.signal,
-          });
-          output = extractAssistantText(result.messages);
-          const durationMs = Date.now() - startedAt;
-          const inserted = addAgentRun(this.deps.db, {
-            agentId: agentIdBrand,
-            prompt: s.prompt,
-            output,
-            tokensInput: result.usage.inputTokens,
-            tokensOutput: result.usage.outputTokens,
-            durationMs,
-            modelUsed: this.deps.defaultModel.model,
-            // Phase 30 hotfix P0-1: schedule 실행이 자체 trace 의 root, agent_runs 가 그 아래.
-            traceId: traceCtx?.traceId,
-            parentSpanId: traceCtx?.parentSpanId,
-          });
-          runId = inserted.id;
+        const timeoutMs = s.timeoutMs ?? this.deps.defaultTimeoutMs;
+        for await (const ev of this.deps.runtime.run({
+          sessionKey,
+          agentId: createAgentId(s.agentId as string),
+          input: s.prompt,
+          mode: 'oneShot',
+          signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : new AbortController().signal,
+        })) {
+          if (ev.type === 'done') {
+            runId = ev.runId;
+            output = ev.text;
+          } else if (ev.type === 'error') {
+            runId = ev.runId;
+            error = `${ev.reason}: ${ev.message}`;
+          }
+        }
+        // D1: runtime 이 종료 이벤트 yield 전에 agent_runs 1행을 남김 → runId 로 schedule 연결
+        if (runId) {
           this.deps.db
             .prepare('UPDATE agent_runs SET schedule_id = ? WHERE id = ?')
             .run(s.id, runId);
-          this.deps.profileHealth.recordResult(this.deps.profileId ?? 'default', true);
-        } catch (runErr) {
-          error = (runErr as Error).message;
-          const durationMs = Date.now() - startedAt;
-          const inserted = addAgentRun(this.deps.db, {
-            agentId: agentIdBrand,
-            prompt: s.prompt,
-            output: '',
-            durationMs,
-            modelUsed: this.deps.defaultModel.model,
-            error,
-            // Phase 30 hotfix P0-1: traceId / parentSpanId 부착 (성공/실패 동일).
-            traceId: traceCtx?.traceId,
-            parentSpanId: traceCtx?.parentSpanId,
-          });
-          runId = inserted.id;
-          this.deps.db
-            .prepare('UPDATE agent_runs SET schedule_id = ? WHERE id = ?')
-            .run(s.id, runId);
-          this.deps.profileHealth.recordResult(this.deps.profileId ?? 'default', false);
-        } finally {
-          clearTimeout(timer);
         }
 
         // schedule.last_run + next_run_at 갱신.

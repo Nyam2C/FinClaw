@@ -208,11 +208,8 @@ export type DeliveryHook = (args: {
 
 export interface BuildAutomationDeps {
   readonly storage: Storage;
-  readonly runnerFactory: RunnerFactory;
-  readonly defaultModel: ModelRef;
-  readonly systemPrompt: string;
+  readonly runtime: AgentRunPort;
   readonly logger: FinClawLogger;
-  readonly profileHealth: ProfileHealthMonitor;
   readonly tracer: Tracer;
   readonly lifecycle: { register(fn: () => void | Promise<void>): void };
 }
@@ -225,16 +222,7 @@ export interface AutomationBundle {
 }
 
 export function buildAutomation(deps: BuildAutomationDeps): AutomationBundle {
-  const {
-    storage,
-    runnerFactory,
-    defaultModel,
-    systemPrompt,
-    logger,
-    profileHealth,
-    tracer,
-    lifecycle,
-  } = deps;
+  const { storage, runtime, logger, tracer, lifecycle } = deps;
 
   // Phase 28: schedule 동시 실행 1개로 제한하는 lane.
   // agent.run 큐잉 lane 과 별개로 schedule 전용 (대기열 5분 보유).
@@ -254,13 +242,9 @@ export function buildAutomation(deps: BuildAutomationDeps): AutomationBundle {
   const maxConsecutiveFailures = maxFailRaw ? Number(maxFailRaw) : 3;
   const scheduler = new SchedulerService({
     db: storage.db,
-    runnerFactory,
+    runtime,
     lane: scheduleLane,
-    defaultModel,
-    systemPrompt,
     logger,
-    profileHealth,
-    profileId: 'default',
     maxConsecutiveFailures,
     // Phase 30 hotfix P0-1: schedule 실행을 새 trace 로 감싸 agent_runs.trace_id 부착.
     tracer,

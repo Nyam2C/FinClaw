@@ -1,3 +1,4 @@
+import type { AgentRunPort } from '@finclaw/agent';
 import {
   createGatewayServer,
   type GatewayServer,
@@ -6,7 +7,6 @@ import {
 import { resetEventBus } from '@finclaw/infra';
 import type { ModelRef } from '@finclaw/types';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { RunnerExecutionAdapter } from './auto-reply/execution-adapter.js';
 import { MissingEnvError, requireEnv } from './main.js';
 
 describe('requireEnv', () => {
@@ -38,16 +38,12 @@ const TEST_MODEL: ModelRef = {
   model: 'claude-test',
 };
 
-function makeStubAdapter(): RunnerExecutionAdapter {
-  return {
-    execute: async () => ({ content: '', usage: { inputTokens: 0, outputTokens: 0 } }),
-    executeForTui: async () => ({
-      messageId: 'stub',
-      content: '',
-      usage: { inputTokens: 0, outputTokens: 0 },
-    }),
-  } as unknown as RunnerExecutionAdapter;
-}
+const stubRuntime: AgentRunPort = {
+  async *run() {
+    yield* [];
+  },
+  reset: async () => false,
+};
 
 function makeTestConfig(): GatewayServerConfig {
   return {
@@ -83,7 +79,7 @@ describe('main boot wiring (Phase 29 E)', () => {
   it('gateway ctx 에 rateLimiter / accessLogger / authRateLimiter 가 주입된다', () => {
     server = createGatewayServer(makeTestConfig(), {
       defaultModel: TEST_MODEL,
-      adapter: makeStubAdapter(),
+      runtime: stubRuntime,
     });
     expect(server.ctx.rateLimiter).toBeDefined();
     expect(server.ctx.accessLogger).toBeDefined();
