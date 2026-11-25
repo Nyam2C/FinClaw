@@ -66,7 +66,6 @@ describe('GatewayBroadcaster', () => {
           status: 'completed',
           messages: [],
           usage: { inputTokens: 0, outputTokens: 0 },
-          turns: 1,
           durationMs: 100,
         },
       } as StreamEvent);
@@ -83,30 +82,6 @@ describe('GatewayBroadcaster', () => {
   });
 
   describe('immediate events', () => {
-    it('sends tool_use_start immediately', () => {
-      const conn = createMockConn();
-      broadcaster.send(conn, 'sess-1', {
-        type: 'tool_use_start',
-        toolCall: { id: 'tc-1', name: 'search', input: {} },
-      } as StreamEvent);
-
-      expect(conn.ws.send).toHaveBeenCalledTimes(1);
-      const msg = JSON.parse((conn.ws.send as ReturnType<typeof vi.fn>).mock.calls[0][0]);
-      expect(msg.method).toBe('chat.stream.tool_start');
-    });
-
-    it('sends tool_use_end immediately', () => {
-      const conn = createMockConn();
-      broadcaster.send(conn, 'sess-1', {
-        type: 'tool_use_end',
-        result: { toolUseId: 'tc-1', content: 'result', isError: false },
-      } as StreamEvent);
-
-      expect(conn.ws.send).toHaveBeenCalledTimes(1);
-      const msg = JSON.parse((conn.ws.send as ReturnType<typeof vi.fn>).mock.calls[0][0]);
-      expect(msg.method).toBe('chat.stream.tool_end');
-    });
-
     it('sends error immediately with flush', () => {
       const conn = createMockConn();
       broadcaster.send(conn, 'sess-1', { type: 'text_delta', delta: 'buf' });
@@ -123,35 +98,14 @@ describe('GatewayBroadcaster', () => {
     });
   });
 
-  describe('ignored events', () => {
-    it('ignores state_change events', () => {
-      const conn = createMockConn();
-      broadcaster.send(conn, 'sess-1', {
-        type: 'state_change',
-        from: 'idle',
-        to: 'streaming',
-      } as StreamEvent);
-      expect(conn.ws.send).not.toHaveBeenCalled();
-    });
-
-    it('ignores usage_update events', () => {
-      const conn = createMockConn();
-      broadcaster.send(conn, 'sess-1', {
-        type: 'usage_update',
-        usage: { inputTokens: 10, outputTokens: 5 },
-      } as StreamEvent);
-      expect(conn.ws.send).not.toHaveBeenCalled();
-    });
-  });
-
   describe('slow consumer protection', () => {
     it('skips send when bufferedAmount > 1MB', () => {
       const conn = createMockConn();
       Object.defineProperty(conn.ws, 'bufferedAmount', { value: 2 * 1024 * 1024 });
 
       broadcaster.send(conn, 'sess-1', {
-        type: 'tool_use_start',
-        toolCall: { id: 'tc-1', name: 'x', input: {} },
+        type: 'error',
+        error: new Error('x'),
       } as StreamEvent);
 
       expect(conn.ws.send).not.toHaveBeenCalled();
@@ -162,8 +116,8 @@ describe('GatewayBroadcaster', () => {
       Object.defineProperty(conn.ws, 'readyState', { value: 3 }); // CLOSED
 
       broadcaster.send(conn, 'sess-1', {
-        type: 'tool_use_start',
-        toolCall: { id: 'tc-1', name: 'x', input: {} },
+        type: 'error',
+        error: new Error('x'),
       } as StreamEvent);
 
       expect(conn.ws.send).not.toHaveBeenCalled();

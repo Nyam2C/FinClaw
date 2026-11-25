@@ -12,12 +12,9 @@ export interface NormalizedUsage {
   readonly estimatedCostUsd: number;
 }
 
-/** 스트리밍 청크 — discriminated union (6 variant) */
+/** 스트리밍 청크 — CLI 어댑터는 text_delta(전체 1회) → usage → done 만 낸다 */
 export type StreamChunk =
   | { readonly type: 'text_delta'; readonly text: string }
-  | { readonly type: 'tool_use_start'; readonly id: string; readonly name: string }
-  | { readonly type: 'tool_input_delta'; readonly delta: string }
-  | { readonly type: 'tool_use_end' }
   | { readonly type: 'usage'; readonly usage: Partial<NormalizedUsage> }
   | { readonly type: 'done' };
 

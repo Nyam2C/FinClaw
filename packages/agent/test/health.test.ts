@@ -85,17 +85,6 @@ describe('ProfileHealthMonitor', () => {
     expect(monitor.getHealth('p1')).toBe('healthy');
   });
 
-  it('getSummary: 모든 추적 프로필의 상태 반환', () => {
-    monitor.recordResult('p1', true);
-    monitor.recordResult('p2', false);
-    monitor.recordResult('p2', false);
-    monitor.recordResult('p2', false);
-
-    const summary = monitor.getSummary();
-    expect(summary.get('p1')).toBe('healthy');
-    expect(summary.get('p2')).toBe('disabled');
-  });
-
   it('커스텀 thresholds 적용', () => {
     const custom = new ProfileHealthMonitor({ maxConsecutiveFailures: 5 });
     for (let i = 0; i < 4; i++) {

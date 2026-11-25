@@ -312,7 +312,6 @@ function makeAgentRunResult(output: string) {
       { role: 'assistant' as const, content: output },
     ],
     usage: { inputTokens: 30, outputTokens: 60 },
-    turns: 1,
     durationMs: 400,
   };
 }

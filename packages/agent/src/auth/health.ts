@@ -33,8 +33,6 @@ export interface ModelStats {
   successCount: number;
   errorCount: number;
   totalCostUsd: number;
-  /** fallback 으로 선택된 호출 수 (체인의 첫 번째 모델이 아닌 경우) */
-  fallbacks: number;
   /** 토큰 누적 (input/output) */
   inputTokens: number;
   outputTokens: number;
@@ -46,7 +44,6 @@ export interface RecordOptions {
   readonly modelId?: string;
   readonly tokens?: { readonly input: number; readonly output: number };
   readonly costUsd?: number;
-  readonly isFallback?: boolean;
 }
 
 /** 프로필별 상태 */
@@ -104,9 +101,6 @@ export class ProfileHealthMonitor {
         stats.errorCount += 1;
       }
       stats.totalCostUsd += opts.costUsd ?? 0;
-      if (opts.isFallback) {
-        stats.fallbacks += 1;
-      }
       stats.inputTokens += opts.tokens?.input ?? 0;
       stats.outputTokens += opts.tokens?.output ?? 0;
       state.byModel.set(opts.modelId, stats);
@@ -170,15 +164,6 @@ export class ProfileHealthMonitor {
     return this.computeHealth(state);
   }
 
-  /** 건강 상태 요약 */
-  getSummary(): Map<string, ProfileHealthStatus> {
-    const summary = new Map<string, ProfileHealthStatus>();
-    for (const [id] of this.states) {
-      summary.set(id, this.getHealth(id));
-    }
-    return summary;
-  }
-
   private computeHealth(state: ProfileState): ProfileHealthStatus {
     // 연속 실패 → disabled (최우선)
     if (state.consecutiveFailures >= this.thresholds.maxConsecutiveFailures) {
@@ -224,7 +209,6 @@ function createEmptyModelStats(): ModelStats {
     successCount: 0,
     errorCount: 0,
     totalCostUsd: 0,
-    fallbacks: 0,
     inputTokens: 0,
     outputTokens: 0,
   };

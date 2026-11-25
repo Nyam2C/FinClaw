@@ -32,7 +32,7 @@ export function createStatusCommand(deps: StatusCommandDeps): CommandExecutor {
     const profileId = deps.profileId ?? 'default';
     const healthLabel = deps.profileHealth?.getHealth(profileId) ?? 'unknown';
 
-    // Phase 24 E: 최근 1시간 모델 분포 + fallback 카운트.
+    // Phase 24 E: 최근 1시간 모델 분포.
     const breakdown = deps.profileHealth?.getModelBreakdown(profileId, 60 * 60 * 1000);
     const breakdownLines = formatBreakdown(breakdown);
 
@@ -60,18 +60,11 @@ function formatBreakdown(breakdown: Map<string, ModelStats> | undefined): string
     return [];
   }
   const lines: string[] = ['', '**최근 1시간 모델 분포**'];
-  let totalFallbacks = 0;
   // model id 알파벳 순.
   const sorted = [...breakdown.entries()].toSorted(([a], [b]) => a.localeCompare(b));
   for (const [modelId, stats] of sorted) {
     const bar = '▓'.repeat(Math.min(10, Math.max(1, Math.round(stats.calls / 5))));
-    lines.push(
-      `- ${modelId.padEnd(28)} ${bar.padEnd(10)} ${stats.calls}회 ($${stats.totalCostUsd.toFixed(4)})`,
-    );
-    totalFallbacks += stats.fallbacks;
-  }
-  if (totalFallbacks > 0) {
-    lines.push(`- Fallback 발동: ${totalFallbacks}회`);
+    lines.push(`- ${modelId.padEnd(28)} ${bar.padEnd(10)} ${stats.calls}회`);
   }
   return lines;
 }

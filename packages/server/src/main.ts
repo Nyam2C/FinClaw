@@ -1,13 +1,7 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 // packages/server/src/main.ts
-import {
-  BUILT_IN_MODELS,
-  buildModelAliasIndex,
-  DEFAULT_FALLBACK_CHAIN,
-  InMemoryModelCatalog,
-  ProfileHealthMonitor,
-} from '@finclaw/agent';
+import { BUILT_IN_MODELS, InMemoryModelCatalog, ProfileHealthMonitor } from '@finclaw/agent';
 import { DiscordAccountSchema, DiscordAdapter } from '@finclaw/channel-discord';
 import { ConfigValidationError, loadConfig, validateConfigStrict } from '@finclaw/config';
 import { createGatewayServer, type GatewayServerConfig } from '@finclaw/gateway';
@@ -161,10 +155,9 @@ async function main(): Promise<void> {
 
   const scheduleRpc = buildScheduleRpc(storage);
 
-  // 4a. 모델 카탈로그 + 별칭 인덱스 + 프로필 건강 모니터.
+  // 4a. 모델 카탈로그(analyze_market 비용 기록용) + 프로필 건강 모니터.
   // (스킬 등록보다 먼저 생성 — Phase 24 E 의 analyze_market 등록 시점에 주입 필요.)
   const modelCatalog = new InMemoryModelCatalog(BUILT_IN_MODELS);
-  const modelAliasIndex = buildModelAliasIndex(modelCatalog);
   const profileHealth = new ProfileHealthMonitor();
 
   // Phase 36: skills/tools/KIS/mcp/plugins 등록 (구 363-559 흡수)
@@ -186,9 +179,6 @@ async function main(): Promise<void> {
     storage,
     providerAdapter,
     lanes,
-    toolRegistry,
-    modelCatalog,
-    modelAliasIndex,
     profileHealth,
     logger,
     defaultModel: DEFAULT_MODEL,
@@ -257,14 +247,11 @@ async function main(): Promise<void> {
   // gateway 생성 직전에 호출 → lifecycle ⑤(scheduler.stop) 가 ⑦(gateway.stop) 보다 먼저 등록.
   const { scheduler, setDeliveryHook } = buildAutomation({
     storage,
-    toolRegistry,
     runnerFactory,
     defaultModel: DEFAULT_MODEL,
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     logger,
     profileHealth,
-    modelCatalog,
-    modelAliasIndex,
     tracer,
     embeddingProvider,
     lifecycle,
@@ -301,9 +288,6 @@ async function main(): Promise<void> {
       defaultModel: DEFAULT_MODEL,
       logger,
       profileId: 'default',
-      modelCatalog,
-      modelAliasIndex,
-      fallbackChain: DEFAULT_FALLBACK_CHAIN,
       // Phase 26 D: agent.run 종료 후 output → memory 저장 훅 (rpc-engineer 가 호출 위치 결정).
       attachMemoryService,
       // Phase 26 D: agent_runs 영속화 + agent.runs.* RPC 가 사용 (server.ts 에서 재패스).

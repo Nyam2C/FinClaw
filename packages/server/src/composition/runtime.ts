@@ -2,15 +2,12 @@
 // Phase 36: main.ts 561-591 / 593-653 / 698-757 에서 추출 (순수 이동).
 
 import {
-  approxTokenCount,
-  buildModelAliasIndex,
-  DEFAULT_FALLBACK_CHAIN,
-  InMemoryModelCatalog,
   InMemoryToolRegistry,
   NEWS_BRIEF_SCHEDULE_ID,
   ProfileHealthMonitor,
   Runner,
   type ProviderAdapter,
+  type RunnerFactory,
   type RunnerTracerAdapter,
 } from '@finclaw/agent';
 import { ConcurrencyLane, ConcurrencyLaneManager, type FinClawLogger } from '@finclaw/infra';
@@ -25,7 +22,7 @@ import type { ChannelPlugin, ModelRef, Schedule } from '@finclaw/types';
 import { DefaultAttachMemoryService } from '../auto-reply/agent-memory-hook.js';
 import { registerBuiltInCommands } from '../auto-reply/commands/built-in.js';
 import { InMemoryCommandRegistry } from '../auto-reply/commands/registry.js';
-import { RunnerExecutionAdapter, type RunnerFactory } from '../auto-reply/execution-adapter.js';
+import { RunnerExecutionAdapter } from '../auto-reply/execution-adapter.js';
 import { StubFinanceContextProvider } from '../auto-reply/pipeline-context.js';
 import { AutoReplyPipeline } from '../auto-reply/pipeline.js';
 import { SchedulerService } from '../automation/scheduler.js';
@@ -42,9 +39,6 @@ export interface BuildExecutionDeps {
   readonly storage: Storage;
   readonly providerAdapter: ProviderAdapter;
   readonly lanes: ConcurrencyLaneManager;
-  readonly toolRegistry: InMemoryToolRegistry;
-  readonly modelCatalog: InMemoryModelCatalog;
-  readonly modelAliasIndex: ReturnType<typeof buildModelAliasIndex>;
   readonly profileHealth: ProfileHealthMonitor;
   readonly logger: FinClawLogger;
   readonly defaultModel: ModelRef;
@@ -58,45 +52,30 @@ export interface ExecutionBundle {
 }
 
 export function buildExecution(deps: BuildExecutionDeps): ExecutionBundle {
-  const {
-    storage,
-    providerAdapter,
-    lanes,
-    toolRegistry,
-    modelCatalog,
-    modelAliasIndex,
-    profileHealth,
-    logger,
-    defaultModel,
-    systemPrompt,
-  } = deps;
+  const { storage, providerAdapter, lanes, profileHealth, logger, defaultModel, systemPrompt } =
+    deps;
 
   // Phase 30 A6: OTel tracer — span 을 SQLite spans 테이블에 SQL exporter 로 기록.
-  // Phase 30 hotfix P0-2: Runner 에 tracer adapter 주입 — turn / provider.stream / tool.execute span 활성화.
+  // Phase 30 hotfix P0-2: Runner 에 tracer adapter 주입 — agent.turn / provider.stream span 활성화.
   const tracer = createTracer({ db: storage.db });
   const tracerAdapter: RunnerTracerAdapter = {
     withSpan: (name, attrs, fn) => tracer.withSpan(name, attrs, async () => fn()),
   };
 
-  const runnerFactory: RunnerFactory = (dispatcher) =>
+  const runnerFactory: RunnerFactory = () =>
     new Runner({
       provider: providerAdapter,
-      toolExecutor: dispatcher,
       laneManager: lanes,
       tracer: tracerAdapter,
     });
 
-  // 4b. 실행 어댑터 (storage + toolRegistry 주입 — per-request dispatcher를 빌드)
+  // 4b. 실행 어댑터 (storage 주입 — 대화 이력 load/save)
   const adapter = new RunnerExecutionAdapter({
     runnerFactory,
     defaultModel,
     systemPrompt,
     storage,
-    toolRegistry,
     logger,
-    modelCatalog,
-    modelAliasIndex,
-    fallbackChain: DEFAULT_FALLBACK_CHAIN,
     profileHealth,
     profileId: 'default',
   });
@@ -177,8 +156,6 @@ export function buildPipeline(deps: BuildPipelineDeps): PipelineBundle {
     },
   );
 
-  // Phase 31 C / Phase 41: SDK summarizer 영구 제거 — compaction off (tokenCounter 만 유지,
-  // maybeCompactMessages 가 summarizer 미주입 시 원본 messages 그대로 반환 = graceful degrade).
   const pipeline = new AutoReplyPipeline(
     {
       enableAck: true,
@@ -196,7 +173,6 @@ export function buildPipeline(deps: BuildPipelineDeps): PipelineBundle {
       memoryCaptureService,
       memoryRetrievalService,
       tracer,
-      tokenCounter: approxTokenCount,
     },
   );
 
@@ -214,14 +190,11 @@ export type DeliveryHook = (args: {
 
 export interface BuildAutomationDeps {
   readonly storage: Storage;
-  readonly toolRegistry: InMemoryToolRegistry;
   readonly runnerFactory: RunnerFactory;
   readonly defaultModel: ModelRef;
   readonly systemPrompt: string;
   readonly logger: FinClawLogger;
   readonly profileHealth: ProfileHealthMonitor;
-  readonly modelCatalog: InMemoryModelCatalog;
-  readonly modelAliasIndex: ReturnType<typeof buildModelAliasIndex>;
   readonly tracer: Tracer;
   readonly embeddingProvider: EmbeddingProvider | undefined;
   readonly lifecycle: { register(fn: () => void | Promise<void>): void };
@@ -237,14 +210,11 @@ export interface AutomationBundle {
 export function buildAutomation(deps: BuildAutomationDeps): AutomationBundle {
   const {
     storage,
-    toolRegistry,
     runnerFactory,
     defaultModel,
     systemPrompt,
     logger,
     profileHealth,
-    modelCatalog,
-    modelAliasIndex,
     tracer,
     embeddingProvider,
     lifecycle,
@@ -275,7 +245,6 @@ export function buildAutomation(deps: BuildAutomationDeps): AutomationBundle {
   });
   const scheduler = new SchedulerService({
     db: storage.db,
-    toolRegistry,
     runnerFactory,
     lane: scheduleLane,
     defaultModel,
@@ -283,9 +252,6 @@ export function buildAutomation(deps: BuildAutomationDeps): AutomationBundle {
     logger,
     profileHealth,
     profileId: 'default',
-    modelCatalog,
-    modelAliasIndex,
-    fallbackChain: DEFAULT_FALLBACK_CHAIN,
     maxConsecutiveFailures,
     // Phase 30 hotfix P0-1: schedule 실행을 새 trace 로 감싸 agent_runs.trace_id 부착.
     tracer,

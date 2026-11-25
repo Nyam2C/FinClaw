@@ -6,7 +6,6 @@ export interface SpawnRequest {
   argv: [string, ...string[]]; // [command, ...args]
   cwd?: string;
   env?: NodeJS.ProcessEnv;
-  input?: string; // stdin
   timeoutMs: number; // overall
   noOutputTimeoutMs: number; // watchdog
   signal?: AbortSignal;
@@ -66,7 +65,7 @@ export async function spawnWithWatchdog(req: SpawnRequest): Promise<SpawnResult>
       proc = nodeSpawn(command, args, {
         cwd: req.cwd,
         env: req.env,
-        stdio: req.input ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'],
+        stdio: ['ignore', 'pipe', 'pipe'],
       });
     } catch (err) {
       resolve({
@@ -80,11 +79,6 @@ export async function spawnWithWatchdog(req: SpawnRequest): Promise<SpawnResult>
       return;
     }
     child = proc;
-
-    if (req.input && proc.stdin) {
-      proc.stdin.write(req.input);
-      proc.stdin.end();
-    }
 
     proc.stdout?.on('data', (d) => {
       stdout += d.toString();

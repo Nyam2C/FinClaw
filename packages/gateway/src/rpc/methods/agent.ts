@@ -1,32 +1,11 @@
 // packages/server/src/gateway/rpc/methods/agent.ts
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
-import type {
-  AliasIndex,
-  ModelCatalog,
-  ProfileHealthMonitor,
-  RunnerFactory,
-  ToolRegistry,
-} from '@finclaw/agent';
-import {
-  buildDispatcher,
-  calculateEstimatedCost,
-  collectToolCalls,
-  DEFAULT_FALLBACK_TRIGGERS,
-  extractAssistantText,
-  resolveModel,
-  runWithModelFallback,
-} from '@finclaw/agent';
+import type { ProfileHealthMonitor, RunnerFactory, ToolRegistry } from '@finclaw/agent';
+import { extractAssistantText } from '@finclaw/agent';
 import type { ConcurrencyLane, FinClawLogger } from '@finclaw/infra';
 import { addAgentRun, type AddAgentRunInput } from '@finclaw/storage';
-import type {
-  AgentRunParams,
-  AttachMemoryPort,
-  ConversationMessage,
-  ModelRef,
-  SessionKey,
-  TracerPort,
-} from '@finclaw/types';
+import type { AttachMemoryPort, ModelRef, SessionKey, TracerPort } from '@finclaw/types';
 import { createAgentId, createSessionKey } from '@finclaw/types';
 import { z } from 'zod/v4';
 import type { MethodRegistry } from '../index.js';
@@ -45,10 +24,6 @@ export interface AgentRpcDeps {
   readonly defaultModel: ModelRef;
   readonly logger: FinClawLogger;
   readonly profileId?: string;
-  /** runWithModelFallback 가 사용 (catalog + aliasIndex + chain) */
-  readonly modelCatalog?: ModelCatalog;
-  readonly modelAliasIndex?: AliasIndex;
-  readonly fallbackChain?: readonly string[];
   /**
    * Phase 26 D: agent.run 종료 후 output 을 memory 로 저장하는 훅.
    * 미주입 시 저장 단계 자체 생략. 호출 위치는 rpc-engineer 가 결정.
@@ -237,92 +212,36 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
         try {
           const agentIdBrand = createAgentId(params.agentId);
 
-          const { dispatcher } = buildDispatcher(deps.toolRegistry, {
-            sessionId: sessionKey as string,
-            userId: 'agent-run',
-            channelId: 'agent-run',
-          });
-
-          const runner = deps.runnerFactory(dispatcher);
-          const userMessage: ConversationMessage = { role: 'user', content: params.prompt };
           const abortController = new AbortController();
           const timeoutMs = params.timeoutMs ?? 60_000;
           const timer = setTimeout(() => abortController.abort(), timeoutMs);
 
           try {
-            const buildRunParams = (model: ModelRef): AgentRunParams => ({
+            const result = await deps.runnerFactory().execute({
               agentId: agentIdBrand,
               sessionKey,
-              model,
+              model: deps.defaultModel,
               systemPrompt: deps.systemPrompt,
-              messages: [userMessage],
+              messages: [{ role: 'user', content: params.prompt }],
               abortSignal: abortController.signal,
             });
 
-            const catalog = deps.modelCatalog;
-            const aliasIndex = deps.modelAliasIndex;
-            let result;
-            let usedModelId: string | undefined;
-            let usedPricing: import('@finclaw/agent').ModelPricing | undefined;
-            let usedIsFallback = false;
-            if (catalog && aliasIndex && (deps.fallbackChain?.length ?? 0) > 0) {
-              const chain = [deps.defaultModel.model, ...(deps.fallbackChain ?? [])];
-              const fallback = await runWithModelFallback(
-                {
-                  models: chain.map((raw) => ({ raw })),
-                  maxRetriesPerModel: 1,
-                  retryBaseDelayMs: 500,
-                  fallbackOn: DEFAULT_FALLBACK_TRIGGERS,
-                  abortSignal: abortController.signal,
-                },
-                async (resolved) => {
-                  const model: ModelRef = {
-                    ...deps.defaultModel,
-                    provider: resolved.provider,
-                    model: resolved.modelId,
-                  };
-                  return runner.execute(buildRunParams(model));
-                },
-                (ref) => resolveModel(ref, catalog, aliasIndex),
-              );
-              result = fallback.result;
-              usedModelId = fallback.modelUsed.modelId;
-              usedPricing = fallback.modelUsed.entry.pricing;
-              usedIsFallback = fallback.modelUsed.modelId !== chain[0];
-            } else {
-              result = await runner.execute(buildRunParams(deps.defaultModel));
-            }
-
             const output = extractAssistantText(result.messages);
-            const toolCallRecords = collectToolCalls(result.messages, startedAt);
             const durationMs = Date.now() - startedAt;
 
             totalCalls.set(params.agentId, (totalCalls.get(params.agentId) ?? 0) + 1);
             lastCallAt.set(params.agentId, Date.now());
             lastError.delete(params.agentId);
-            if (usedModelId && usedPricing) {
-              deps.profileHealth.recordResult(profileId, {
-                success: true,
-                modelId: usedModelId,
-                tokens: { input: result.usage.inputTokens, output: result.usage.outputTokens },
-                costUsd: calculateEstimatedCost(
-                  result.usage.inputTokens,
-                  result.usage.outputTokens,
-                  usedPricing,
-                ),
-                isFallback: usedIsFallback,
-              });
-            } else {
-              deps.profileHealth.recordResult(profileId, true);
-            }
+            deps.profileHealth.recordResult(profileId, {
+              success: true,
+              modelId: deps.defaultModel.model,
+            });
 
             deps.logger.info('agent.run.completed', {
               agentId: params.agentId,
               durationMs,
               tokensInput: result.usage.inputTokens,
               tokensOutput: result.usage.outputTokens,
-              turns: result.turns,
-              toolCallCount: toolCallRecords.length,
               status: result.status,
             });
 
@@ -332,11 +251,10 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
               agentId: agentIdBrand,
               prompt: params.prompt,
               output,
-              toolCalls: JSON.stringify(toolCallRecords),
               tokensInput: result.usage.inputTokens,
               tokensOutput: result.usage.outputTokens,
               durationMs,
-              modelUsed: usedModelId ?? deps.defaultModel.model,
+              modelUsed: deps.defaultModel.model,
               sessionKey,
               traceId: traceCtx?.traceId,
               parentSpanId: traceCtx?.parentSpanId,
@@ -345,14 +263,12 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
             return {
               agentId: params.agentId,
               output,
-              toolCalls: toolCallRecords,
               tokenUsage: {
                 input: result.usage.inputTokens,
                 output: result.usage.outputTokens,
               },
               durationMs,
               stopReason: result.status,
-              turns: result.turns,
               runId,
             };
           } finally {

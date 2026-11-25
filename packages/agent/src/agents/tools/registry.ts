@@ -19,21 +19,6 @@ import {
 
 // ── 타입 ──
 
-/** 도구 입력 파라미터 스키마 (JSON Schema 서브셋, 문서/검증용) */
-export interface ToolInputSchema {
-  readonly type: 'object';
-  readonly properties: Record<string, ToolPropertySchema>;
-  readonly required?: readonly string[];
-}
-
-export interface ToolPropertySchema {
-  readonly type: 'string' | 'number' | 'boolean' | 'array' | 'object';
-  readonly description: string;
-  readonly enum?: readonly string[];
-  readonly items?: ToolPropertySchema;
-  readonly default?: unknown;
-}
-
 /** Phase 7 확장 도구 정의 — 기존 ToolDefinition 3필드를 상속 */
 export interface RegisteredToolDefinition extends ToolDefinition {
   readonly group: ToolGroupId;
@@ -45,20 +30,12 @@ export interface RegisteredToolDefinition extends ToolDefinition {
   /** 외부 API 호출 도구 여부 (true이면 CircuitBreaker 적용) */
   readonly isExternal?: boolean;
   /**
-   * Phase 30 B1: structured output 강제용 출력 schema (Zod).
-   *
-   * 정의된 도구는 모델이 자유 텍스트가 아닌 schema 일치 객체를 반환해야 한다.
-   * 위반 시 runner 가 1회 retry 후 StructuredOutputValidationError 발생.
-   * Zod 의존을 types 에 두지 않기 위해 generic ZodType 만 받음 (zod runtime 비의존).
+   * Phase 30 B1: structured output 출력 schema (Zod). 현재 어떤 경로도 검증하지 않음 —
+   * CLI 런타임은 /mcp 로 도구를 호출하고 Runner 의 enforce 경로는 제거됨.
+   * 유일한 선언처(analyze_market) 삭제 시 함께 제거.
    */
   readonly outputSchema?: import('zod/v4').ZodType<unknown>;
-  /** Phase 30 B1: outputSchema 가 정의되어도 enforce 여부를 별도 토글 (false → 검증 skip). */
   readonly enforceStructuredOutput?: boolean;
-}
-
-/** RegisteredToolDefinition → ToolDefinition 변환 (LLM API 전송용) */
-export function toApiToolDefinition(reg: RegisteredToolDefinition): ToolDefinition {
-  return { name: reg.name, description: reg.description, inputSchema: reg.inputSchema };
 }
 
 /** 도구 실행 함수 */
@@ -100,7 +77,6 @@ export interface ToolRegistry {
   unregister(name: string): boolean;
   get(name: string): RegisteredTool | undefined;
   list(): readonly RegisteredTool[];
-  listByGroup(group: ToolGroupId): readonly RegisteredTool[];
   has(name: string): boolean;
   execute(
     name: string,
@@ -108,34 +84,6 @@ export interface ToolRegistry {
     context: ToolExecutionContext,
   ): Promise<GuardedToolResult>;
   addPolicyRule(rule: PolicyRule): void;
-}
-
-// ── 훅 페이로드 ──
-
-/** beforeToolExecute 훅 페이로드 */
-export interface BeforeToolExecutePayload {
-  readonly toolName: string;
-  readonly input: Record<string, unknown>;
-  readonly context: ToolExecutionContext;
-  /** false로 설정하면 실행을 차단 */
-  skip?: boolean;
-  /** skip=true일 때 반환할 대체 결과 */
-  skipResult?: ToolResult;
-}
-
-/** afterToolExecute 훅 페이로드 */
-export interface AfterToolExecutePayload {
-  readonly toolName: string;
-  readonly input: Record<string, unknown>;
-  readonly context: ToolExecutionContext;
-  result: GuardedToolResult;
-  readonly durationMs: number;
-}
-
-/** 선택적 훅 콜백 (서버의 HookRunner와 나중에 연결) */
-export interface ToolRegistryHooks {
-  beforeToolExecute?: (payload: BeforeToolExecutePayload) => Promise<BeforeToolExecutePayload>;
-  afterToolExecute?: (payload: AfterToolExecutePayload) => Promise<AfterToolExecutePayload>;
 }
 
 // ── Zod 변환 헬퍼 ──
@@ -173,9 +121,8 @@ export class InMemoryToolRegistry implements ToolRegistry {
   private readonly breakers = new Map<string, CircuitBreaker>();
   private callHistory: ToolCallRecord[] = [];
   private readonly warningKeysSeen = new Set<string>();
-  private readonly hooks?: ToolRegistryHooks;
 
-  constructor(options?: { resultGuard?: Partial<ResultGuardOptions>; hooks?: ToolRegistryHooks }) {
+  constructor(options?: { resultGuard?: Partial<ResultGuardOptions> }) {
     this.guardOptions = {
       maxContentLength: 100_000,
       redactPatterns: [],
@@ -183,7 +130,6 @@ export class InMemoryToolRegistry implements ToolRegistry {
       redactFinancialData: true,
       ...options?.resultGuard,
     };
-    this.hooks = options?.hooks;
   }
 
   register(
@@ -217,10 +163,6 @@ export class InMemoryToolRegistry implements ToolRegistry {
 
   list(): readonly RegisteredTool[] {
     return [...this.tools.values()];
-  }
-
-  listByGroup(group: ToolGroupId): readonly RegisteredTool[] {
-    return [...this.tools.values()].filter((t) => t.definition.group === group);
   }
 
   has(name: string): boolean {
@@ -326,21 +268,7 @@ export class InMemoryToolRegistry implements ToolRegistry {
         );
       }
 
-      // ④ beforeToolExecute 훅
-      if (this.hooks?.beforeToolExecute) {
-        const payload: BeforeToolExecutePayload = { toolName: name, input, context };
-        const modified = await this.hooks.beforeToolExecute(payload);
-        if (modified.skip) {
-          const guarded = guardToolResult(
-            modified.skipResult ?? { content: 'Skipped', isError: false },
-            this.guardOptions,
-          );
-          bus.emit('tool:execute:end', name, context.sessionId, Date.now() - startTime);
-          return guarded;
-        }
-      }
-
-      // ⑤ 타임아웃 설정
+      // ④ 타임아웃 설정
       const toolTimeout = tool.definition.timeoutMs ?? 30_000;
       const controller = new AbortController();
       const timer = setTimeout(() => {
@@ -354,7 +282,7 @@ export class InMemoryToolRegistry implements ToolRegistry {
       try {
         const mergedCtx: ToolExecutionContext = { ...context, abortSignal: controller.signal };
 
-        // ⑥ 도구 실행 (외부 API 도구는 CircuitBreaker 적용)
+        // ⑤ 도구 실행 (외부 API 도구는 CircuitBreaker 적용)
         let result: ToolResult;
         if (tool.definition.isExternal) {
           let breaker = this.breakers.get(name);
@@ -367,23 +295,9 @@ export class InMemoryToolRegistry implements ToolRegistry {
           result = await tool.executor(input, mergedCtx);
         }
 
-        let guarded = guardToolResult(result, this.guardOptions);
+        const guarded = guardToolResult(result, this.guardOptions);
 
-        // ⑦ afterToolExecute 훅
-        if (this.hooks?.afterToolExecute) {
-          const durationMs = Date.now() - startTime;
-          const payload: AfterToolExecutePayload = {
-            toolName: name,
-            input,
-            context,
-            result: guarded,
-            durationMs,
-          };
-          const modified = await this.hooks.afterToolExecute(payload);
-          guarded = modified.result;
-        }
-
-        // ⑧ Phase 31 D — 루프 감지용 호출 이력 기록.
+        // ⑥ Phase 31 D — 루프 감지용 호출 이력 기록.
         this.callHistory = appendHistory(this.callHistory, {
           toolName: name,
           argsHash: hashToolCall(name, input),

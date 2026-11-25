@@ -9,12 +9,8 @@ import type { WsConnection, JsonRpcNotification } from './rpc/types.js';
  * | StreamEvent.type   | WS method                | 전송 정책   |
  * |--------------------|--------------------------|-------------|
  * | text_delta         | chat.stream.delta        | 150ms 배치  |
- * | tool_use_start     | chat.stream.tool_start   | 즉시        |
- * | tool_use_end       | chat.stream.tool_end     | 즉시        |
  * | done               | chat.stream.end          | 즉시        |
  * | error              | chat.stream.error        | 즉시        |
- *
- * 미매핑: state_change, message_complete, usage_update — 내부 FSM/집계용
  */
 export class GatewayBroadcaster {
   private readonly deltaBuffers = new Map<
@@ -35,18 +31,6 @@ export class GatewayBroadcaster {
       case 'text_delta':
         this.bufferDelta(conn, sessionId, event.delta);
         break;
-      case 'tool_use_start':
-        this.sendImmediate(conn, 'chat.stream.tool_start', {
-          sessionId,
-          toolCall: event.toolCall,
-        });
-        break;
-      case 'tool_use_end':
-        this.sendImmediate(conn, 'chat.stream.tool_end', {
-          sessionId,
-          result: event.result,
-        });
-        break;
       case 'done':
         this.flushDelta(conn.id, sessionId, conn);
         this.sendImmediate(conn, 'chat.stream.end', {
@@ -61,7 +45,6 @@ export class GatewayBroadcaster {
           error: event.error.message,
         });
         break;
-      // state_change, message_complete, usage_update → 무시
     }
   }
 

@@ -63,7 +63,6 @@ function makeRunnerResult(overrides: Record<string, unknown> = {}) {
       { role: 'assistant' as const, content: 'hello world' },
     ],
     usage: { inputTokens: 10, outputTokens: 5 },
-    turns: 1,
     durationMs: 123,
     ...overrides,
   };
@@ -195,7 +194,6 @@ describe('agent.* RPC methods', () => {
             output: string;
             tokenUsage: { input: number; output: number };
             stopReason: string;
-            turns: number;
           };
         }
       ).result;
@@ -204,7 +202,6 @@ describe('agent.* RPC methods', () => {
       expect(r.output).toBe('hello world');
       expect(r.tokenUsage).toEqual({ input: 10, output: 5 });
       expect(r.stopReason).toBe('completed');
-      expect(r.turns).toBe(1);
     });
 
     it('updates stats after successful run', async () => {
@@ -220,7 +217,10 @@ describe('agent.* RPC methods', () => {
       expect(r.totalCalls).toBe(1);
       expect(r.lastCallAt).not.toBeNull();
       expect(r.lastError).toBeNull();
-      expect(deps.profileHealth.recordResult).toHaveBeenCalledWith('default', true);
+      expect(deps.profileHealth.recordResult).toHaveBeenCalledWith('default', {
+        success: true,
+        modelId: 'claude-sonnet-4-6',
+      });
     });
 
     it('records lastError on runner failure', async () => {
@@ -279,8 +279,8 @@ describe('agent.* RPC methods', () => {
         expect(stored?.error).toBeUndefined();
         expect(stored?.tokensInput).toBe(10);
         expect(stored?.tokensOutput).toBe(5);
-        // toolCalls 는 JSON.stringify 된 raw 문자열
-        expect(typeof stored?.toolCalls).toBe('string');
+        // 도구 호출은 CLI 내부에서 일어나므로 tool_calls 는 기록하지 않음
+        expect(stored?.toolCalls).toBeUndefined();
       });
 
       it('calls attachMemoryService.attach with run.id + sessionKey on success', async () => {

@@ -1,11 +1,7 @@
 // packages/server/src/composition/providers.ts
 // Phase 36: main.ts 274-303 에서 추출. Phase 41: SDK dual-path 제거 (CLI 단일).
 
-import {
-  createProviderAdapter,
-  DEFAULT_CLAUDE_BACKEND,
-  InMemoryToolRegistry,
-} from '@finclaw/agent';
+import { CliProviderAdapter, DEFAULT_CLAUDE_BACKEND, InMemoryToolRegistry } from '@finclaw/agent';
 import { signToken } from '@finclaw/gateway';
 import { ConcurrencyLaneManager, type FinClawLogger } from '@finclaw/infra';
 import type { FinClawConfig } from '@finclaw/types';
@@ -17,7 +13,7 @@ export interface BuildProvidersDeps {
 }
 
 export interface ProvidersBundle {
-  readonly providerAdapter: ReturnType<typeof createProviderAdapter>;
+  readonly providerAdapter: CliProviderAdapter;
   readonly lanes: ConcurrencyLaneManager;
   readonly toolRegistry: InMemoryToolRegistry;
 }
@@ -47,9 +43,8 @@ export function buildProviders({
             : {}),
         }
       : undefined;
-  const providerAdapter = createProviderAdapter({
-    kind: 'claude-cli',
-    cliBackend,
+  const providerAdapter = new CliProviderAdapter({
+    backend: cliBackend,
     defaultTimeoutMs: finclawConfig.cliBackend?.timeoutMs ?? 60_000,
   });
   logger.info('provider.initialized', {

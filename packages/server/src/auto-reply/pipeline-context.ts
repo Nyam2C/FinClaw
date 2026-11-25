@@ -6,7 +6,6 @@ import type {
   NewsItem,
   Portfolio,
   Timestamp,
-  TraceContext,
 } from '@finclaw/types';
 import type { RetrievalResult } from './stages/memory-retrieval.js';
 
@@ -50,16 +49,6 @@ export interface PipelineMsgContext extends MsgContext {
   // --- 기억 retrieval (Phase 26 C) ---
   /** Context 직후 retrieval 결과. execution-adapter 가 system prompt 에 주입. */
   readonly retrievalResult?: RetrievalResult;
-
-  // --- 관찰성 (Phase 30 A6) ---
-  /** Pipeline 진입 시 active span 의 trace/spanId. execute 단계가 agent_runs 부착에 사용. */
-  readonly traceContext?: TraceContext;
-
-  // --- 컨텍스트 압축 배선 (Phase 31 C) ---
-  /** 토큰 카운터 (char/4 근사). 주입 시 execution-adapter 가 컨텍스트 윈도우 평가. */
-  readonly tokenCounter?: (text: string) => number;
-  /** 요약기 (Anthropic 1회 호출). tokenCounter 와 함께 주입돼야 compaction 활성. */
-  readonly summarizer?: (text: string) => Promise<string>;
 }
 
 /** 시장 세션 상태 */
