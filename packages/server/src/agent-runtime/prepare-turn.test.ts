@@ -8,7 +8,7 @@ import type {
   MemoryRetrievalService,
   RetrievalResult,
 } from '../auto-reply/stages/memory-retrieval.js';
-import { composePrompt, prepareTurn } from './prepare-turn.js';
+import { composeContext, prepareTurn } from './prepare-turn.js';
 
 const NOW = Date.UTC(2026, 10, 26, 1, 0, 0); // = 2026-11-26 10:00 KST
 const SK = createSessionKey('s1');
@@ -150,36 +150,55 @@ describe('prepareTurn', () => {
   });
 });
 
-describe('composePrompt', () => {
+describe('composeContext', () => {
   const CTX = `<context>\n${TIME_LINE}\n</context>`;
   const msg = (role: 'user' | 'assistant', content: string): ConversationMessage => ({
     role,
     content,
   });
 
-  it('recap 이 없으면 <context> 로 시작하고 원문으로 끝난다', () => {
-    expect(composePrompt(CTX, [], '질문')).toBe(`${CTX}\n\n질문`);
+  it('recap 이 없으면 <context> 그대로다', () => {
+    expect(composeContext(CTX, [])).toBe(CTX);
   });
 
-  it('recap: 최근 6 메시지, 메시지당 500자, 역할 라벨', () => {
+  it('recap: 최근 6 메시지, 메시지당 500자, 역할 라벨, <context> 로 끝난다', () => {
     const history = Array.from({ length: 8 }, (_, i) =>
       msg(i % 2 === 0 ? 'user' : 'assistant', `${i}`.padEnd(600, 'x')),
     );
-    const prompt = composePrompt(CTX, history, '질문');
-    const block = prompt.slice(0, prompt.indexOf('</recent_conversation>'));
+    const out = composeContext(CTX, history);
+    const block = out.slice(0, out.indexOf('</recent_conversation>'));
     const lines = block.split('\n').slice(1, -1); // 머리 태그·끝 빈 줄 제외
     expect(lines).toHaveLength(6);
     expect(lines[0]?.startsWith('사용자: 2')).toBe(true);
     expect(lines[1]?.startsWith('FinClaw: 3')).toBe(true);
     expect(lines[0]?.length).toBe('사용자: '.length + 500);
-    expect(prompt.endsWith(`${CTX}\n\n질문`)).toBe(true);
+    expect(out.endsWith(CTX)).toBe(true);
+  });
+
+  it('블록으로 저장된 assistant 는 text 만 쓰고, 컨텍스트·도구 행과 text 없는 행은 뺀다', () => {
+    const rows = [
+      { role: 'system', content: '<context>옛 컨텍스트</context>' },
+      { role: 'user', content: '삼성전자 얼마야?' },
+      { role: 'assistant', content: [{ type: 'tool_use', id: 't', name: 'get_quote', input: {} }] },
+      { role: 'tool', content: [{ type: 'tool_result', tool_use_id: 't', content: '70000' }] },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: '', signature: 's' },
+          { type: 'text', text: '7만원입니다' },
+        ],
+      },
+    ];
+    expect(composeContext(CTX, rows)).toBe(
+      `<recent_conversation>\n사용자: 삼성전자 얼마야?\nFinClaw: 7만원입니다\n</recent_conversation>\n\n${CTX}`,
+    );
   });
 
   it('recap+context 가 6,000자를 넘으면 recap 을 오래된 것부터 버린다', () => {
     const bigContext = `<context>\n${'가'.repeat(5_000)}\n</context>`;
     const history = Array.from({ length: 6 }, (_, i) => msg('user', `${i}`.padEnd(400, 'y')));
-    const prompt = composePrompt(bigContext, history, '질문');
-    const recap = prompt.slice(0, prompt.indexOf(bigContext));
+    const out = composeContext(bigContext, history);
+    const recap = out.slice(0, out.indexOf(bigContext));
     expect(recap.length + bigContext.length).toBeLessThanOrEqual(6_000 + 2);
     expect(recap).not.toContain('사용자: 0');
     expect(recap).toContain('사용자: 5');

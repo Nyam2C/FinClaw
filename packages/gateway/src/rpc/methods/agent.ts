@@ -171,7 +171,7 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
             agentId: createAgentId(params.agentId),
             input: params.prompt,
             mode: 'oneShot',
-            // [TQ5] timeoutMs 를 주면 그 시각에 abort, 없으면 runtime 무출력 120s / overall 300s 만
+            // timeoutMs 를 주면 그 시각에 abort, 없으면 runtime 의 overall 300s 만
             signal: params.timeoutMs
               ? AbortSignal.timeout(params.timeoutMs)
               : new AbortController().signal,
@@ -196,7 +196,7 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
             agentId: params.agentId,
             runId: terminal.runId,
             durationMs,
-            tokensInput: terminal.usage.input,
+            tokensInput: promptTokens(terminal.usage),
             tokensOutput: terminal.usage.output,
           });
 
@@ -213,7 +213,7 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
           return {
             agentId: params.agentId,
             output: terminal.text,
-            tokenUsage: { input: terminal.usage.input, output: terminal.usage.output },
+            tokenUsage: { input: promptTokens(terminal.usage), output: terminal.usage.output },
             durationMs,
             stopReason: 'completed',
             runId: terminal.runId,
@@ -238,4 +238,9 @@ export function registerAgentMethods(deps: AgentRpcDeps, registry: MethodRegistr
   registry.register(listHandler);
   registry.register(statusHandler);
   registry.register(runHandler);
+}
+
+/** 프롬프트 전체 토큰 (캐시 읽기·쓰기 포함) — agent_runs.tokens_input 과 같은 정의. */
+function promptTokens(usage: { input: number; cacheRead: number; cacheWrite: number }): number {
+  return usage.input + usage.cacheRead + usage.cacheWrite;
 }

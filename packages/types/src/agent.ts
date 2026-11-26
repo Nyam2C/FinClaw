@@ -32,6 +32,8 @@ export type ContentBlock =
   | { type: 'text'; text: string }
   | { type: 'tool_use'; id: string; name: string; input: unknown }
   | { type: 'tool_result'; toolUseId: string; content: string; isError?: boolean };
+// 저장된 assistant/tool 행에는 프로바이더 블록이 받은 그대로 들어간다 (thinking, tool_result{tool_use_id} 등).
+// 위 유니온에 없는 type 도 있을 수 있으니, 읽는 쪽은 아는 type 만 골라 쓴다.
 
 /** 도구 정의 */
 export interface ToolDefinition {
@@ -80,14 +82,13 @@ export interface AgentRunLog {
   createdAt: Timestamp;
 }
 
-/** 에이전트 run 종료 오류 분류 (phase46 AgentEvent error.reason · chat.stream.error reason). */
+/** 에이전트 run 종료 오류 분류 (AgentEvent error.reason · chat.stream.error reason). */
 export type AgentErrorReason =
   | 'aborted'
-  | 'timeout' // 무출력/overall 워치독, lane 대기 실패
-  | 'auth'
-  | 'rate_limit' // rate_limit_event.status === 'rejected' 일 때만
-  | 'max_turns' // result.subtype === 'error_max_turns'
-  | 'session_not_found' // runtime 이 잡아 1회 재시도. 재시도도 실패할 때만 바깥으로 나감
-  | 'mcp_unavailable' // init.mcp_servers 의 finclaw.status !== 'connected'
-  | 'spawn' // ENOENT 등 프로세스 시작 실패
+  | 'timeout' // overall 워치독, lane 대기 실패
+  | 'auth' // 401/402/403 — 키가 없거나 틀리거나 크레딧이 없다
+  | 'rate_limit' // 429 (SDK 재시도 후에도)
+  | 'refusal' // stop_reason refusal — 재시도하지 않는다
+  | 'invalid_request' // 400 또는 보내기 전 검사 실패 — 런타임이 컨텍스트 창을 새로 열어 1회 재시도
+  | 'context_overflow' // stop_reason model_context_window_exceeded — 다음 턴에 컨텍스트 회전
   | 'unknown';

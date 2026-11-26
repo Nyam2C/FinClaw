@@ -1,8 +1,7 @@
-import { execFile } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 // packages/server/src/main.ts
-import { createCliDriver, ProfileHealthMonitor } from '@finclaw/agent';
+import { createAnthropicDriver, ProfileHealthMonitor } from '@finclaw/agent';
 import { DiscordAccountSchema, DiscordAdapter } from '@finclaw/channel-discord';
 import { ConfigValidationError, loadConfig, validateConfigStrict } from '@finclaw/config';
 import { createGatewayServer, type GatewayServerConfig } from '@finclaw/gateway';
@@ -29,6 +28,7 @@ import type { ChannelPlugin, ConfigValidationIssue } from '@finclaw/types';
 import { deliverScheduleResult } from './automation/delivery.js';
 import { initChannels } from './channels/index.js';
 import { DEFAULT_MODEL, defaultConfig } from './composition/constants.js';
+import { isDiscordOwner } from './composition/discord-owner.js';
 import { issueLocalToken, resolveJwtSecret } from './composition/local-auth.js';
 import { buildProviders } from './composition/providers.js';
 import { buildAutomation, buildExecution, buildPipeline } from './composition/runtime.js';
@@ -138,7 +138,7 @@ async function main(): Promise<void> {
 
   // 3. Discord (선택) — alerts DM 핸들 때문에 skills 등록 전에 로그인
   const discordAdapter = await setupDiscord(process.env.DISCORD_BOT_TOKEN, { logger, lifecycle });
-  // phase47 Q6/D5: 알림 DM 수신자 — skills(Discord 핸들러)와 financeDeps(새 알림 기본 채널)가 같은 값을 쓴다 (env 읽기 1곳)
+  // Discord 소유자 id — 알림 DM 수신자이자, 봇에게 말을 걸 수 있는 유일한 사용자 (env 읽기 1곳)
   const discordAlertUserId = process.env.DISCORD_ALERT_USER_ID || undefined;
 
   // 4. Agent 레이어 (툴 레지스트리)
@@ -147,28 +147,18 @@ async function main(): Promise<void> {
   // 4a. 프로필 건강 모니터.
   const profileHealth = new ProfileHealthMonitor();
 
-  // Phase 46 M3: stream-json 드라이버 (격리 cwd 고정, Q12). 버전 로그는 스키마 drift(R1) 추적용 — 실패해도 부팅 계속.
-  const cliCommand = finclawConfig.cliBackend?.command ?? 'claude';
-  const driver = createCliDriver({
-    command: cliCommand,
-    cwd: join(homedir(), '.finclaw', 'agent'),
-    logger,
-  });
-  // 과금 주체가 조용히 바뀌지 않게 부팅마다 남긴다 — 키가 있으면 CLI 는 구독 대신 키를 쓴다.
+  // 자체 에이전트 루프 드라이버 (Anthropic Messages API). 키가 없어도 부팅은 계속 — run 이 error{auth} 로 끝난다.
+  const anthropicApiKey = process.env.ANTHROPIC_API_KEY || undefined;
+  const driver = createAnthropicDriver({ apiKey: anthropicApiKey });
   logger.info('agent.auth', {
     event: 'agent.auth',
-    mode: process.env.ANTHROPIC_API_KEY ? 'api-key' : 'subscription',
+    mode: anthropicApiKey ? 'api-key' : 'missing',
   });
-  execFile(cliCommand, ['--version'], { timeout: 10_000 }, (err, stdout) => {
-    if (err) {
-      logger.warn('cli.version_unavailable', {
-        event: 'cli.version_unavailable',
-        error: err.message,
-      });
-      return;
-    }
-    logger.info('cli.version', { event: 'cli.version', version: stdout.trim() });
-  });
+  if (!anthropicApiKey) {
+    logger.warn('ANTHROPIC_API_KEY is not set — the agent cannot answer until it is', {
+      event: 'agent.auth.missing',
+    });
+  }
 
   // Phase 36: skills/tools/KIS/mcp/plugins 등록 (구 363-559 흡수)
   const { marketHandle, newsHandle, alertHandle, brokerageSyncService, kisEnv } =
@@ -192,10 +182,7 @@ async function main(): Promise<void> {
     driver,
     embeddingProvider,
     finclawConfig,
-    mcp: {
-      url: `http://127.0.0.1:${gatewayPort}/mcp`,
-      jwtSecret,
-    },
+    toolRegistry,
   });
   lifecycle.register(async () => runtime.abortAll());
 
@@ -223,8 +210,18 @@ async function main(): Promise<void> {
   // 7. Discord onMessage 등록 — 토큰이 있을 때만
   if (discordAdapter) {
     channelPluginRegistry.set(discordAdapter.id as string, discordAdapter);
+    // 1인용 비서다: 에이전트는 소유자의 알림·계좌 조회 도구를 쓰므로, Discord 에서는 소유자 id 가 보낸
+    // 메시지만 받는다. id 가 없으면 대화를 받지 않는다 (알림 DM 발송은 계속 된다).
+    if (!discordAlertUserId) {
+      logger.warn('discord.chat_disabled', {
+        event: 'discord.chat_disabled',
+        reason: 'DISCORD_ALERT_USER_ID (owner user id) not set',
+      });
+    }
     discordAdapter.onMessage(async (msg) => {
-      await router.route(msg);
+      if (isDiscordOwner(msg.senderId, discordAlertUserId)) {
+        await router.route(msg);
+      }
     });
     logger.info('Discord adapter connected');
   }
@@ -273,7 +270,6 @@ async function main(): Promise<void> {
     defaultModel: DEFAULT_MODEL,
     runtime,
     storage, // phase47: chat.history
-    toolRegistry, // Phase 40 A: /mcp in-process 호출용 (top-level — agentDeps.toolRegistry 와 동일 인스턴스)
     financeDeps: {
       quoteService: marketHandle?.quoteService,
       newsAggregator: newsHandle?.aggregator,

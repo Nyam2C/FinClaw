@@ -14,6 +14,7 @@ describe('config.example.json5', () => {
   it('로드 + validateConfigStrict 를 통과한다', () => {
     const config = createConfigIO({ configPath: EXAMPLE, env: {} }).loadConfig();
     expect(() => validateConfigStrict(config)).not.toThrow();
-    expect(config.provider).toBe('claude-cli');
+    expect(config.rag?.rerank?.enabled).toBe(true);
+    expect(config.provider).toBeUndefined(); // 예전 키(`provider`·`cliBackend`)는 허용만 하고 예시에서는 뺐다
   });
 });

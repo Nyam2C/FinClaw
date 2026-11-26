@@ -1,5 +1,5 @@
 // packages/server/src/auto-reply/commands/built-in.ts
-import type { ProfileHealthMonitor, ToolRegistry } from '@finclaw/agent';
+import type { AgentRunPort, ProfileHealthMonitor, ToolRegistry } from '@finclaw/agent';
 import type { MarketSkillHandle, NewsSkillHandle } from '@finclaw/skills-finance';
 import type { ModelRef, StorageAdapter } from '@finclaw/types';
 import type { CommandRegistry } from './registry.js';
@@ -9,6 +9,8 @@ import { createStatusCommand } from './status.js';
 export interface BuiltInCommandDeps {
   readonly toolRegistry?: ToolRegistry;
   readonly storage: StorageAdapter;
+  /** reset 명령이 세션 lane 을 거쳐 지우도록. */
+  readonly runtime: Pick<AgentRunPort, 'reset'>;
   readonly profileHealth?: ProfileHealthMonitor;
   readonly profileId?: string;
   readonly defaultModel?: ModelRef;
@@ -55,7 +57,7 @@ export function registerBuiltInCommands(registry: CommandRegistry, deps: BuiltIn
       description: '현재 대화 세션을 초기화합니다',
       usage: '/reset',
     },
-    createResetCommand({ storage: deps.storage }),
+    createResetCommand({ reset: (key) => deps.runtime.reset(key) }),
   );
 
   // /status - 서버 상태

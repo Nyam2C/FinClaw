@@ -76,7 +76,9 @@ private func face(_ mood: Mood, at t: Double, since: Date = t0, lastDeltaAt: Dat
 }
 
 @Test func copyToolLabels() {
-  #expect(Copy.toolLabel("mcp__finclaw__route_task") == "알아보는 중…")
+  #expect(Copy.toolLabel("route_task") == "알아보는 중…")  // 서버가 지금 보내는 이름
+  #expect(Copy.toolLabel("get_current_datetime") == nil)
+  #expect(Copy.toolLabel("mcp__finclaw__route_task") == "알아보는 중…")  // 예전 접두사도 받는다
   #expect(Copy.toolLabel("mcp__finclaw__get_current_datetime") == nil)
   #expect(Copy.toolLabel("mcp__x__foo") == "도구 사용 중…")
 }

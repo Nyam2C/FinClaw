@@ -467,6 +467,55 @@ describe('chat.* RPC methods', () => {
       expect(res.result.messages).toEqual([{ role: 'assistant', text: 'ab' }]);
     });
 
+    it('text 가 없는 assistant 행(tool_use·thinking 만)은 숨긴다', async () => {
+      const storage = storageWith([
+        { role: 'user', content: '삼성전자 얼마야?' },
+        {
+          role: 'assistant',
+          content: [
+            { type: 'thinking', thinking: '', signature: 's' },
+            { type: 'tool_use', id: 't', name: 'get_quote', input: {} },
+          ] as never,
+        },
+        {
+          role: 'tool',
+          content: [{ type: 'tool_result', tool_use_id: 't', content: '70000' }] as never,
+        },
+        { role: 'assistant', content: [{ type: 'text', text: '7만원입니다' }] },
+      ]);
+      const sessionId = await startSession(gatedRuntime().runtime, undefined, storage);
+      const res = (await call('chat.history', { sessionId })) as History;
+      expect(res.result.messages).toEqual([
+        { role: 'user', text: '삼성전자 얼마야?' },
+        { role: 'assistant', text: '7만원입니다' },
+      ]);
+    });
+
+    it('도구를 여러 번 부른 턴은 마지막 답 하나만 보인다 (실시간 말풍선과 같게)', async () => {
+      const storage = storageWith([
+        { role: 'user', content: 'q1' },
+        {
+          role: 'assistant',
+          content: [
+            { type: 'text', text: '조회해 볼게요' },
+            { type: 'tool_use', id: 't', name: 'get_quote', input: {} },
+          ],
+        },
+        { role: 'tool', content: [] },
+        { role: 'assistant', content: [{ type: 'text', text: '7만원입니다' }] },
+        { role: 'user', content: 'q2' },
+        { role: 'assistant', content: 'a2' },
+      ]);
+      const sessionId = await startSession(gatedRuntime().runtime, undefined, storage);
+      const res = (await call('chat.history', { sessionId })) as History;
+      expect(res.result.messages).toEqual([
+        { role: 'user', text: 'q1' },
+        { role: 'assistant', text: '7만원입니다' },
+        { role: 'user', text: 'q2' },
+        { role: 'assistant', text: 'a2' },
+      ]);
+    });
+
     it('system / tool role 은 제외', async () => {
       const storage = storageWith([
         { role: 'system', content: 's' },
@@ -483,7 +532,8 @@ describe('chat.* RPC methods', () => {
       const storage = storageWith([]);
       const sessionId = await startSession(gatedRuntime().runtime, undefined, storage);
       await call('chat.history', { sessionId });
-      expect(storage.getConversation).toHaveBeenCalledWith('tui:local:default');
+      // 전체가 아니라 꼬리만 읽는다 (limit 20 × 메시지당 8행)
+      expect(storage.getConversation).toHaveBeenCalledWith('tui:local:default', { tail: 160 });
     });
 
     it('대화 기록 없음 → 빈 배열', async () => {

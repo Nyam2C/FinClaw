@@ -21,7 +21,10 @@ export function createStatusCommand(deps: StatusCommandDeps): CommandExecutor {
   return async (_args, ctx) => {
     const toolCount = deps.toolRegistry.list().length;
     const conversation = await deps.storage.getConversation(ctx.sessionKey).catch(() => null);
-    const messageCount = conversation?.messages.length ?? 0;
+    // 트랜스크립트에는 컨텍스트(system)·도구(tool) 행도 있다 — 대화로 보이는 것만 센다.
+    const messageCount = (conversation?.messages ?? []).filter(
+      (m) => m.role === 'user' || m.role === 'assistant',
+    ).length;
     const uptimeMin = Math.round(process.uptime() / 60);
 
     const channelIds =

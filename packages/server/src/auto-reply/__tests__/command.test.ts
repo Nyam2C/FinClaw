@@ -31,7 +31,10 @@ describe('commandStage', () => {
 
   it('등록된 명령어를 실행하고 결과를 돌려준다 (B4)', async () => {
     const registry = new InMemoryCommandRegistry();
-    registerBuiltInCommands(registry, { storage: {} as StorageAdapter });
+    registerBuiltInCommands(registry, {
+      storage: {} as StorageAdapter,
+      runtime: { reset: async () => true },
+    });
     const result = await commandStage('/help', registry, '/', makeCtx());
     expect(result.handled).toBe(true);
     expect(result.commandResult?.content).toContain('사용 가능한 명령어');
@@ -44,14 +47,20 @@ describe('commandStage', () => {
 
   it('코드 펜스 내부의 명령어는 무시한다', async () => {
     const registry = new InMemoryCommandRegistry();
-    registerBuiltInCommands(registry, { storage: {} as StorageAdapter });
+    registerBuiltInCommands(registry, {
+      storage: {} as StorageAdapter,
+      runtime: { reset: async () => true },
+    });
     const result = await commandStage('```\n/help\n```', registry, '/', makeCtx());
     expect(result).toEqual({ handled: false });
   });
 
   it('별칭으로 명령어를 실행한다', async () => {
     const registry = new InMemoryCommandRegistry();
-    registerBuiltInCommands(registry, { storage: {} as StorageAdapter });
+    registerBuiltInCommands(registry, {
+      storage: {} as StorageAdapter,
+      runtime: { reset: async () => true },
+    });
     const result = await commandStage('/h', registry, '/', makeCtx());
     expect(result.handled).toBe(true);
     expect(result.commandResult?.content).toContain('사용 가능한 명령어');

@@ -549,6 +549,10 @@ function ensurePostMigrationSchema(db: DatabaseSync): void {
   db.exec(
     `CREATE INDEX IF NOT EXISTS idx_agent_runs_cli_session ON agent_runs(cli_session_id) WHERE cli_session_id IS NOT NULL;`,
   );
+  // 트랜스크립트는 rowid 순(= 넣은 순서)으로 읽는다. (conversation_id) 단독 인덱스가 정렬 없이 그 순서를 준다.
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_messages_conversation_rowid ON messages(conversation_id);`,
+  );
 }
 
 // ─── Public API ───

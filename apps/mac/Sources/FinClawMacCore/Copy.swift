@@ -2,7 +2,7 @@ import Foundation
 
 /// 사용자 문구 전부 (plan §4-6). 느낌표·이모지 없음.
 public enum Copy {
-  /// 마지막 "__" 뒤로 조회 (`mcp__finclaw__route_task` → `route_task`). nil = 표시 안 함(working 진입 없음).
+  /// 서버는 레지스트리 이름 그대로 보낸다 (`route_task`). 예전 `mcp__finclaw__` 접두사도 마지막 "__" 뒤로 잘라 받는다. nil = 표시 안 함(working 진입 없음).
   public static func toolLabel(_ name: String) -> String? {
     switch name.components(separatedBy: "__").last ?? name {
     case "route_task": "알아보는 중…"
@@ -15,7 +15,8 @@ public enum Copy {
 
   public static func reason(_ r: String) -> String {
     switch r {
-    case "auth": "Claude 로그인이 필요해요. 서버에서 `claude login` 을 실행해 주세요"
+    case "auth": "API 키가 없거나 맞지 않아요. 서버의 `ANTHROPIC_API_KEY` 와 크레딧을 확인해 주세요"
+    case "refusal": "이 요청에는 답할 수 없어요"
     case "rate_limit": "Claude 사용 한도에 닿았어요. 잠시 후 다시 물어봐 주세요"
     case "timeout": "답이 너무 오래 걸려요. 질문을 나눠 주세요"
     default: "답을 만드는 중에 문제가 생겼어요"

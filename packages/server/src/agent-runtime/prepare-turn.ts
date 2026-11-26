@@ -1,7 +1,7 @@
 // packages/server/src/agent-runtime/prepare-turn.ts
-// Phase 46 M2: 턴별 가변 컨텍스트(시각·회상·거래·recap)를 user 메시지 앞 블록으로 조립 (I9 — 시스템 프롬프트는 정적).
+// 턴별 가변 컨텍스트(시각·회상·거래·recap)를 user 메시지 앞 블록으로 조립 — 시스템 프롬프트는 정적 (캐시 프리픽스).
 import type { FinClawLogger } from '@finclaw/infra';
-import type { ConversationMessage, SessionKey } from '@finclaw/types';
+import type { SessionKey } from '@finclaw/types';
 import {
   memoryCaptureStage,
   type MemoryCaptureResult,
@@ -59,27 +59,37 @@ export async function prepareTurn(p: PrepareTurnInput): Promise<PreparedTurn> {
 }
 
 /**
- * user 메시지 조립 (plan §3-4): [<recent_conversation>] + <context> + 원문.
- * recap 은 conversations 원문(user 원문 + done.text)에서 만든다 → 회상 블록 재주입 순환 없음.
+ * 턴 컨텍스트 조립: [<recent_conversation>] + <context>. 트랜스크립트에는 `system` 행으로 저장되고,
+ * API 로는 바로 뒤 user 메시지의 첫 블록으로 나간다. recap 은 컨텍스트를 회전한 턴에만 넘긴다.
+ * recap 은 user 원문과 assistant text 만 쓴다 → 컨텍스트·도구 결과 재주입 순환 없음.
  */
-export function composePrompt(
-  context: string,
-  recap: readonly ConversationMessage[],
-  input: string,
-): string {
+export function composeContext(context: string, recap: readonly RecapMessage[]): string {
   const lines = recap
     .filter((m) => m.role === 'user' || m.role === 'assistant')
+    .map((m) => ({ role: m.role, text: messageText(m.content) }))
+    .filter((m) => m.text.length > 0) // tool_use 만 있는 assistant 행 제외
     .slice(-RECAP_MESSAGES)
     .map(
-      (m) =>
-        `${m.role === 'user' ? '사용자' : 'FinClaw'}: ${(typeof m.content === 'string' ? m.content : '').slice(0, RECAP_MESSAGE_CHARS)}`,
+      (m) => `${m.role === 'user' ? '사용자' : 'FinClaw'}: ${m.text.slice(0, RECAP_MESSAGE_CHARS)}`,
     );
   // ponytail: 합계 상한 초과 시 recap 을 오래된 것부터 버린다 — 배경지식은 상류에서 이미 상한(3건·거래 3건).
   while (lines.length > 0 && recapBlock(lines).length + context.length > BLOCK_BUDGET_CHARS) {
     lines.shift();
   }
-  const head = lines.length > 0 ? `${recapBlock(lines)}\n\n` : '';
-  return `${head}${context}\n\n${input}`;
+  return lines.length > 0 ? `${recapBlock(lines)}\n\n${context}` : context;
+}
+
+interface RecapMessage {
+  readonly role: string;
+  readonly content: string | readonly unknown[];
+}
+
+function messageText(content: RecapMessage['content']): string {
+  return typeof content === 'string'
+    ? content
+    : (content as readonly { type?: string; text?: string }[])
+        .flatMap((b) => (b.type === 'text' && typeof b.text === 'string' ? [b.text] : []))
+        .join('');
 }
 
 function recapBlock(lines: readonly string[]): string {

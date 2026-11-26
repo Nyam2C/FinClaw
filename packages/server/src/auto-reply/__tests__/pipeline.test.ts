@@ -66,7 +66,7 @@ function fakeRuntime(
 }
 
 function errorRuntime(
-  reason: 'auth' | 'rate_limit' | 'timeout' | 'aborted' | 'unknown',
+  reason: 'auth' | 'rate_limit' | 'timeout' | 'refusal' | 'aborted' | 'unknown',
   message = 'raw stderr: token=secret',
 ): AgentRunPort {
   return {
@@ -95,7 +95,10 @@ function makeConfig(overrides: Partial<PipelineConfig> = {}): PipelineConfig {
 function makeDeps(overrides: Partial<PipelineDependencies> = {}): PipelineDependencies {
   const channel = makeChannel();
   const registry = new InMemoryCommandRegistry();
-  registerBuiltInCommands(registry, { storage: {} as StorageAdapter });
+  registerBuiltInCommands(registry, {
+    storage: {} as StorageAdapter,
+    runtime: { reset: async () => true },
+  });
 
   return {
     runtime: fakeRuntime('AI response'),
@@ -206,9 +209,10 @@ describe('AutoReplyPipeline', () => {
   });
 
   it.each([
-    ['auth', 'Claude 로그인이 필요합니다'],
+    ['auth', 'Anthropic API 키가 없거나 맞지 않습니다'],
     ['rate_limit', 'Claude 사용 한도에 도달했습니다'],
     ['timeout', '응답 시간이 초과되었습니다'],
+    ['refusal', '이 요청에는 답할 수 없습니다'],
     ['unknown', '응답 생성 중 오류가 발생했습니다'],
   ] as const)('Q10: %s → 고정 문구, raw message 미포함', async (reason, phrase) => {
     const channel = makeChannel();
