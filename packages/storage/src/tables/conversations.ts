@@ -44,22 +44,26 @@ function rowToRecord(row: ConversationRow, messages: ConversationMessage[]): Con
 }
 
 function messageRowToMessage(row: MessageRow): ConversationMessage {
-  const msg: ConversationMessage = {
-    role: row.role as ConversationMessage['role'],
-    content: tryParseContent(row.content),
-  };
-  return msg;
+  const role = row.role as ConversationMessage['role'];
+  // 블록 배열은 assistant·tool 행에만 저장한다. user·system 행은 사용자가 `[...]` 를 쳤어도 문자열이다.
+  const content = role === 'assistant' || role === 'tool' ? parseBlocks(row.content) : row.content;
+  return { role, content };
 }
 
-function tryParseContent(s: string): string | ContentBlock[] {
-  if (s.startsWith('[')) {
-    try {
-      return JSON.parse(s) as ContentBlock[];
-    } catch {
-      // not JSON array
-    }
+/** JSON 블록 배열(`[{type: ...}, ...]`)이면 풀고, 아니면(예전 텍스트 행) 문자열 그대로. */
+function parseBlocks(s: string): string | ContentBlock[] {
+  if (!s.startsWith('[')) {
+    return s;
   }
-  return s;
+  try {
+    const parsed: unknown = JSON.parse(s);
+    const isBlocks =
+      Array.isArray(parsed) &&
+      parsed.every((b) => typeof b === 'object' && b !== null && typeof b.type === 'string');
+    return isBlocks ? (parsed as ContentBlock[]) : s;
+  } catch {
+    return s;
+  }
 }
 
 function extractToolCalls(msg: ConversationMessage): string | null {
@@ -90,7 +94,7 @@ export function getConversation(
   }
 
   const msgRows = db
-    .prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC, rowid ASC')
+    .prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY rowid ASC')
     .all(sessionKey as string) as unknown as MessageRow[];
   const messages = msgRows.map(messageRowToMessage);
 

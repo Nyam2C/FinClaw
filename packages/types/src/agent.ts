@@ -85,10 +85,10 @@ export interface AgentRunLog {
 /** 에이전트 run 종료 오류 분류 (AgentEvent error.reason · chat.stream.error reason). */
 export type AgentErrorReason =
   | 'aborted'
-  | 'timeout' // 스트림 무활동/overall 워치독, lane 대기 실패
-  | 'auth' // 401/403 — 키가 없거나 틀림
+  | 'timeout' // overall 워치독, lane 대기 실패
+  | 'auth' // 401/402/403 — 키가 없거나 틀리거나 크레딧이 없다
   | 'rate_limit' // 429 (SDK 재시도 후에도)
   | 'refusal' // stop_reason refusal — 재시도하지 않는다
-  | 'budget' // run 토큰 예산 초과
+  | 'invalid_request' // 400 또는 보내기 전 검사 실패 — 런타임이 컨텍스트 창을 새로 열어 1회 재시도
   | 'context_overflow' // stop_reason model_context_window_exceeded — 다음 턴에 컨텍스트 회전
   | 'unknown';

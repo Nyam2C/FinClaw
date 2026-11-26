@@ -25,7 +25,7 @@ const done = (req: DriverRequest, text: string): AgentEvent => ({
 });
 
 describe('runSubAgent', () => {
-  it('도구 없이 1턴 · 질의는 user 메시지 하나 · 45s/75s', async () => {
+  it('도구 없이 1턴 · 질의는 user 메시지 하나 · overall 75s', async () => {
     const { driver, calls } = fake((req) => [done(req, '{"ok":1}')]);
     const res = await runSubAgent(driver, {
       systemPrompt: 'ANALYST',
@@ -40,7 +40,6 @@ describe('runSubAgent', () => {
       model: 'claude-opus-5-5',
       tools: [],
       maxTurns: 1,
-      idleTimeoutMs: 45_000,
       overallTimeoutMs: 75_000,
     });
   });

@@ -10,10 +10,9 @@ const DISCORD_AGENT_ID = createAgentId('default');
 
 /** raw message 는 보내지 않는다(credential 섞임 위험). aborted 는 무응답. */
 const ERROR_REPLY: Partial<Record<AgentErrorReason, string>> = {
-  auth: 'Anthropic API 키가 없거나 맞지 않습니다. 서버의 `ANTHROPIC_API_KEY` 를 확인해 주세요.',
+  auth: 'Anthropic API 키가 없거나 맞지 않습니다. 서버의 `ANTHROPIC_API_KEY` 와 크레딧을 확인해 주세요.',
   rate_limit: 'Claude 사용 한도에 도달했습니다. 잠시 후 다시 시도해 주세요.',
   timeout: '응답 시간이 초과되었습니다. 질문을 나눠서 다시 시도해 주세요.',
-  budget: '답변이 토큰 예산을 넘어 중단했습니다. 질문을 나눠서 다시 시도해 주세요.',
   refusal: '이 요청에는 답할 수 없습니다.',
 };
 const FALLBACK_ERROR_REPLY = '응답 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';

@@ -199,18 +199,26 @@ export function createChatMethods(deps: ChatMethodsDeps): readonly RpcMethodHand
         throw new Error('provider_unavailable: storage not initialized');
       }
       const record = await deps.storage.getConversation(session.sessionKey);
-      // 화면에는 사용자 원문과 assistant 의 text 만 — 컨텍스트(system)·도구 결과(tool) 행과
-      // text 가 없는 assistant 행(tool_use 만)은 숨긴다. ConversationMessage 에 시각 필드는 없다.
-      const messages = (record?.messages ?? []).flatMap((m) => {
+      // 화면에는 사용자 원문과, 턴마다 assistant 의 **마지막** text 만 — 실시간 스트림도 말풍선을
+      // 최종 답으로 바꾸기 때문이다. 컨텍스트(system)·도구 결과(tool) 행과 text 없는 assistant 행은 숨긴다.
+      const messages: { role: 'user' | 'assistant'; text: string }[] = [];
+      for (const m of record?.messages ?? []) {
         if (m.role !== 'user' && m.role !== 'assistant') {
-          return [];
+          continue;
         }
         const text =
           typeof m.content === 'string'
             ? m.content
             : m.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
-        return text.length > 0 ? [{ role: m.role, text }] : [];
-      });
+        if (text.length === 0) {
+          continue;
+        }
+        if (m.role === 'assistant' && messages.at(-1)?.role === 'assistant') {
+          messages[messages.length - 1] = { role: 'assistant', text }; // 같은 턴의 중간 말은 덮어쓴다
+        } else {
+          messages.push({ role: m.role, text });
+        }
+      }
       return { messages: messages.slice(-(params.limit ?? 20)) };
     },
   };

@@ -43,7 +43,15 @@ function ok(req: DriverRequest, text = 'ok', middle: AgentEvent[] = []): AgentEv
     { type: 'start', runId: req.runId, model: req.model },
     ...middle,
     { type: 'message', message: { role: 'assistant', content: [{ type: 'text', text }] } },
-    { type: 'done', runId: req.runId, text, usage: USAGE, durationMs: 1, numTurns: 1 },
+    {
+      type: 'done',
+      runId: req.runId,
+      text,
+      usage: USAGE,
+      contextTokens: 10,
+      durationMs: 1,
+      numTurns: 1,
+    },
   ];
 }
 
@@ -195,13 +203,12 @@ describe('AgentRuntime — 트랜스크립트와 컨텍스트 창', () => {
       tools: [{ name: 'get_quote', description: '시세', inputSchema: { type: 'object' } }],
       maxTurns: 10,
       tokenBudget: 400_000,
-      idleTimeoutMs: 120_000,
       overallTimeoutMs: 300_000,
     });
     expect(execute).toHaveBeenCalledWith(
       'get_quote',
       { symbols: ['005930'] },
-      expect.objectContaining({ sessionId: 's1', userId: 'finclaw', channelId: 'agent' }),
+      expect.objectContaining({ sessionId: 's1', userId: 'default', channelId: 'agent' }),
     );
     // message 이벤트는 저장만 하고 채널로 내보내지 않는다
     expect(events.map((e) => e.type)).toEqual(['start', 'done']);
@@ -214,7 +221,7 @@ describe('AgentRuntime — 트랜스크립트와 컨텍스트 창', () => {
     expect(rec?.metadata).toEqual({
       contextStart: 0,
       lastTurnAt: T0,
-      model: MODEL,
+      prefixHash: expect.stringMatching(/^[a-f0-9]{16}$/),
       contextTokens: 10,
     });
   });
@@ -256,20 +263,50 @@ describe('AgentRuntime — 트랜스크립트와 컨텍스트 창', () => {
     expect(rec?.metadata?.contextStart).toBe(3);
   });
 
-  it('모델이 바뀌면 창을 회전한다 (thinking 블록은 만든 모델에서만 유효)', async () => {
+  it('시스템 프롬프트나 도구 목록이 바뀌면 회전한다 (배포·재시작 뒤 예전 thinking 블록은 무효)', async () => {
+    const { driver, calls } = scripted((req) => ok(req));
+    await collect(makeRuntime(driver).run(chat('s1', 'q1')));
+    await collect(makeRuntime(driver, { systemPrompt: 'SYS v2' }).run(chat('s1', 'q2')));
+    expect(sent(calls[1]).map(([role]) => role)).toEqual(['system', 'user']);
+
+    const tools = {
+      list: () => [{ definition: { name: 'new_tool', description: 'd', inputSchema: {} } }],
+      execute: vi.fn(),
+    } as unknown as AgentRuntimeDeps['tools'];
+    await collect(makeRuntime(driver, { systemPrompt: 'SYS v2', tools }).run(chat('s1', 'q3')));
+    expect(sent(calls[2]).map(([role]) => role)).toEqual(['system', 'user']);
+  });
+
+  it('모델만 바뀌면 회전하지 않는다 (API 가 읽을 수 없는 thinking 블록은 스스로 버린다)', async () => {
     const { driver, calls } = scripted((req) => ok(req));
     const rt = makeRuntime(driver);
     await collect(rt.run(chat('s1', 'q1')));
     await collect(rt.run(chat('s1', 'q2', { model: 'claude-sonnet-5-5' })));
-    expect(sent(calls[1]).map(([role]) => role)).toEqual(['system', 'user']);
+    expect(sent(calls[1]).map(([role]) => role)).toEqual([
+      'system',
+      'user',
+      'assistant',
+      'system',
+      'user',
+    ]);
     expect(calls[1]?.model).toBe('claude-sonnet-5-5');
   });
 
-  it('직전 run 의 입력이 15만 토큰을 넘었으면 회전한다', async () => {
-    const big = { input: 1_000, output: 5, cacheRead: 200_000, cacheWrite: 0 };
+  it('직전 run 마지막 호출의 프롬프트가 15만 토큰을 넘었으면 회전한다', async () => {
     const { driver, calls } = scripted((req, n) =>
       n === 1
-        ? [...ok(req).slice(0, -1), { ...(ok(req).at(-1) as AgentEvent), usage: big } as AgentEvent]
+        ? [
+            ...ok(req).slice(0, -1),
+            {
+              type: 'done',
+              runId: req.runId,
+              text: 'ok',
+              usage: USAGE,
+              contextTokens: 200_000,
+              durationMs: 1,
+              numTurns: 1,
+            },
+          ]
         : ok(req),
     );
     const rt = makeRuntime(driver);
@@ -278,15 +315,54 @@ describe('AgentRuntime — 트랜스크립트와 컨텍스트 창', () => {
     expect(sent(calls[1]).map(([role]) => role)).toEqual(['system', 'user']);
   });
 
-  it('context_overflow 로 끝난 다음 턴은 회전한다', async () => {
+  it.each(['context_overflow', 'refusal'] as const)(
+    '%s 로 끝난 다음 턴은 회전한다 (같은 창을 다시 보내면 같은 결과)',
+    async (reason) => {
+      const { driver, calls } = scripted((req, n) => (n === 2 ? err(req, reason) : ok(req)));
+      const rt = makeRuntime(driver);
+      await collect(rt.run(chat('s1', 'q1')));
+      await collect(rt.run(chat('s1', 'q2')));
+      await collect(rt.run(chat('s1', 'q3')));
+      expect(sent(calls[2]).map(([role]) => role)).toEqual(['system', 'user']);
+    },
+  );
+
+  it('API 가 트랜스크립트를 거절하면(invalid_request) 창을 이번 턴에서 새로 열어 1회 재시도한다', async () => {
     const { driver, calls } = scripted((req, n) =>
-      n === 2 ? err(req, 'context_overflow') : ok(req),
+      n === 2 ? err(req, 'invalid_request') : ok(req, `a${n}`),
     );
     const rt = makeRuntime(driver);
     await collect(rt.run(chat('s1', 'q1')));
-    await collect(rt.run(chat('s1', 'q2')));
+    const events = await collect(rt.run(chat('s1', 'q2')));
+
+    expect(calls).toHaveLength(3);
+    expect(sent(calls[1]).map(([role]) => role)).toEqual([
+      'system',
+      'user',
+      'assistant',
+      'system',
+      'user',
+    ]);
+    expect(sent(calls[2])).toEqual([
+      ['system', CTX],
+      ['user', 'q2'],
+    ]);
+    expect(terminals(events)).toEqual([expect.objectContaining({ type: 'done', text: 'a3' })]);
+    const rec = await storage.getConversation(createSessionKey('s1'));
+    expect(rec?.metadata?.contextStart).toBe(3); // 이번 턴의 system 행부터
+
+    // 다음 턴은 새 창을 이어 간다 (깨진 앞부분은 다시 보내지 않는다)
     await collect(rt.run(chat('s1', 'q3')));
-    expect(sent(calls[2]).map(([role]) => role)).toEqual(['system', 'user']);
+    expect(sent(calls[3]).map(([, text]) => text)).toEqual([CTX, 'q2', 'a3', CTX, 'q3']);
+  });
+
+  it('새 창에서도 거절당하면 재시도하지 않는다', async () => {
+    const { driver, calls } = scripted((req) => err(req, 'invalid_request'));
+    const events = await collect(makeRuntime(driver).run(chat('s1', 'q1')));
+    expect(calls).toHaveLength(1);
+    expect(terminals(events)).toEqual([
+      expect.objectContaining({ type: 'error', reason: 'invalid_request' }),
+    ]);
   });
 
   it('예전(CLI 시절) 텍스트 대화는 첫 턴에 회전하고 recap 으로 이어받는다', async () => {
@@ -346,6 +422,24 @@ describe('AgentRuntime — 트랜스크립트와 컨텍스트 창', () => {
       'user',
       'assistant',
     ]);
+  });
+
+  it('회전하는 턴에는 예전 창의 결과 없는 tool_use 를 닫지 않는다 (창 밖이라 보내지 않는다)', async () => {
+    const toolUse = [{ type: 'tool_use', id: 't1', name: 'get_quote', input: {} }];
+    const { driver, calls } = scripted((req, n) =>
+      n === 1
+        ? [
+            { type: 'start', runId: req.runId, model: req.model },
+            { type: 'message', message: { role: 'assistant', content: toolUse } },
+            { type: 'error', runId: req.runId, reason: 'aborted', message: 'killed' },
+          ]
+        : ok(req),
+    );
+    const rt = makeRuntime(driver);
+    await collect(rt.run(chat('s1', 'q1')));
+    clock += 6 * HOUR + 1;
+    await collect(rt.run(chat('s1', 'q2')));
+    expect(calls[1]?.messages.map((m) => m.role)).toEqual(['system', 'user']);
   });
 
   it('error 턴: 원문은 남고 assistant 행은 없다. 창 상태의 시각만 갱신된다', async () => {

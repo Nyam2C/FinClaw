@@ -3,6 +3,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  checkMessages,
   createLoopDriver,
   settleDanglingToolUses,
   toApiMessages,
@@ -49,11 +50,18 @@ type Step =
   | Error
   | ((params: StreamParams, signal: AbortSignal) => Promise<Anthropic.Message>);
 
-/** 호출마다 다음 step 을 내준다. text 블록은 delta 로도 흘린다. 요청 스냅샷을 남긴다. */
+/**
+ * 호출마다 다음 step 을 내준다. text 블록은 delta 로도 흘린다. 요청 스냅샷을 남긴다.
+ * API 가 거절할 요청(역할 교대·도구 짝)은 여기서도 거절한다 — 가짜가 무엇이든 받아 주면 테스트가 못 잡는다.
+ */
 function scripted(steps: Step[]) {
   const requests: StreamParams[] = [];
   const stream: StreamFn = async (params, opts) => {
     requests.push(structuredClone(params));
+    const invalid = checkMessages(params.messages);
+    if (invalid) {
+      throw new Anthropic.BadRequestError(400, undefined, invalid, new Headers());
+    }
     const step = steps.shift();
     if (step === undefined) {
       throw new Error('script exhausted');
@@ -63,7 +71,6 @@ function scripted(steps: Step[]) {
     }
     const msg = typeof step === 'function' ? await step(params, opts.signal) : step;
     for (const block of msg.content) {
-      opts.onActivity();
       if (block.type === 'text') {
         opts.onText(block.text);
       }
@@ -88,7 +95,6 @@ function request(over: Partial<DriverRequest> = {}): DriverRequest {
     runTool: async (name) => ({ content: `${name} ok`, isError: false }),
     maxTurns: 10,
     tokenBudget: 1_000_000,
-    idleTimeoutMs: 60_000,
     overallTimeoutMs: 60_000,
     signal: new AbortController().signal,
     ...over,
@@ -250,18 +256,6 @@ describe('runLoop', () => {
     expect(requests).toHaveLength(1);
   });
 
-  it('pause_turn 은 같은 히스토리에 assistant 를 붙여 다시 요청한다', async () => {
-    const { stream, requests } = scripted([
-      message([text('잠시')], 'pause_turn'),
-      message([text('이어서')]),
-    ]);
-    const events = await collect(stream, request());
-
-    expect(requests).toHaveLength(2);
-    expect(requests[1].messages.map((m) => m.role)).toEqual(['user', 'assistant']);
-    expect(last(events)).toMatchObject({ type: 'done', text: '이어서', numTurns: 2 });
-  });
-
   it('반복 상한을 넘으면 도구 정의는 둔 채 tool_choice none 으로 마무리 호출을 한다', async () => {
     const { stream, requests } = scripted([
       message([toolUse('a', 'get_quote')], 'tool_use'),
@@ -279,25 +273,29 @@ describe('runLoop', () => {
     expect(last(events)).toMatchObject({ type: 'done', text: '지금까지로 답합니다', numTurns: 3 });
   });
 
-  it('토큰 예산을 넘으면 짝을 닫은 뒤 error{budget}', async () => {
-    const { stream } = scripted([
-      message([toolUse('a', 'get_quote')], 'tool_use', { input_tokens: 900, output_tokens: 200 }),
+  it('토큰 예산을 넘으면 반복 상한과 같이 마무리 호출로 끝낸다 (캐시 읽기는 세지 않는다)', async () => {
+    // 14만 토큰짜리 캐시된 컨텍스트로 도구를 두 번 돌려도 예산(1,000)에 걸리지 않는다
+    const cached = { input_tokens: 5, output_tokens: 20, cache_read_input_tokens: 140_000 };
+    const ok = scripted([
+      message([toolUse('a', 'get_quote')], 'tool_use', cached),
+      message([toolUse('b', 'get_quote')], 'tool_use', cached),
+      message([text('끝')], 'end_turn', cached),
     ]);
-    const events = await collect(stream, request({ tokenBudget: 1_000 }));
+    await collect(ok.stream, request({ tokenBudget: 1_000 }));
+    expect(ok.requests.map((r) => r.tool_choice)).toEqual([
+      { type: 'auto' },
+      { type: 'auto' },
+      { type: 'auto' },
+    ]);
 
-    expect(types(events)).toEqual([
-      'start',
-      'message',
-      'tool_use',
-      'tool_result',
-      'message',
-      'error',
+    // 새로 처리한 토큰(입력+캐시 쓰기+출력)이 넘으면 다음 호출은 도구를 막은 마무리 호출이다
+    const over = scripted([
+      message([toolUse('a', 'get_quote')], 'tool_use', { input_tokens: 900, output_tokens: 200 }),
+      message([text('지금까지로 답합니다')]),
     ]);
-    expect(last(events)).toMatchObject({
-      reason: 'budget',
-      usage: { input: 900, output: 200 },
-      numTurns: 1,
-    });
+    const events = await collect(over.stream, request({ tokenBudget: 1_000 }));
+    expect(over.requests.map((r) => r.tool_choice)).toEqual([{ type: 'auto' }, { type: 'none' }]);
+    expect(last(events)).toMatchObject({ type: 'done', text: '지금까지로 답합니다', numTurns: 2 });
   });
 
   it('도구 실행 중 abort 되면 tool 행으로 짝을 닫고 error{aborted}', async () => {
@@ -313,7 +311,7 @@ describe('runLoop', () => {
     expect(last(events)).toMatchObject({ reason: 'aborted' });
   });
 
-  it('모델 호출 중 abort 는 aborted, 워치독(무활동)은 timeout', async () => {
+  it('모델 호출 중 abort 는 aborted, 워치독(overall)은 timeout', async () => {
     const hang = (_p: StreamParams, signal: AbortSignal): Promise<Anthropic.Message> =>
       new Promise((_resolve, reject) => {
         signal.addEventListener('abort', () => reject(new Anthropic.APIUserAbortError()));
@@ -330,8 +328,8 @@ describe('runLoop', () => {
     expect(last(pre)).toMatchObject({ type: 'error', reason: 'aborted', numTurns: 0 });
     expect(never.requests).toHaveLength(0);
 
-    const idle = await collect(scripted([hang]).stream, request({ idleTimeoutMs: 10 }));
-    expect(last(idle)).toMatchObject({ type: 'error', reason: 'timeout' });
+    const slow = await collect(scripted([hang]).stream, request({ overallTimeoutMs: 10 }));
+    expect(last(slow)).toMatchObject({ type: 'error', reason: 'timeout' });
   });
 
   it('SDK 오류를 종료 사유로 분류한다', async () => {
@@ -341,7 +339,9 @@ describe('runLoop', () => {
       [new Anthropic.PermissionDeniedError(403, undefined, 'no', headers), 'auth'],
       [new Anthropic.RateLimitError(429, undefined, 'slow down', headers), 'rate_limit'],
       [new Anthropic.APIConnectionTimeoutError(), 'timeout'],
-      [new Anthropic.BadRequestError(400, undefined, 'bad', headers), 'unknown'],
+      [new Anthropic.APIError(402 as never, undefined, 'credit balance too low', headers), 'auth'],
+      [new Anthropic.BadRequestError(400, undefined, 'bad', headers), 'invalid_request'],
+      [new Anthropic.InternalServerError(500, undefined, 'oops', headers), 'unknown'],
       [new Error('socket hang up'), 'unknown'],
     ];
     for (const [err, reason] of cases) {
@@ -356,16 +356,105 @@ describe('runLoop', () => {
     expect(last(await collect(stream, request()))).toMatchObject({ reason: 'context_overflow' });
   });
 
-  it('도구가 없으면 tools·tool_choice 를 보내지 않는다 (서브에이전트)', async () => {
+  it('도구가 없으면 tools·tool_choice·꼬리 캐시를 보내지 않는다 (서브에이전트)', async () => {
     const { stream, requests } = scripted([message([text('분석')])]);
     await collect(stream, request({ tools: [] }));
     expect(requests[0].tools).toBeUndefined();
     expect(requests[0].tool_choice).toBeUndefined();
+    expect(requests[0].cache_control).toBeUndefined();
+  });
+
+  it('text 없이 끝난 응답(thinking 만 하다 max_tokens)은 저장하지 않고 오류로 끝낸다', async () => {
+    const thinking = { type: 'thinking', thinking: '', signature: 's' } as unknown as Block;
+    const { stream } = scripted([message([thinking], 'max_tokens')]);
+    const events = await collect(stream, request());
+    expect(types(events)).toEqual(['start', 'error']);
+    expect(last(events)).toMatchObject({ reason: 'unknown' });
+  });
+
+  it('끝나지 않는 도구는 기다리지 않는다: abort → 짝을 닫고 aborted, 워치독 → timeout', async () => {
+    const never = (): Promise<DriverToolResult> => new Promise(() => {});
+    const script = (): Step[] => [message([toolUse('a', 'get_quote')], 'tool_use')];
+
+    const controller = new AbortController();
+    const aborted = collect(
+      scripted(script()).stream,
+      request({ runTool: never, signal: controller.signal }),
+    );
+    setTimeout(() => controller.abort(), 5);
+    const events = await aborted;
+    expect(types(events).slice(-3)).toEqual(['tool_result', 'message', 'error']);
+    expect(events.at(-2)).toMatchObject({
+      message: { role: 'tool', content: [{ tool_use_id: 'a', is_error: true }] },
+    });
+    expect(last(events)).toMatchObject({ reason: 'aborted' });
+
+    const timed = await collect(
+      scripted(script()).stream,
+      request({ runTool: never, overallTimeoutMs: 10 }),
+    );
+    expect(last(timed)).toMatchObject({ reason: 'timeout' });
+  });
+
+  it('API 규칙에 안 맞는 도구 이름(플러그인 `mcp:id:name`)은 경계에서 바꿔 보내고 되돌린다', async () => {
+    const { stream, requests } = scripted([
+      message([toolUse('a', 'mcp_fs_read_file')], 'tool_use'),
+      message([text('ok')]),
+    ]);
+    const runTool = vi.fn(async () => ({ content: 'data', isError: false }));
+    const events = await collect(
+      stream,
+      request({
+        tools: [{ name: 'mcp:fs:read_file', description: 'd', inputSchema: { type: 'object' } }],
+        runTool,
+      }),
+    );
+    expect(requests[0].tools?.map((t) => t.name)).toEqual(['mcp_fs_read_file']);
+    expect(runTool).toHaveBeenCalledWith('mcp:fs:read_file', {}, expect.anything());
+    expect(events.find((e) => e.type === 'tool_use')).toMatchObject({ name: 'mcp:fs:read_file' });
+  });
+
+  it('보낼 수 없는 트랜스크립트는 모델을 부르지 않고 error{invalid_request}', async () => {
+    const { stream, requests } = scripted([]);
+    const events = await collect(
+      stream,
+      request({
+        messages: [
+          { role: 'user', content: 'q' },
+          {
+            role: 'assistant',
+            content: [{ type: 'tool_use', id: 'a', name: 'get_quote', input: {} }],
+          },
+          { role: 'system', content: 'ctx' },
+          { role: 'user', content: '결과 없이 다음 질문' }, // tool_use 에 답이 없다
+        ],
+      }),
+    );
+    expect(types(events)).toEqual(['start', 'error']);
+    expect(last(events)).toMatchObject({ reason: 'invalid_request' });
+    expect(requests).toHaveLength(0);
+  });
+
+  it('종료 이벤트에 마지막 호출의 프롬프트 크기(contextTokens)를 싣는다', async () => {
+    const { stream } = scripted([
+      message([toolUse('a', 'get_quote')], 'tool_use', {
+        input_tokens: 10,
+        cache_read_input_tokens: 100,
+      }),
+      message([text('끝')], 'end_turn', {
+        input_tokens: 7,
+        cache_read_input_tokens: 300,
+        cache_creation_input_tokens: 50,
+      }),
+    ]);
+    expect(last(await collect(stream, request()))).toMatchObject({ contextTokens: 357 });
   });
 });
 
 describe('toApiMessages', () => {
-  it('system 행은 바로 뒤 user 의 첫 text 블록이 되고, tool 행은 user 로 나간다', () => {
+  const T = (t: string) => ({ type: 'text', text: t });
+
+  it('system 행은 바로 뒤 user 앞의 text 블록이 되고, tool 행은 user 로 나간다', () => {
     const rows: TranscriptMessage[] = [
       { role: 'user', content: '예전 텍스트 행' },
       { role: 'assistant', content: '예전 답' },
@@ -375,26 +464,120 @@ describe('toApiMessages', () => {
       { role: 'tool', content: [{ type: 'tool_result', tool_use_id: 'a', content: '70000' }] },
     ];
     expect(toApiMessages(rows)).toEqual([
-      { role: 'user', content: '예전 텍스트 행' },
-      { role: 'assistant', content: '예전 답' },
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: '<context>시각</context>' },
-          { type: 'text', text: '삼성전자?' },
-        ],
-      },
+      { role: 'user', content: [T('예전 텍스트 행')] },
+      { role: 'assistant', content: [T('예전 답')] },
+      { role: 'user', content: [T('<context>시각</context>'), T('삼성전자?')] },
       { role: 'assistant', content: [{ type: 'tool_use', id: 'a', name: 'get_quote', input: {} }] },
       { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'a', content: '70000' }] },
     ]);
   });
 
-  it('같은 행은 항상 같은 출력이 된다 (캐시 프리픽스)', () => {
+  it('같은 role 이 이어지면 한 메시지로 합친다 (도구 결과 → 새 질문, 실패한 턴 → 재질문)', () => {
     const rows: TranscriptMessage[] = [
-      { role: 'system', content: 'ctx' },
+      { role: 'system', content: 'c1' },
+      { role: 'user', content: 'q1' }, // 이 턴은 실패해 assistant 행이 없다
+      { role: 'system', content: 'c2' },
+      { role: 'user', content: 'q2' },
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'a', name: 'get_quote', input: {} }] },
+      {
+        role: 'tool',
+        content: [{ type: 'tool_result', tool_use_id: 'a', content: 'x', is_error: true }],
+      },
+      { role: 'system', content: 'c3' },
+      { role: 'user', content: 'q3' },
+    ];
+    const out = toApiMessages(rows);
+    expect(out.map((m) => m.role)).toEqual(['user', 'assistant', 'user']);
+    expect(out[0].content).toEqual([T('c1'), T('q1'), T('c2'), T('q2')]);
+    expect(out[2].content).toEqual([
+      { type: 'tool_result', tool_use_id: 'a', content: 'x', is_error: true }, // 결과가 먼저
+      T('c3'),
+      T('q3'),
+    ]);
+    expect(checkMessages(out)).toBeUndefined();
+  });
+
+  it('창이 user 질문으로 시작하지 않으면 앞부분을 버린다', () => {
+    const rows: TranscriptMessage[] = [
+      { role: 'assistant', content: '짝 잃은 답' },
+      { role: 'tool', content: [{ type: 'tool_result', tool_use_id: 'gone', content: 'x' }] },
+      { role: 'assistant', content: '또 다른 답' },
       { role: 'user', content: 'q' },
     ];
-    expect(JSON.stringify(toApiMessages(rows))).toBe(JSON.stringify(toApiMessages(rows)));
+    expect(toApiMessages(rows)).toEqual([{ role: 'user', content: [T('q')] }]);
+    expect(toApiMessages([{ role: 'assistant', content: 'a' }])).toEqual([]);
+  });
+
+  it('행을 덧붙여도 앞 메시지는 바이트 단위로 그대로다 (캐시 프리픽스)', () => {
+    const rows: TranscriptMessage[] = [
+      { role: 'system', content: 'ctx' },
+      { role: 'user', content: 'q1' },
+      {
+        role: 'assistant',
+        content: [{ type: 'thinking', thinking: '', signature: 'sig' }, T('a1')],
+      },
+    ];
+    const more: TranscriptMessage[] = [
+      ...rows,
+      { role: 'system', content: 'ctx2' },
+      { role: 'user', content: 'q2' },
+    ];
+    const before = toApiMessages(rows);
+    const after = toApiMessages(more);
+    expect(JSON.stringify(after.slice(0, before.length))).toBe(JSON.stringify(before));
+  });
+});
+
+describe('checkMessages', () => {
+  const use = { type: 'tool_use', id: 'a', name: 't', input: {} } as const;
+  const result = { type: 'tool_result', tool_use_id: 'a', content: 'x' } as const;
+
+  it('정상 대화는 통과', () => {
+    expect(
+      checkMessages([
+        { role: 'user', content: 'q' },
+        { role: 'assistant', content: [use] },
+        { role: 'user', content: [result] },
+      ]),
+    ).toBeUndefined();
+  });
+
+  it.each([
+    ['빈 배열', []],
+    ['assistant 로 시작', [{ role: 'assistant', content: 'a' }]],
+    [
+      '같은 role 반복',
+      [
+        { role: 'user', content: 'a' },
+        { role: 'user', content: 'b' },
+      ],
+    ],
+    ['빈 메시지', [{ role: 'user', content: '' }]],
+    [
+      '답 없는 tool_use',
+      [
+        { role: 'user', content: 'q' },
+        { role: 'assistant', content: [use] },
+        { role: 'user', content: 'next' },
+      ],
+    ],
+    [
+      '짝 없는 tool_result',
+      [
+        { role: 'user', content: 'q' },
+        { role: 'assistant', content: 'a' },
+        { role: 'user', content: [result] },
+      ],
+    ],
+    [
+      'assistant 로 끝남',
+      [
+        { role: 'user', content: 'q' },
+        { role: 'assistant', content: 'a' },
+      ],
+    ],
+  ] as [string, Anthropic.MessageParam[]][])('거절: %s', (_name, messages) => {
+    expect(checkMessages(messages)).toEqual(expect.any(String));
   });
 });
 

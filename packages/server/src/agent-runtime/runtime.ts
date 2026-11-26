@@ -1,7 +1,7 @@
 // packages/server/src/agent-runtime/runtime.ts
 // 채널 무관 에이전트 런타임 — 세션 줄 세우기·컨텍스트 조립·트랜스크립트 저장·감사 1행을 소유한다.
 // 루프(도구 선택·반복·종료)는 드라이버(@finclaw/agent runtime/loop.ts)가 소유한다 (plans/agent-core.md §3).
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import {
   settleDanglingToolUses,
@@ -33,14 +33,15 @@ import { composeContext, prepareTurn, type PreparedTurn } from './prepare-turn.j
 /** 컨텍스트 회전 조건 (plans/agent-core.md §3.3) — 코드 상수. */
 const ROTATE_IDLE_MS = 6 * 60 * 60_000;
 const ROTATE_CONTEXT_TOKENS = 150_000;
-const MAIN_IDLE_TIMEOUT_MS = 120_000;
 const MAIN_OVERALL_TIMEOUT_MS = 300_000;
 const MAIN_MAX_TURNS = 10;
-/** run 누적 토큰 예산 (입력+캐시+출력). 가격표를 코드에 두지 않으려고 달러가 아니라 토큰으로 건다. */
+/** run 이 새로 처리하는 토큰(입력+캐시 쓰기+출력) 예산. 넘으면 마무리 호출로 끝낸다. 가격표를 코드에 두지 않으려고 토큰으로 건다. */
 const CHAT_TOKEN_BUDGET = 400_000;
 const ONESHOT_TOKEN_BUDGET = 200_000;
 const GLOBAL_LANE_KEY = 'agent';
 const PROFILE_ID = 'default';
+/** 도구가 보는 사용자 id. 앱·RPC 가 만든 알림의 소유자와 같아야 `list_alerts` 가 그것을 본다. */
+const TOOL_USER_ID = 'default';
 const ABORT_DRAIN_MS = 3_000;
 
 /**
@@ -48,12 +49,12 @@ const ABORT_DRAIN_MS = 3_000;
  * ponytail: 회전은 요약이 아니라 잘라내기(+직전 대화 recap)다. 긴 맥락이 필요해지면 서버 측 compaction 으로.
  */
 interface ContextWindow {
-  /** 이 인덱스부터의 행만 모델에 보낸다. */
+  /** 이 인덱스(rowid 순)부터의 행만 모델에 보낸다. 행은 덧붙이기만 하므로 인덱스는 변하지 않는다. */
   readonly contextStart: number;
   readonly lastTurnAt: number;
-  /** thinking 블록은 만든 모델에서만 유효하다 → 모델이 바뀌면 회전. */
-  readonly model: string;
-  /** 직전 run 의 호출당 평균 입력 크기 (입력+캐시). */
+  /** 시스템 프롬프트·도구 목록의 해시. 바뀌면(배포·키 추가·플러그인) 예전 thinking 블록이 무효가 되므로 회전. */
+  readonly prefixHash: string;
+  /** 직전 run 마지막 호출의 프롬프트 크기 (입력+캐시). */
   readonly contextTokens: number;
 }
 
@@ -204,43 +205,45 @@ export class AgentRuntime implements AgentRunPort {
     });
     ctx.prepared = prepared;
 
-    // ④ 컨텍스트 창: 6h 유휴 · 직전 입력이 큼 · 모델 변경이면 회전 (원문은 그대로 두고 시작점만 옮긴다)
+    // ④ 컨텍스트 창: 6h 유휴 · 직전 프롬프트가 큼 · 프리픽스(시스템 프롬프트·도구) 변경이면 회전.
+    //    원문은 그대로 두고 시작점만 옮긴다.
+    const tools = this.toolDefinitions();
+    const prefixHash = hashPrefix(this.deps.systemPrompt, tools);
     const stored = (ctx.record?.messages ?? []) as readonly TranscriptMessage[];
     const prev = readWindow(ctx.record?.metadata);
     const rotate =
       !prev ||
       now - prev.lastTurnAt >= ROTATE_IDLE_MS ||
       prev.contextTokens > ROTATE_CONTEXT_TOKENS ||
-      prev.model !== model;
-    const window: ContextWindow = {
+      prev.prefixHash !== prefixHash;
+    let window: ContextWindow = {
       contextStart: rotate ? stored.length : prev.contextStart,
       lastTurnAt: prev?.lastTurnAt ?? now,
-      model,
+      prefixHash,
       contextTokens: rotate ? 0 : prev.contextTokens,
     };
     ctx.window = window;
     const carried = stored.slice(window.contextStart);
-    // 중단·크래시로 결과 없는 tool_use 가 남았으면 짝을 닫는다 (안 닫으면 API 가 거절한다)
+    // 이어 가는 창에 결과 없는 tool_use 가 남았으면(중단·크래시) 짝을 닫는다.
     const settled = settleDanglingToolUses(carried);
     const turn: TranscriptMessage[] = [
-      ...(settled ? [settled] : []),
       // 회전 직후에는 직전 대화 몇 개를 recap 으로 컨텍스트에 싣는다
       { role: 'system', content: composeContext(prepared.context, rotate ? stored : []) },
       { role: 'user', content: req.input },
     ];
     // ⑤ user 턴은 모델 호출보다 먼저 저장한다
-    await this.append(ctx, turn, now);
+    await this.append(ctx, [...(settled ? [settled] : []), ...turn], now);
 
-    const terminal = yield* this.drive(ctx, {
+    const dreq: DriverRequest = {
       runId: ctx.runId,
       systemPrompt: this.deps.systemPrompt,
-      messages: [...carried, ...turn],
+      messages: [...carried, ...(settled ? [settled] : []), ...turn],
       model,
-      tools: this.toolDefinitions(),
+      tools,
       runTool: async (name, input, toolSignal) => {
         const result = await this.deps.tools.execute(name, input as Record<string, unknown>, {
           sessionId: req.sessionKey,
-          userId: 'finclaw',
+          userId: TOOL_USER_ID,
           channelId: 'agent',
           abortSignal: toolSignal,
         });
@@ -248,10 +251,24 @@ export class AgentRuntime implements AgentRunPort {
       },
       maxTurns: MAIN_MAX_TURNS,
       tokenBudget: req.mode === 'chat' ? CHAT_TOKEN_BUDGET : ONESHOT_TOKEN_BUDGET,
-      idleTimeoutMs: MAIN_IDLE_TIMEOUT_MS,
       overallTimeoutMs: MAIN_OVERALL_TIMEOUT_MS,
       signal,
-    });
+    };
+    let terminal = yield* this.drive(ctx, dreq);
+    // ⑥ 저장된 트랜스크립트를 API 가 거절하면(400) 같은 본문은 다시 보내도 실패한다. 창을 이번 턴에서
+    //    새로 열어 1회만 재시도한다 — 안 하면 그 대화는 6h 유휴까지 매 턴 실패한다.
+    if (terminal.type === 'error' && terminal.reason === 'invalid_request' && carried.length > 0) {
+      this.deps.logger.warn('agent.context.reset', {
+        event: 'agent.context.reset',
+        runId: ctx.runId,
+        sessionKey: req.sessionKey,
+        cause: terminal.message,
+      });
+      window = { ...window, contextStart: stored.length + (settled ? 1 : 0), contextTokens: 0 };
+      ctx.window = window;
+      await this.append(ctx, [], this.now());
+      terminal = yield* this.drive(ctx, { ...dreq, messages: turn });
+    }
     return terminal;
   }
 
@@ -337,7 +354,10 @@ export class AgentRuntime implements AgentRunPort {
         prompt: req.input,
         output: final.type === 'done' ? final.text : '',
         toolCalls: attempt.tools.size > 0 ? JSON.stringify([...attempt.tools.values()]) : undefined,
-        tokensInput: final.usage?.input,
+        // 프롬프트 전체 (캐시 읽기·쓰기 포함) — 캐시가 맞으면 usage.input 은 몇 토큰뿐이라 감사에 쓸 수 없다
+        tokensInput: final.usage
+          ? final.usage.input + final.usage.cacheRead + final.usage.cacheWrite
+          : undefined,
         tokensOutput: final.usage?.output,
         durationMs: endedAt - ctx.startedAt,
         modelUsed: attempt.model || req.model || this.deps.defaultModel,
@@ -386,17 +406,15 @@ export class AgentRuntime implements AgentRunPort {
     return final;
   }
 
-  /** run 종료 시 창 상태 갱신: 마지막 대화 시각과 호출당 평균 입력 크기 (다음 턴의 회전 판정용). */
+  /** run 종료 시 창 상태 갱신: 마지막 대화 시각과 마지막 호출의 프롬프트 크기 (다음 턴의 회전 판정용). */
   private async saveWindow(ctx: RunContext, final: TerminalEvent, endedAt: number): Promise<void> {
     const window = ctx.window as ContextWindow;
-    const u = final.usage;
-    const turns = Math.max(final.numTurns ?? 1, 1);
-    const contextTokens =
-      final.type === 'error' && final.reason === 'context_overflow'
-        ? ROTATE_CONTEXT_TOKENS + 1 // 다음 턴에 반드시 회전
-        : u
-          ? Math.round((u.input + u.cacheRead + u.cacheWrite) / turns)
-          : window.contextTokens;
+    // 컨텍스트 초과·거절로 끝난 창은 다음 턴에 이어 보내도 같은 결과가 난다 → 반드시 회전.
+    const poisoned =
+      final.type === 'error' && (final.reason === 'context_overflow' || final.reason === 'refusal');
+    const contextTokens = poisoned
+      ? ROTATE_CONTEXT_TOKENS + 1
+      : (final.contextTokens ?? window.contextTokens);
     try {
       await this.append(ctx, [], endedAt, { ...window, lastTurnAt: endedAt, contextTokens });
     } catch (err) {
@@ -417,15 +435,25 @@ function readWindow(metadata: Record<string, unknown> | undefined): ContextWindo
   const m = metadata ?? {};
   return typeof m.contextStart === 'number' &&
     typeof m.lastTurnAt === 'number' &&
-    typeof m.model === 'string' &&
+    typeof m.prefixHash === 'string' &&
     typeof m.contextTokens === 'number'
     ? {
         contextStart: m.contextStart,
         lastTurnAt: m.lastTurnAt,
-        model: m.model,
+        prefixHash: m.prefixHash,
         contextTokens: m.contextTokens,
       }
     : undefined; // 예전(CLI 세션) 대화 포함 — 첫 턴에 회전해 새 창을 연다
+}
+
+/** 캐시 프리픽스(시스템 프롬프트 + 이름순 도구 정의)의 지문. */
+function hashPrefix(systemPrompt: string, tools: readonly DriverTool[]): string {
+  const sorted = tools.toSorted((a, b) => a.name.localeCompare(b.name));
+  return createHash('sha256')
+    .update(systemPrompt)
+    .update(JSON.stringify(sorted))
+    .digest('hex')
+    .slice(0, 16);
 }
 
 function fail(runId: string, reason: AgentErrorReason, message: string): TerminalEvent {

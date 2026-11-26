@@ -58,6 +58,24 @@ describe('appendMessages', () => {
     expect(getConversation(database.db, sessionKey)?.messages[0].content).toEqual(blocks);
   });
 
+  it('블록으로 푸는 것은 assistant·tool 행뿐이다 — 사용자가 친 `[...]` 는 문자열 그대로', () => {
+    append(
+      [
+        { role: 'user', content: '["삼성전자","SK하이닉스"]' },
+        { role: 'user', content: '[]' },
+        { role: 'assistant', content: '[참고] 예전에 텍스트로 저장된 답' },
+        { role: 'assistant', content: '[1, 2, 3]' }, // JSON 이지만 블록 배열이 아니다
+      ],
+      1_000,
+    );
+    expect(getConversation(database.db, sessionKey)?.messages.map((m) => m.content)).toEqual([
+      '["삼성전자","SK하이닉스"]',
+      '[]',
+      '[참고] 예전에 텍스트로 저장된 답',
+      '[1, 2, 3]',
+    ]);
+  });
+
   it('metadata 는 줄 때만 교체하고, 빈 messages 로 metadata 만 갱신할 수 있다', () => {
     append([{ role: 'user', content: 'hi' }], 1_000, { contextStart: 0 });
     append([{ role: 'assistant', content: 'hello' }], 2_000);

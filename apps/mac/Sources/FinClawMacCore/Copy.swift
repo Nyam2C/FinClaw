@@ -15,8 +15,7 @@ public enum Copy {
 
   public static func reason(_ r: String) -> String {
     switch r {
-    case "auth": "API 키가 없거나 맞지 않아요. 서버의 `ANTHROPIC_API_KEY` 를 확인해 주세요"
-    case "budget": "답이 너무 길어져서 멈췄어요. 질문을 나눠 주세요"
+    case "auth": "API 키가 없거나 맞지 않아요. 서버의 `ANTHROPIC_API_KEY` 와 크레딧을 확인해 주세요"
     case "refusal": "이 요청에는 답할 수 없어요"
     case "rate_limit": "Claude 사용 한도에 닿았어요. 잠시 후 다시 물어봐 주세요"
     case "timeout": "답이 너무 오래 걸려요. 질문을 나눠 주세요"

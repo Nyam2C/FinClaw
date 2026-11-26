@@ -16,8 +16,7 @@ export interface SubAgentResponse {
 
 const DEFAULT_SUB_AGENT_MODEL = 'claude-opus-5-5';
 const SUB_TOKEN_BUDGET = 100_000;
-/** Q13: 서브 무출력 45s / overall 75s < route_task 90s < 메인 무출력 120s. */
-const SUB_IDLE_TIMEOUT_MS = 45_000;
+/** 서브 overall 75s < route_task 90s < 메인 overall 300s. */
 const SUB_OVERALL_TIMEOUT_MS = 75_000;
 
 export async function runSubAgent(
@@ -34,7 +33,6 @@ export async function runSubAgent(
     runTool: async () => ({ content: 'no tools in sub-agent', isError: true }),
     maxTurns: 1,
     tokenBudget: SUB_TOKEN_BUDGET,
-    idleTimeoutMs: SUB_IDLE_TIMEOUT_MS,
     overallTimeoutMs: SUB_OVERALL_TIMEOUT_MS,
     signal: signal ?? new AbortController().signal,
   })) {

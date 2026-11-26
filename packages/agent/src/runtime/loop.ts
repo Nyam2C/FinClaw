@@ -16,68 +16,98 @@ import type {
 } from './types.js';
 
 const MAX_OUTPUT_TOKENS = 16_000;
+/** Messages API 의 도구 이름 규칙. 플러그인 도구(`mcp:<id>:<name>`)는 이 규칙에 안 맞아 경계에서 바꿔 보낸다. */
+const TOOL_NAME = /^[a-zA-Z0-9_-]{1,64}$/;
 
 export type StreamParams = Anthropic.MessageStreamParams;
 
-/**
- * 모델 호출 1회의 이음매. 실 구현은 SDK 스트림, 테스트는 정해진 메시지를 차례로 내주는 가짜.
- * `onActivity` 는 스트림 이벤트마다(thinking 포함), `onText` 는 text delta 마다 부른다.
- */
+/** 모델 호출 1회의 이음매. 실 구현은 SDK 스트림, 테스트는 정해진 메시지를 차례로 내주는 가짜. */
 export type StreamFn = (
   params: StreamParams,
-  opts: {
-    readonly signal: AbortSignal;
-    readonly onText: (delta: string) => void;
-    readonly onActivity: () => void;
-  },
+  opts: { readonly signal: AbortSignal; readonly onText: (delta: string) => void },
 ) => Promise<Anthropic.Message>;
 
 /** SDK 스트림 어댑터. 재시도(429·5xx·연결 오류)는 SDK 기본값(2회)에 맡긴다. */
 export function createAnthropicStream(client: Anthropic): StreamFn {
   return (params, opts) =>
-    client.messages
-      .stream(params, { signal: opts.signal })
-      .on('streamEvent', opts.onActivity)
-      .on('text', opts.onText)
-      .finalMessage();
+    client.messages.stream(params, { signal: opts.signal }).on('text', opts.onText).finalMessage();
 }
+
+type Block = Anthropic.ContentBlockParam;
 
 /**
  * 트랜스크립트 행 → API 메시지. 결정적이다: 같은 행은 항상 같은 바이트가 된다 (캐시 프리픽스).
- * `system` 행(턴 컨텍스트)은 바로 뒤 user 메시지의 첫 text 블록으로 합친다.
+ * - `system` 행(턴 컨텍스트)은 바로 뒤 user 행 앞의 text 블록이 된다.
+ * - `tool` 행은 user 메시지로 나간다.
+ * - 같은 role 이 이어지면 한 메시지로 합친다 (실패한 턴 뒤 재질문, 중단된 도구 결과 뒤 새 질문).
+ *   tool_result 는 행 순서상 항상 앞에 온다.
+ * - 창이 user 질문으로 시작하지 않으면 앞부분(짝 잃은 assistant·도구 결과)을 버린다.
  */
 export function toApiMessages(rows: readonly TranscriptMessage[]): Anthropic.MessageParam[] {
-  const out: Anthropic.MessageParam[] = [];
-  let context: string | undefined;
+  const out: { role: 'user' | 'assistant'; content: Block[] }[] = [];
+  let context: Block[] = [];
   for (const row of rows) {
     if (row.role === 'system') {
-      context = textOf(row.content);
-    } else if (row.role === 'user') {
-      const input = textOf(row.content);
-      out.push({
-        role: 'user',
-        content:
-          context === undefined
-            ? input
-            : [
-                { type: 'text', text: context },
-                { type: 'text', text: input },
-              ],
-      });
-      context = undefined;
+      context = blocksOf(row.content);
+      continue;
+    }
+    const role = row.role === 'assistant' ? 'assistant' : 'user';
+    const blocks =
+      row.role === 'user' ? [...context, ...blocksOf(row.content)] : blocksOf(row.content);
+    if (row.role === 'user') {
+      context = [];
+    }
+    if (blocks.length === 0) {
+      continue;
+    }
+    const prev = out.at(-1);
+    if (prev?.role === role) {
+      prev.content.push(...blocks);
     } else {
-      out.push({
-        role: row.role === 'tool' ? 'user' : 'assistant',
-        content: row.content as Anthropic.MessageParam['content'],
-      });
+      out.push({ role, content: blocks });
     }
   }
-  return out;
+  const start = out.findIndex(
+    (m) => m.role === 'user' && m.content.every((b) => b.type !== 'tool_result'),
+  );
+  return start < 0 ? [] : out.slice(start);
+}
+
+/**
+ * 요청을 보내기 전에 API 가 거절할 모양을 잡는다. 문제가 있으면 사유, 없으면 undefined.
+ * 저장된 트랜스크립트가 깨졌을 때 400 을 받기 전에 알고, 런타임이 창을 새로 열어 복구하게 한다.
+ */
+export function checkMessages(messages: readonly Anthropic.MessageParam[]): string | undefined {
+  if (messages.length === 0 || messages[0].role !== 'user') {
+    return 'first message must be a user message';
+  }
+  let pending = new Set<string>(); // 직전 assistant 의 tool_use 중 아직 답 없는 것
+  for (const [i, m] of messages.entries()) {
+    if (i > 0 && messages[i - 1].role === m.role) {
+      return `messages[${i}] repeats role ${m.role}`;
+    }
+    const blocks = typeof m.content === 'string' ? [] : m.content;
+    if (typeof m.content === 'string' ? m.content.length === 0 : blocks.length === 0) {
+      return `messages[${i}] is empty`;
+    }
+    if (m.role === 'user') {
+      const answered = new Set(
+        blocks.flatMap((b) => (b.type === 'tool_result' ? [b.tool_use_id] : [])),
+      );
+      if (answered.size !== pending.size || [...pending].some((id) => !answered.has(id))) {
+        return `messages[${i}] does not answer the tool calls before it`;
+      }
+      pending = new Set();
+    } else {
+      pending = new Set(blocks.flatMap((b) => (b.type === 'tool_use' ? [b.id] : [])));
+    }
+  }
+  return messages.at(-1)?.role === 'user' ? undefined : 'last message must be a user message';
 }
 
 /**
  * 마지막 assistant 행에 결과 없는 tool_use 가 남았으면(중단·크래시) is_error 결과 행을 만들어 준다.
- * 안 닫으면 다음 요청이 API 에서 거절된다. 닫을 것이 없으면 undefined.
+ * 닫을 것이 없으면 undefined.
  */
 export function settleDanglingToolUses(
   rows: readonly TranscriptMessage[],
@@ -124,11 +154,13 @@ export function createLoopDriver(opts: {
     const startedAt = now();
     const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
     let numTurns = 0;
+    let contextTokens = 0; // 마지막 호출의 프롬프트 크기 (입력+캐시) — 런타임의 회전 판정용
     const done = (text: string): TerminalEvent => ({
       type: 'done',
       runId: req.runId,
       text,
       usage: { ...usage },
+      contextTokens,
       durationMs: now() - startedAt,
       numTurns,
     });
@@ -138,47 +170,62 @@ export function createLoopDriver(opts: {
       reason,
       message,
       usage: { ...usage },
+      contextTokens,
       numTurns,
     });
 
-    // 워치독: overall 은 고정 타이머, idle 은 스트림 활동마다 되감는다. 둘 다 같은 signal 로 스트림·도구를 끊는다.
+    // 워치독: overall 타이머 하나. 같은 signal 로 스트림과 도구를 끊는다.
     const watchdog = new AbortController();
     const signal = AbortSignal.any([req.signal, watchdog.signal]);
     const overallTimer = setTimeout(() => watchdog.abort(), req.overallTimeoutMs);
-    let idleTimer: ReturnType<typeof setTimeout> | undefined;
-    const touch = (): void => {
-      clearTimeout(idleTimer);
-      idleTimer = setTimeout(() => watchdog.abort(), req.idleTimeoutMs);
-    };
     const stopReason = (): AgentErrorReason => (req.signal.aborted ? 'aborted' : 'timeout');
 
     const messages = toApiMessages(req.messages);
-    // 이름순 고정 — 도구 목록이 바이트 단위로 같아야 캐시가 맞는다.
+    // 이름순 고정 — 도구 목록이 바이트 단위로 같아야 캐시가 맞는다. API 이름 ↔ 레지스트리 이름.
+    const names = new Map<string, string>();
     const tools: Anthropic.Tool[] = req.tools
       .toSorted((a, b) => a.name.localeCompare(b.name))
-      .map((t) => ({
-        name: t.name,
-        description: t.description,
-        input_schema: t.inputSchema as Anthropic.Tool.InputSchema,
-      }));
+      .map((t) => {
+        const apiName = TOOL_NAME.test(t.name)
+          ? t.name
+          : t.name.replaceAll(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
+        names.set(apiName, t.name);
+        return {
+          name: apiName,
+          description: t.description,
+          input_schema: t.inputSchema as Anthropic.Tool.InputSchema,
+        };
+      });
 
     yield { type: 'start', runId: req.runId, model: req.model };
     try {
+      const invalid = checkMessages(messages);
+      if (invalid) {
+        yield fail('invalid_request', invalid);
+        return;
+      }
       for (;;) {
         if (signal.aborted) {
           yield fail(stopReason(), 'run stopped before model call');
           return;
         }
         numTurns += 1;
-        const wrapUp = numTurns > req.maxTurns; // 상한 도달: 도구 정의는 그대로 두고(캐시 유지) 호출만 막는다
+        // 상한(반복·예산)에 닿으면 도구 호출만 막고 지금까지로 답하게 한다. 도구 정의는 그대로 둔다
+        // (tools·system 캐시 유지 — tool_choice 가 바뀌면 messages 캐시는 다시 쓴다).
+        const fresh = usage.input + usage.cacheWrite + usage.output; // 캐시 읽기는 뺀다 (훨씬 싸다)
+        const wrapUp = numTurns > req.maxTurns || fresh > req.tokenBudget;
         const params: StreamParams = {
           model: req.model,
           max_tokens: MAX_OUTPUT_TOKENS,
           system: [{ type: 'text', text: req.systemPrompt, cache_control: { type: 'ephemeral' } }],
-          cache_control: { type: 'ephemeral' }, // 대화 꼬리 자동 캐싱
           messages,
           ...(tools.length > 0
-            ? { tools, tool_choice: { type: wrapUp ? 'none' : 'auto' } as const }
+            ? {
+                tools,
+                tool_choice: { type: wrapUp ? 'none' : 'auto' } as const,
+                // 대화 꼬리 자동 캐싱 — 도구 루프의 다음 호출이 읽는다. 도구 없는 1회 호출에는 할증만 된다.
+                cache_control: { type: 'ephemeral' } as const,
+              }
             : {}),
         };
 
@@ -186,11 +233,9 @@ export function createLoopDriver(opts: {
         const deltas: string[] = [];
         const model: { result?: { message: Anthropic.Message } | { error: unknown } } = {};
         let wake: (() => void) | undefined;
-        touch();
         void opts
           .stream(params, {
             signal,
-            onActivity: touch,
             onText: (delta) => {
               deltas.push(delta);
               wake?.();
@@ -217,7 +262,6 @@ export function createLoopDriver(opts: {
             });
           }
         }
-        clearTimeout(idleTimer);
         const outcome = model.result;
         if ('error' in outcome) {
           yield signal.aborted
@@ -231,6 +275,10 @@ export function createLoopDriver(opts: {
         usage.output += msg.usage.output_tokens;
         usage.cacheRead += msg.usage.cache_read_input_tokens ?? 0;
         usage.cacheWrite += msg.usage.cache_creation_input_tokens ?? 0;
+        contextTokens =
+          msg.usage.input_tokens +
+          (msg.usage.cache_read_input_tokens ?? 0) +
+          (msg.usage.cache_creation_input_tokens ?? 0);
         const text = msg.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
 
         if (msg.stop_reason === 'refusal') {
@@ -242,21 +290,31 @@ export function createLoopDriver(opts: {
           yield fail('context_overflow', 'context window exceeded');
           return;
         }
+        const calls = toolUses(msg.content);
+        if (calls.length === 0 && text.length === 0) {
+          // thinking 만 하다 max_tokens 에 걸린 경우 등 — 빈 답을 저장하거나 채널에 보내지 않는다.
+          yield fail(
+            'unknown',
+            `model returned no text (stop_reason ${msg.stop_reason ?? 'none'})`,
+          );
+          return;
+        }
 
         yield { type: 'message', message: { role: 'assistant', content: msg.content } };
         messages.push({ role: 'assistant', content: msg.content });
 
-        const calls = toolUses(msg.content);
         if (calls.length === 0) {
-          if (msg.stop_reason === 'pause_turn' && !wrapUp) {
-            continue; // 서버 측 일시정지 — 같은 히스토리로 다시 요청
-          }
           yield done(text); // 유일한 정상 종료 (max_tokens 로 잘린 텍스트도 여기로 온다)
           return;
         }
 
         for (const call of calls) {
-          yield { type: 'tool_use', id: call.id, name: call.name, input: call.input };
+          yield {
+            type: 'tool_use',
+            id: call.id,
+            name: names.get(call.name) ?? call.name,
+            input: call.input,
+          };
         }
         let results: Anthropic.ToolResultBlockParam[];
         if (msg.stop_reason === 'max_tokens' || wrapUp) {
@@ -266,7 +324,9 @@ export function createLoopDriver(opts: {
           );
         } else {
           // 전부 조회 도구라 병렬. 결과는 호출 순서대로.
-          const settled = await Promise.all(calls.map((c) => runTool(req, c, signal)));
+          const settled = await Promise.all(
+            calls.map((c) => runTool(req, names.get(c.name) ?? c.name, c.input, signal)),
+          );
           results = calls.map((c, i) => toolResult(c.id, settled[i].content, settled[i].isError));
         }
         for (const r of results) {
@@ -284,31 +344,43 @@ export function createLoopDriver(opts: {
           yield done(text);
           return;
         }
-        if (usage.input + usage.output + usage.cacheRead + usage.cacheWrite > req.tokenBudget) {
-          yield fail('budget', `token budget ${req.tokenBudget} exceeded`);
-          return;
-        }
       }
     } finally {
       clearTimeout(overallTimer);
-      clearTimeout(idleTimer);
     }
   };
 }
 
+/** 도구 1건. 실패·throw 는 모델이 읽는 결과로 바꾸고, 중단 신호를 무시하는 도구는 기다리지 않는다. */
 async function runTool(
   req: DriverRequest,
-  call: Anthropic.ToolUseBlock,
+  name: string,
+  input: unknown,
   signal: AbortSignal,
 ): Promise<DriverToolResult> {
+  const interrupted: DriverToolResult = {
+    content: 'interrupted before the tool finished',
+    isError: true,
+  };
+  if (signal.aborted) {
+    return interrupted;
+  }
+  let onAbort: (() => void) | undefined;
+  const aborted = new Promise<DriverToolResult>((resolve) => {
+    onAbort = () => resolve(interrupted);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
   try {
-    return await req.runTool(call.name, call.input, signal);
+    return await Promise.race([req.runTool(name, input, signal), aborted]);
   } catch (err) {
-    // 도구 실패는 예외가 아니라 모델이 읽는 결과다.
     return {
       content: `tool failed: ${err instanceof Error ? err.message : String(err)}`,
       isError: true,
     };
+  } finally {
+    if (onAbort) {
+      signal.removeEventListener('abort', onAbort);
+    }
   }
 }
 
@@ -316,20 +388,21 @@ function classify(
   err: unknown,
   fail: (reason: AgentErrorReason, message: string) => TerminalEvent,
 ): TerminalEvent {
-  if (
-    err instanceof Anthropic.AuthenticationError ||
-    err instanceof Anthropic.PermissionDeniedError
-  ) {
-    return fail('auth', 'Anthropic API rejected the key');
-  }
-  if (err instanceof Anthropic.RateLimitError) {
-    return fail('rate_limit', 'Anthropic API rate limit');
-  }
   if (err instanceof Anthropic.APIConnectionTimeoutError) {
     return fail('timeout', 'Anthropic API request timed out');
   }
   if (err instanceof Anthropic.APIError) {
-    return fail('unknown', `Anthropic API error ${err.status ?? ''}: ${err.message}`.slice(0, 300));
+    const detail = `Anthropic API ${err.status ?? ''}: ${err.message}`.slice(0, 300);
+    if (err.status === 401 || err.status === 402 || err.status === 403) {
+      return fail('auth', detail); // 키가 틀렸거나 크레딧이 없다
+    }
+    if (err.status === 429) {
+      return fail('rate_limit', detail);
+    }
+    if (err.status === 400) {
+      return fail('invalid_request', detail); // 런타임이 컨텍스트 창을 새로 열고 1회 재시도한다
+    }
+    return fail('unknown', detail);
   }
   return fail('unknown', (err instanceof Error ? err.message : String(err)).slice(0, 300));
 }
@@ -346,10 +419,10 @@ function toolResult(id: string, content: string, isError: boolean): Anthropic.To
   return { type: 'tool_result', tool_use_id: id, content, ...(isError ? { is_error: true } : {}) };
 }
 
-function textOf(content: TranscriptMessage['content']): string {
-  return typeof content === 'string'
-    ? content
-    : (content as readonly { type?: string; text?: string }[])
-        .flatMap((b) => (b.type === 'text' && typeof b.text === 'string' ? [b.text] : []))
-        .join('\n');
+/** 저장된 content → 블록 배열. 문자열은 text 블록 하나(빈 문자열이면 없음), 배열은 받은 그대로. */
+function blocksOf(content: TranscriptMessage['content']): Block[] {
+  if (typeof content === 'string') {
+    return content.length > 0 ? [{ type: 'text', text: content }] : [];
+  }
+  return [...(content as readonly Block[])];
 }

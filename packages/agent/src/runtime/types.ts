@@ -41,6 +41,8 @@ export type AgentEvent =
       readonly runId: string;
       readonly text: string; // 마지막 assistant 메시지의 text
       readonly usage: AgentUsage;
+      /** 마지막 모델 호출의 프롬프트 크기 (입력+캐시). 런타임의 컨텍스트 회전 판정용. */
+      readonly contextTokens?: number;
       readonly durationMs: number;
       readonly numTurns: number;
       // ↓ runtime 이 덧붙임
@@ -58,6 +60,7 @@ export type AgentEvent =
       readonly reason: AgentErrorReason;
       readonly message: string; // 짧은 요약. 원문 오류는 로그에만
       readonly usage?: AgentUsage;
+      readonly contextTokens?: number;
       readonly numTurns?: number;
     };
 
@@ -89,8 +92,8 @@ export interface DriverRequest {
     signal: AbortSignal,
   ) => Promise<DriverToolResult>;
   readonly maxTurns: number; // 넘으면 도구 호출을 막은 마무리 호출 1회
-  readonly tokenBudget: number; // run 누적 (입력+캐시+출력). 넘으면 error{budget}
-  readonly idleTimeoutMs: number; // 스트림 무활동
+  /** run 이 새로 처리한 토큰(입력+캐시 쓰기+출력) 상한. 넘으면 반복 상한과 같이 마무리 호출로 끝낸다. */
+  readonly tokenBudget: number;
   readonly overallTimeoutMs: number;
   readonly signal: AbortSignal;
 }

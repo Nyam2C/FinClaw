@@ -133,6 +133,7 @@ export function buildPipeline(deps: BuildPipelineDeps): PipelineBundle {
   registerBuiltInCommands(commandRegistry, {
     toolRegistry,
     storage,
+    runtime,
     profileHealth,
     profileId: 'default',
     defaultModel,
