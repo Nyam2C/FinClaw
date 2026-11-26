@@ -467,6 +467,30 @@ describe('chat.* RPC methods', () => {
       expect(res.result.messages).toEqual([{ role: 'assistant', text: 'ab' }]);
     });
 
+    it('text 가 없는 assistant 행(tool_use·thinking 만)은 숨긴다', async () => {
+      const storage = storageWith([
+        { role: 'user', content: '삼성전자 얼마야?' },
+        {
+          role: 'assistant',
+          content: [
+            { type: 'thinking', thinking: '', signature: 's' },
+            { type: 'tool_use', id: 't', name: 'get_quote', input: {} },
+          ] as never,
+        },
+        {
+          role: 'tool',
+          content: [{ type: 'tool_result', tool_use_id: 't', content: '70000' }] as never,
+        },
+        { role: 'assistant', content: [{ type: 'text', text: '7만원입니다' }] },
+      ]);
+      const sessionId = await startSession(gatedRuntime().runtime, undefined, storage);
+      const res = (await call('chat.history', { sessionId })) as History;
+      expect(res.result.messages).toEqual([
+        { role: 'user', text: '삼성전자 얼마야?' },
+        { role: 'assistant', text: '7만원입니다' },
+      ]);
+    });
+
     it('system / tool role 은 제외', async () => {
       const storage = storageWith([
         { role: 'system', content: 's' },

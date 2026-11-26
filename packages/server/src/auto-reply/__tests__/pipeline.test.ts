@@ -206,7 +206,7 @@ describe('AutoReplyPipeline', () => {
   });
 
   it.each([
-    ['auth', 'Claude 로그인이 필요합니다'],
+    ['auth', 'Anthropic API 키가 없거나 맞지 않습니다'],
     ['rate_limit', 'Claude 사용 한도에 도달했습니다'],
     ['timeout', '응답 시간이 초과되었습니다'],
     ['unknown', '응답 생성 중 오류가 발생했습니다'],

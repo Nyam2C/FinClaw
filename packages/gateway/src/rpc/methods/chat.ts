@@ -165,7 +165,7 @@ export function createChatMethods(deps: ChatMethodsDeps): readonly RpcMethodHand
 
   const resetHandler: RpcMethodHandler<{ sessionId: string }, { reset: boolean }> = {
     method: 'chat.reset',
-    description: '세션의 대화·CLI 세션 바인딩을 초기화합니다',
+    description: '세션의 대화(트랜스크립트)를 초기화합니다',
     authLevel: 'token',
     schema: z.object({ sessionId: z.string() }),
     async execute(params) {
@@ -199,20 +199,18 @@ export function createChatMethods(deps: ChatMethodsDeps): readonly RpcMethodHand
         throw new Error('provider_unavailable: storage not initialized');
       }
       const record = await deps.storage.getConversation(session.sessionKey);
-      // ConversationMessage 에 시각 필드가 없다 → {role, text} 만 (plan 머리말 6)
-      const messages = (record?.messages ?? []).flatMap((m) =>
-        m.role === 'user' || m.role === 'assistant'
-          ? [
-              {
-                role: m.role,
-                text:
-                  typeof m.content === 'string'
-                    ? m.content
-                    : m.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join(''),
-              },
-            ]
-          : [],
-      );
+      // 화면에는 사용자 원문과 assistant 의 text 만 — 컨텍스트(system)·도구 결과(tool) 행과
+      // text 가 없는 assistant 행(tool_use 만)은 숨긴다. ConversationMessage 에 시각 필드는 없다.
+      const messages = (record?.messages ?? []).flatMap((m) => {
+        if (m.role !== 'user' && m.role !== 'assistant') {
+          return [];
+        }
+        const text =
+          typeof m.content === 'string'
+            ? m.content
+            : m.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
+        return text.length > 0 ? [{ role: m.role, text }] : [];
+      });
       return { messages: messages.slice(-(params.limit ?? 20)) };
     },
   };
