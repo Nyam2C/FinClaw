@@ -214,7 +214,7 @@ describe('buildCliArgs — 격리 argv (plan §3-6)', () => {
 });
 
 describe('createCliDriver — 스트림 매핑', () => {
-  it('spawn: stdin ignore, 고정 cwd, env 에 ANTHROPIC_API_KEY 없음 + auto memory off', async () => {
+  it('spawn: stdin ignore, 고정 cwd, env 의 ANTHROPIC_API_KEY 전달 + auto memory off', async () => {
     process.env.ANTHROPIC_API_KEY = 'sk-test';
     try {
       replay('text-only');
@@ -227,7 +227,7 @@ describe('createCliDriver — 스트림 매핑', () => {
       expect(command).toBe('claude');
       expect(options.stdio).toEqual(['ignore', 'pipe', 'pipe']);
       expect(options.cwd).toContain('drv-');
-      expect(options.env.ANTHROPIC_API_KEY).toBeUndefined();
+      expect(options.env.ANTHROPIC_API_KEY).toBe('sk-test');
       expect(options.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBe('1');
     } finally {
       delete process.env.ANTHROPIC_API_KEY;

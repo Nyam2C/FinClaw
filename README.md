@@ -34,7 +34,7 @@ corepack prepare pnpm@10.4.1 --activate
 ```bash
 pnpm setup            # .env 복사 + pnpm install + ~/.finclaw/ 생성
 # (선택) Discord 를 쓰려면 .env 에 DISCORD_BOT_TOKEN 입력 — 없으면 Discord 만 비활성
-# 추론은 Claude 구독(CLI) — `claude login` 필요, API 키 불필요 (아래 "Claude 구독(CLI)-only" 참고)
+# 추론은 기본 Claude 구독(CLI, `claude login`) — ANTHROPIC_API_KEY 를 넣으면 API 과금 (아래 "Claude 구독(CLI)-only" 참고)
 pnpm build
 ```
 
@@ -56,7 +56,7 @@ pnpm dev:all
 
 FinClaw 는 **Anthropic API 키 없이 Claude 구독(`claude` CLI 로그인)만으로** 구동한다 (`provider: 'claude-cli'`, 유일한 백엔드). 턴마다 `claude -p --output-format stream-json` 자식 프로세스를 하나 띄우고(cwd `~/.finclaw/agent`), 그 이벤트 스트림을 `AgentRuntime` 이 받아 delta·도구·종료 이벤트로 흘린다. FinClaw 의 도구는 **in-process HTTP MCP**(`/mcp`)로 노출되어 CLI 가 자기 루프 안에서 직접 호출한다.
 
-- **선행 조건:** `claude` CLI 설치 + `claude login`(구독 인증). `ANTHROPIC_API_KEY` 불필요 — 설정돼 있어도 CLI 자식 프로세스 env 에서 지운다(구독 인증 강제).
+- **선행 조건:** `claude` CLI 설치 + `claude login`(구독 인증). `ANTHROPIC_API_KEY` 는 선택 — 설정하면 CLI 가 구독 대신 그 키를 쓰고 **API 크레딧으로 과금**된다(부팅 로그 `agent.auth` 로 확인).
 - **읽기 전용:** `/mcp` 는 등록된 도구를 전부 노출하며, 등록 도구는 모두 **조회 전용**이다 — `get_current_datetime`, `route_task`, `list_alerts`, `get_alert_history`, 그리고 플러그인 MCP 도구(`mcp:*`). 알림 생성·삭제, 스케줄, 브로커리지 동기화, 거래 기록 같은 변경은 LLM 도구가 아니라 Web/TUI/CLI 의 RPC 로만 한다 — **주식 매수 권한은 사람에게만.**
 - **격리:** CLI 내장 도구(Bash/Edit/Read 등)는 `--tools ""` 로 막고, `--setting-sources ""` 로 사용자 설정·CLAUDE.md·훅을, `--strict-mcp-config` 로 사용자 전역 MCP 설정을 배제한다. 시스템 프롬프트는 `--system-prompt` 로 통째로 교체한다.
 - **대화별 세션:** 대화(sessionKey)마다 CLI 세션 하나를 `--session-id` 로 열고 다음 턴은 `--resume` 으로 잇는다(바인딩은 `conversations.metadata`). 6 시간 쉬면 새 세션으로 회전하고 직전 대화 몇 턴(recap)을 프롬프트 앞에 붙인다. cron·`agent.run` 은 세션을 남기지 않는 1회 실행(oneShot)이다.
@@ -294,7 +294,7 @@ sequenceDiagram
 | `DISCORD_BOT_TOKEN`     | Discord 봇 로그인 토큰. 없으면 Discord 만 비활성(`discord.disabled`)                                                                                                          |
 | `DISCORD_ALERT_USER_ID` | 가격·뉴스 알림 DM 수신자(Discord 사용자 id). `DISCORD_BOT_TOKEN` 과 함께 있을 때만 새 알림에 discord 채널이 붙는다. 설정하면 예전 `['log','discord']` 알림도 이 id 로 DM 된다 |
 
-추론은 env 키가 아니라 `claude login` 구독 인증을 쓴다 (`ANTHROPIC_API_KEY` 는 CLI 자식 env 에서 제거됨).
+추론은 기본으로 `claude login` 구독 인증을 쓴다. `ANTHROPIC_API_KEY` 를 설정하면 구독 대신 그 키(API 과금)를 쓴다.
 
 ### 선택 — 금융 데이터
 
