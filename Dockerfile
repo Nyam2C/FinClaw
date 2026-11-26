@@ -47,7 +47,7 @@ RUN mkdir -p /data && chown -R node:node /data
 USER node
 
 # builder에서 필요한 파일만 복사
-# NOTE: claude CLI 는 이미지에 포함되지 않는다 (추론하려면 별도 설치·로그인 필요).
+# NOTE: 추론에는 ANTHROPIC_API_KEY 환경변수가 필요하다 (이미지에 넣지 않는다).
 COPY --from=builder --chown=node:node /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.yaml ./
 COPY --from=builder --chown=node:node /app/node_modules/ ./node_modules/
 COPY --from=builder --chown=node:node /app/packages/ ./packages/

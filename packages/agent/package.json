@@ -13,6 +13,7 @@
     }
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.14.0",
     "@finclaw/infra": "workspace:*",
     "@finclaw/types": "workspace:*",
     "zod": "^4.0.0"

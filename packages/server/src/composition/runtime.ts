@@ -7,7 +7,6 @@ import {
   type AgentDriver,
   type AgentRunPort,
 } from '@finclaw/agent';
-import { signToken } from '@finclaw/gateway';
 import { ConcurrencyLane, type FinClawLogger } from '@finclaw/infra';
 import type { MarketSkillHandle, NewsSkillHandle } from '@finclaw/skills-finance';
 import {
@@ -40,12 +39,11 @@ export interface BuildExecutionDeps {
   readonly logger: FinClawLogger;
   readonly defaultModel: ModelRef;
   readonly systemPrompt: string;
-  /** Phase 46 M3 */
   readonly driver: AgentDriver;
   readonly embeddingProvider: EmbeddingProvider | undefined;
   readonly finclawConfig: FinClawConfig;
-  /** per-run JWT mint 용 (/mcp 와 같은 secret). */
-  readonly mcp: { readonly url: string; readonly jwtSecret: string };
+  /** 루프가 프로세스 안에서 직접 부르는 도구 레지스트리. */
+  readonly toolRegistry: InMemoryToolRegistry;
 }
 
 export interface ExecutionBundle {
@@ -64,7 +62,7 @@ export function buildExecution(deps: BuildExecutionDeps): ExecutionBundle {
     driver,
     embeddingProvider,
     finclawConfig,
-    mcp,
+    toolRegistry,
   } = deps;
 
   // Phase 30 A6: OTel tracer — span 을 SQLite spans 테이블에 SQL exporter 로 기록.
@@ -79,22 +77,14 @@ export function buildExecution(deps: BuildExecutionDeps): ExecutionBundle {
     { reranker, rerankTopKFirst: rerankCfg?.topKFirst },
   );
 
-  // Phase 46 M3: 채널 무관 런타임 — Discord(pipeline) 부터 사용. M4 에서 chat·cron·agent.run 도 합류.
+  // 채널 무관 런타임 — Discord(pipeline)·chat·cron·agent.run 이 모두 이것을 쓴다.
   const runtime = new AgentRuntime({
     driver,
     storage,
     db: storage.db,
     systemPrompt,
     defaultModel: defaultModel.model,
-    mcp: {
-      url: mcp.url,
-      // N3: 도구 ctx.sessionId = sessionKey (bridge identity). exp = run 최대 수명(overall 300s) + 여유 → 10분
-      mintToken: (sessionKey) =>
-        signToken(
-          { sub: 'finclaw', sessionId: sessionKey, exp: Math.floor(Date.now() / 1000) + 600 },
-          mcp.jwtSecret,
-        ),
-    },
+    tools: toolRegistry,
     capture: memoryCaptureService,
     retrieval: memoryRetrievalService,
     profileHealth,
@@ -143,6 +133,7 @@ export function buildPipeline(deps: BuildPipelineDeps): PipelineBundle {
   registerBuiltInCommands(commandRegistry, {
     toolRegistry,
     storage,
+    runtime,
     profileHealth,
     profileId: 'default',
     defaultModel,

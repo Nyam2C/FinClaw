@@ -4,6 +4,7 @@ import type {
   ConversationMessage,
   ConversationRecord,
   ContentBlock,
+  MessageRange,
   SessionKey,
   Timestamp,
 } from '@finclaw/types';
@@ -44,22 +45,26 @@ function rowToRecord(row: ConversationRow, messages: ConversationMessage[]): Con
 }
 
 function messageRowToMessage(row: MessageRow): ConversationMessage {
-  const msg: ConversationMessage = {
-    role: row.role as ConversationMessage['role'],
-    content: tryParseContent(row.content),
-  };
-  return msg;
+  const role = row.role as ConversationMessage['role'];
+  // 블록 배열은 assistant·tool 행에만 저장한다. user·system 행은 사용자가 `[...]` 를 쳤어도 문자열이다.
+  const content = role === 'assistant' || role === 'tool' ? parseBlocks(row.content) : row.content;
+  return { role, content };
 }
 
-function tryParseContent(s: string): string | ContentBlock[] {
-  if (s.startsWith('[')) {
-    try {
-      return JSON.parse(s) as ContentBlock[];
-    } catch {
-      // not JSON array
-    }
+/** JSON 블록 배열(`[{type: ...}, ...]`)이면 풀고, 아니면(예전 텍스트 행) 문자열 그대로. */
+function parseBlocks(s: string): string | ContentBlock[] {
+  if (!s.startsWith('[')) {
+    return s;
   }
-  return s;
+  try {
+    const parsed: unknown = JSON.parse(s);
+    const isBlocks =
+      Array.isArray(parsed) &&
+      parsed.every((b) => typeof b === 'object' && b !== null && typeof b.type === 'string');
+    return isBlocks ? (parsed as ContentBlock[]) : s;
+  } catch {
+    return s;
+  }
 }
 
 function extractToolCalls(msg: ConversationMessage): string | null {
@@ -78,68 +83,37 @@ function extractToolCalls(msg: ConversationMessage): string | null {
 
 // ─── CRUD ───
 
-export function createConversation(db: DatabaseSync, record: ConversationRecord): void {
-  const insertConv = db.prepare(
-    `INSERT INTO conversations (id, title, agent_id, channel_id, created_at, updated_at, metadata)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  );
-  const insertMsg = db.prepare(
-    `INSERT INTO messages (id, conversation_id, role, content, tool_calls, token_count, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  );
-
-  const meta = record.metadata ? JSON.stringify(record.metadata) : '{}';
-
-  db.exec('BEGIN');
-  try {
-    insertConv.run(
-      record.sessionKey,
-      null,
-      record.agentId,
-      null,
-      record.createdAt as number,
-      record.updatedAt as number,
-      meta,
-    );
-
-    for (const msg of record.messages) {
-      const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-      const toolCalls = extractToolCalls(msg);
-      insertMsg.run(
-        crypto.randomUUID(),
-        record.sessionKey,
-        msg.role,
-        content,
-        toolCalls,
-        null,
-        record.updatedAt as number,
-      );
-    }
-
-    db.exec('COMMIT');
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
-  }
-}
-
 export function getConversation(
   db: DatabaseSync,
   sessionKey: SessionKey,
+  range?: MessageRange,
 ): ConversationRecord | null {
-  const row = db
-    .prepare('SELECT * FROM conversations WHERE id = ?')
-    .get(sessionKey as string) as unknown as ConversationRow | undefined;
+  const key = sessionKey as string;
+  const row = db.prepare('SELECT * FROM conversations WHERE id = ?').get(key) as unknown as
+    | ConversationRow
+    | undefined;
   if (!row) {
     return null;
   }
-
-  const msgRows = db
-    .prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC')
-    .all(sessionKey as string) as unknown as MessageRow[];
-  const messages = msgRows.map(messageRowToMessage);
-
-  return rowToRecord(row, messages);
+  // rowid 순 = 넣은 순서 (append-only). idx_messages_conversation_rowid 가 정렬 없이 돌려준다.
+  let msgRows: MessageRow[];
+  if (range && 'tail' in range) {
+    msgRows = (
+      db
+        .prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY rowid DESC LIMIT ?')
+        .all(key, range.tail) as unknown as MessageRow[]
+    ).toReversed();
+  } else {
+    msgRows = db
+      .prepare(
+        'SELECT * FROM messages WHERE conversation_id = ? ORDER BY rowid ASC LIMIT -1 OFFSET ?',
+      )
+      .all(key, range?.offset ?? 0) as unknown as MessageRow[];
+  }
+  const { n } = db
+    .prepare('SELECT COUNT(*) AS n FROM messages WHERE conversation_id = ?')
+    .get(key) as { n: number };
+  return { ...rowToRecord(row, msgRows.map(messageRowToMessage)), messageCount: n };
 }
 
 export function deleteConversation(db: DatabaseSync, sessionKey: SessionKey): boolean {
@@ -148,75 +122,53 @@ export function deleteConversation(db: DatabaseSync, sessionKey: SessionKey): bo
 }
 
 /**
- * 대화 세션 전체를 갱신(존재 시)하거나 생성(없을 시)한다.
- *
- * 동일 sessionKey로 여러 번 호출해도 멱등적이며, 기존 메시지는
- * 제거되고 payload.messages로 대체된다. Phase 21 auto-reply 파이프라인이
- * 매 턴마다 최신 대화 이력 전체를 저장할 때 사용한다.
+ * 대화에 메시지 행을 **덧붙인다** (없으면 대화를 만든다). 기존 행은 건드리지 않는다 —
+ * 트랜스크립트는 append-only 다 (plans/agent-core.md §3.2).
+ * `metadata` 를 주면 통째로 교체한다. `messages` 가 비어 있으면 metadata·updated_at 만 갱신한다.
  */
-export function upsertConversation(
+export function appendMessages(
   db: DatabaseSync,
   payload: {
     readonly sessionKey: SessionKey;
     readonly agentId: AgentId;
     readonly messages: readonly ConversationMessage[];
-    readonly updatedAt: Timestamp;
+    readonly at: Timestamp;
     readonly metadata?: Record<string, unknown>;
   },
 ): void {
-  const existing = db
-    .prepare('SELECT id FROM conversations WHERE id = ?')
-    .get(payload.sessionKey as string);
-
-  if (!existing) {
-    createConversation(db, {
-      sessionKey: payload.sessionKey,
-      agentId: payload.agentId,
-      messages: payload.messages as ConversationMessage[],
-      createdAt: payload.updatedAt,
-      updatedAt: payload.updatedAt,
-      metadata: payload.metadata,
-    });
-    return;
-  }
-
-  const insertMsg = db.prepare(
-    `INSERT INTO messages (id, conversation_id, role, content, tool_calls, token_count, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  );
-
+  const key = payload.sessionKey as string;
+  const at = payload.at as number;
   db.exec('BEGIN');
   try {
-    db.prepare('DELETE FROM messages WHERE conversation_id = ?').run(payload.sessionKey as string);
-
-    const updateParts: string[] = ['updated_at = ?', 'agent_id = ?'];
-    const updateParams: (string | number)[] = [
-      payload.updatedAt as number,
-      payload.agentId as string,
-    ];
-    if (payload.metadata !== undefined) {
-      updateParts.push('metadata = ?');
-      updateParams.push(JSON.stringify(payload.metadata));
+    const exists = db.prepare('SELECT 1 FROM conversations WHERE id = ?').get(key);
+    if (!exists) {
+      db.prepare(
+        `INSERT INTO conversations (id, title, agent_id, channel_id, created_at, updated_at, metadata)
+         VALUES (?, NULL, ?, NULL, ?, ?, ?)`,
+      ).run(key, payload.agentId as string, at, at, JSON.stringify(payload.metadata ?? {}));
+    } else if (payload.metadata !== undefined) {
+      db.prepare('UPDATE conversations SET updated_at = ?, metadata = ? WHERE id = ?').run(
+        at,
+        JSON.stringify(payload.metadata),
+        key,
+      );
+    } else {
+      db.prepare('UPDATE conversations SET updated_at = ? WHERE id = ?').run(at, key);
     }
-    updateParams.push(payload.sessionKey as string);
-    db.prepare(`UPDATE conversations SET ${updateParts.join(', ')} WHERE id = ?`).run(
-      ...updateParams,
+    const insertMsg = db.prepare(
+      `INSERT INTO messages (id, conversation_id, role, content, tool_calls, token_count, created_at)
+       VALUES (?, ?, ?, ?, ?, NULL, ?)`,
     );
-
     for (const msg of payload.messages) {
-      const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-      const toolCalls = extractToolCalls(msg);
       insertMsg.run(
         crypto.randomUUID(),
-        payload.sessionKey as string,
+        key,
         msg.role,
-        content,
-        toolCalls,
-        null,
-        payload.updatedAt as number,
+        typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+        extractToolCalls(msg),
+        at,
       );
     }
-
     db.exec('COMMIT');
   } catch (err) {
     db.exec('ROLLBACK');

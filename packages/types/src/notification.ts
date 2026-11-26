@@ -24,7 +24,6 @@ export interface ChatStreamEndParams {
   readonly result: {
     readonly text: string;
     readonly usage: { input: number; output: number; cacheRead: number; cacheWrite: number };
-    readonly costUsd?: number;
   };
 }
 

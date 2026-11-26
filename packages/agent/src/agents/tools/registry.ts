@@ -266,18 +266,30 @@ export class InMemoryToolRegistry implements ToolRegistry {
       try {
         const mergedCtx: ToolExecutionContext = { ...context, abortSignal: controller.signal };
 
-        // ⑤ 도구 실행 (외부 API 도구는 CircuitBreaker 적용)
-        let result: ToolResult;
+        // ⑤ 도구 실행 (외부 API 도구는 CircuitBreaker 적용). 타임아웃·중단 신호와 경주시킨다 —
+        //    신호를 무시하는 도구가 호출자(에이전트 run 의 lane)를 영원히 잡지 않게.
+        let pending: Promise<ToolResult>;
         if (tool.definition.isExternal) {
           let breaker = this.breakers.get(name);
           if (!breaker) {
             breaker = createCircuitBreaker();
             this.breakers.set(name, breaker);
           }
-          result = await breaker.execute(() => tool.executor(input, mergedCtx));
+          pending = breaker.execute(() => tool.executor(input, mergedCtx));
         } else {
-          result = await tool.executor(input, mergedCtx);
+          pending = tool.executor(input, mergedCtx);
         }
+        pending.catch(() => {}); // 경주에서 진 뒤의 reject 가 unhandled 로 남지 않게
+        const stopped = new Promise<ToolResult>((resolve) => {
+          const give = (): void =>
+            resolve({ content: `Tool "${name}" timed out or was aborted`, isError: true });
+          if (controller.signal.aborted) {
+            give();
+          } else {
+            controller.signal.addEventListener('abort', give, { once: true });
+          }
+        });
+        const result = await Promise.race([pending, stopped]);
 
         const guarded = guardToolResult(result, this.guardOptions);
 

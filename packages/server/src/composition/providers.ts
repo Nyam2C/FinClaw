@@ -15,7 +15,7 @@ export interface ProvidersBundle {
 export function buildProviders({ logger }: BuildProvidersDeps): ProvidersBundle {
   logger.info('provider.initialized', {
     event: 'provider.initialized',
-    providerKind: 'claude-cli',
+    providerKind: 'anthropic',
   });
   return { toolRegistry: new InMemoryToolRegistry() };
 }

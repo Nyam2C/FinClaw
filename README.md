@@ -34,7 +34,7 @@ corepack prepare pnpm@10.4.1 --activate
 ```bash
 pnpm setup            # .env 복사 + pnpm install + ~/.finclaw/ 생성
 # (선택) Discord 를 쓰려면 .env 에 DISCORD_BOT_TOKEN 입력 — 없으면 Discord 만 비활성
-# 추론은 기본 Claude 구독(CLI, `claude login`) — ANTHROPIC_API_KEY 를 넣으면 API 과금 (아래 "Claude 구독(CLI)-only" 참고)
+# 추론은 Anthropic API 키로 한다 — ANTHROPIC_API_KEY 필수 (아래 "자체 에이전트 루프" 참고)
 pnpm build
 ```
 
@@ -52,14 +52,14 @@ pnpm dev:all
 
 > ⚠️ **함정**: `main()` 은 **현재 작업 디렉터리**의 `.env` 만 읽는다 (`process.loadEnvFile`, 이미 export 된 값은 덮어쓰지 않음). 레포 루트에서 `pnpm dev` 하면 루트 `.env` 가 로드되고, 다른 디렉터리에서 실행하면 셸 `export` 가 필요하다. Docker compose 는 `env_file: .env` 로 자동 주입한다.
 
-### Claude 구독(CLI)-only (기본 모드)
+### 자체 에이전트 루프 (Anthropic API)
 
-FinClaw 는 **Anthropic API 키 없이 Claude 구독(`claude` CLI 로그인)만으로** 구동한다 (`provider: 'claude-cli'`, 유일한 백엔드). 턴마다 `claude -p --output-format stream-json` 자식 프로세스를 하나 띄우고(cwd `~/.finclaw/agent`), 그 이벤트 스트림을 `AgentRuntime` 이 받아 delta·도구·종료 이벤트로 흘린다. FinClaw 의 도구는 **in-process HTTP MCP**(`/mcp`)로 노출되어 CLI 가 자기 루프 안에서 직접 호출한다.
+FinClaw 는 Claude Code(`claude` CLI)를 감싸지 않고 **에이전트 루프를 직접 소유한다** (`packages/agent/src/runtime/loop.ts`). 턴마다 Anthropic Messages API 를 스트리밍으로 부르고, 모델이 도구를 요청하면 레지스트리에서 실행해 결과를 붙여 다시 부른다. 모델이 도구 없이 답하면 끝난다. 구조의 근거는 [`plans/research/agent-architectures.md`](plans/research/agent-architectures.md), 설계는 [`plans/agent-core.md`](plans/agent-core.md).
 
-- **선행 조건:** `claude` CLI 설치 + `claude login`(구독 인증). `ANTHROPIC_API_KEY` 는 선택 — 설정하면 CLI 가 구독 대신 그 키를 쓰고 **API 크레딧으로 과금**된다(부팅 로그 `agent.auth` 로 확인).
-- **읽기 전용:** `/mcp` 는 등록된 도구를 전부 노출하며, 등록 도구는 모두 **조회 전용**이다 — `get_current_datetime`, `route_task`, `list_alerts`, `get_alert_history`, 그리고 플러그인 MCP 도구(`mcp:*`). 알림 생성·삭제, 스케줄, 브로커리지 동기화, 거래 기록 같은 변경은 LLM 도구가 아니라 Web/TUI/CLI 의 RPC 로만 한다 — **주식 매수 권한은 사람에게만.**
-- **격리:** CLI 내장 도구(Bash/Edit/Read 등)는 `--tools ""` 로 막고, `--setting-sources ""` 로 사용자 설정·CLAUDE.md·훅을, `--strict-mcp-config` 로 사용자 전역 MCP 설정을 배제한다. 시스템 프롬프트는 `--system-prompt` 로 통째로 교체한다.
-- **대화별 세션:** 대화(sessionKey)마다 CLI 세션 하나를 `--session-id` 로 열고 다음 턴은 `--resume` 으로 잇는다(바인딩은 `conversations.metadata`). 6 시간 쉬면 새 세션으로 회전하고 직전 대화 몇 턴(recap)을 프롬프트 앞에 붙인다. cron·`agent.run` 은 세션을 남기지 않는 1회 실행(oneShot)이다.
+- **선행 조건:** `ANTHROPIC_API_KEY` (API 크레딧으로 과금). 키가 없어도 서버는 부팅하지만 에이전트 답변은 `auth` 오류로 끝난다 (부팅 로그 `agent.auth`).
+- **읽기 전용:** 등록 도구는 모두 **조회 전용**이다 — `get_current_datetime`, `route_task`, `list_alerts`, `get_alert_history`, 그리고 플러그인 MCP 도구(`mcp:*`). 알림 생성·삭제, 스케줄, 브로커리지 동기화, 거래 기록 같은 변경은 LLM 도구가 아니라 Web/TUI/CLI 의 RPC 로만 한다 — **주식 매수 권한은 사람에게만.**
+- **한도:** 반복 10회(넘으면 도구 호출을 막은 마무리 호출 1회), run 당 토큰 예산(대화 40만 · cron 20만), 전체 300초. 한 턴의 도구 호출은 병렬로 실행하고, 실패는 예외가 아니라 모델이 읽는 결과로 돌려준다.
+- **트랜스크립트:** 대화(sessionKey)마다 `messages` 테이블에 행을 **덧붙이기만** 한다 — 모델 응답 블록을 그대로, 도구 실행보다 먼저 저장한다. 시스템 프롬프트와 도구 목록은 고정이고(프롬프트 캐시), 시각·기억·거래 같은 턴별 컨텍스트는 user 턴 앞에 붙는다. 6 시간 쉬거나, 직전 프롬프트가 15만 토큰을 넘거나, 시스템 프롬프트·도구 목록이 바뀌면(배포·키 추가) 컨텍스트 창을 새로 열고 직전 대화 몇 개(recap)만 싣는다 — 원문은 지우지 않는다. cron·`agent.run` 은 트랜스크립트를 남기지 않는 1회 실행(oneShot)이다.
 
 ## 기능
 
@@ -68,7 +68,7 @@ FinClaw 는 **Anthropic API 키 없이 Claude 구독(`claude` CLI 로그인)만�
 Discord 멘션 또는 `!finclaw <메시지>` 로 자연어 대화. 메시지 한 건이 들어오면 다음 6 단계 파이프라인을 거친다 (`packages/server/src/auto-reply/pipeline.ts`). 기억 저장·회상은 Execute 가 부르는 `AgentRuntime` 의 `prepareTurn` 안에서 돈다 — Web/TUI 채팅도 같은 경로다.
 
 ```
-Normalize → Command → ACK → Context → Execute(AgentRuntime: MemoryCapture → MemoryRetrieval → claude -p) → Deliver
+Normalize → Command → ACK → Context → Execute(AgentRuntime: MemoryCapture → MemoryRetrieval → 에이전트 루프) → Deliver
 ```
 
 - **Command**: `!finclaw help|reset|status` 인-채팅 명령어. 시세·포트폴리오·알림은 자연어 대화로 요청한다.
@@ -77,7 +77,7 @@ Normalize → Command → ACK → Context → Execute(AgentRuntime: MemoryCaptur
 
 ### 2. 금융 스킬 (LLM 도구)
 
-대화 도중 `claude` CLI 가 `/mcp` 로 호출하는 도구 (전부 조회 전용). 키 미설정 시 해당 도구는 **등록 자체를 건너뛴다** (graceful degradation).
+대화 도중 에이전트 루프가 레지스트리에서 직접 호출하는 도구 (전부 조회 전용). 키 미설정 시 해당 도구는 **등록 자체를 건너뛴다** (graceful degradation).
 
 | 도구                                 | 내용                                                                                                                                                                                                     | 등록 조건                                                                                                                                                                                                |
 | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -114,7 +114,7 @@ macOS 14+ 와 Swift 6 툴체인이 있으면 서버(`pnpm dev`)를 띄운 뒤 `b
 
 ### 5. Gateway JSON-RPC (38 개 메서드)
 
-HTTP `POST /rpc` + WebSocket `ws://…/ws` 에서 동일 JSON-RPC 2.0 스키마로 호출 가능. Zod v4 스키마 검증, 3 단계 권한 (`none / api_key / token`). 같은 서버의 `/mcp` 는 `claude` CLI 용 MCP 엔드포인트다.
+HTTP `POST /rpc` + WebSocket `ws://…/ws` 에서 동일 JSON-RPC 2.0 스키마로 호출 가능. Zod v4 스키마 검증, 3 단계 권한 (`none / api_key / token`).
 
 | 그룹           | 메서드                                                                                                                 |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------- |
@@ -134,13 +134,13 @@ WebSocket notification: `chat.stream.{delta,tool,end,error}` (모두 `runId` 포
 - `chat.stream.tool` 은 도구 시작/끝(`phase: start|end`, 도구 이름·`toolCallId`)만 알린다 — 입력·결과 내용은 싣지 않는다.
 - `chat.history {sessionId, limit?}` 는 그 대화의 최근 user/assistant 메시지(`{role, text}`, 기본 20·최대 40)를 돌려준다.
 - `finance.alert.create` 의 기본 전달 채널은 `['log', 'websocket']`(발동 시 `alert.triggered` 로 WS 클라이언트에 전달)이고, `DISCORD_BOT_TOKEN` 과 `DISCORD_ALERT_USER_ID` 가 둘 다 있을 때만 `'discord'` 가 붙는다. `finance.alert.delete {alertId}` 는 발동 기록까지 함께 지운다.
-- `chat.abort {sessionId, runId?}` 는 진행 중 실행을 끊는다(종료 신호는 `chat.stream.error{reason:'aborted'}`). `chat.reset {sessionId}` 는 그 대화의 CLI 세션 바인딩을 지워 다음 턴을 새 세션으로 시작한다.
+- `chat.abort {sessionId, runId?}` 는 진행 중 실행을 끊는다(종료 신호는 `chat.stream.error{reason:'aborted'}`). `chat.reset {sessionId}` 는 그 대화의 트랜스크립트를 지워 다음 턴을 빈 대화로 시작한다.
 
 ### 6. 기억 / RAG (Phase 26)
 
 - **저장:** `memories` 테이블 (4 type: `fact` / `preference` / `summary` / `financial`), `memory_chunks_vec` (1024-d), `memory_chunks_fts` (trigram).
 - **회상:** hybrid vector + FTS, 임계값 0.65, 신선도 반감기 90 일, 상한 3 개.
-- **agent.run 결과 → memory:** output 길이 > 100자 + error 없음 시 `type='financial'` 로 자동 저장 (`agent_runs.memory_id` 링크). 이 훅의 존폐는 phase47 에서 결정.
+- **agent.run 결과 → memory:** output 길이 > 100자 + error 없음 시 `type='financial'` 로 자동 저장 (`agent_runs.memory_id` 링크).
 - **임베딩 프로바이더:** `VOYAGE_API_KEY` 또는 `OPENAI_API_KEY` 가 있으면 `createEmbeddingProvider('auto')` 시도. 실패/미설정 시 모든 경로 FTS-only fallback (best-effort, 파이프라인 차단 없음).
 - **OpenAI 임베딩:** vec0 DDL 이 1024D 라 OpenAI `text-embedding-3-small` 은 `dimensions: 1024` truncation 으로 맞춘다. Voyage `voyage-finance-2` 권장.
 
@@ -204,7 +204,7 @@ graph TD
 | 프로세스                          | 진입점                                                 | 점유 포트                                                       | 역할                                                                             |
 | --------------------------------- | ------------------------------------------------------ | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | `@finclaw/server` (Node 22+, ESM) | `packages/server/src/main.ts` (`main()`)               | `GATEWAY_PORT` (기본 `3000`, host `127.0.0.1` — `GATEWAY_HOST`) | Discord 수신 · 파이프라인 · LLM · 스토리지 · gateway · cron 을 1 프로세스에 흡수 |
-| `claude` CLI (자식 프로세스)      | 턴마다 `claude -p --output-format stream-json` spawn   | (없음)                                                          | 추론. 도구는 server 의 `/mcp` 로 HTTP 호출                                       |
+| Anthropic Messages API (외부)     | 턴마다 스트리밍 호출 (`@anthropic-ai/sdk`)             | (없음)                                                          | 추론. 도구는 server 프로세스 안에서 실행                                         |
 | `@finclaw/web`                    | `packages/web/src/main.ts` (Vite 빌드 또는 `vite dev`) | Vite 기본 `5173`                                                | 브라우저 클라이언트, gateway WS + JSON-RPC                                       |
 | `@finclaw/tui`                    | `packages/tui/src/index.ts`                            | (stdin/stdout)                                                  | gateway WebSocket 으로 chat 세션 유지하는 ink/React TUI                          |
 
@@ -220,9 +220,9 @@ sequenceDiagram
   participant P as AutoReplyPipeline
   participant RT as AgentRuntime
   participant DB as SQLite (storage)
-  participant DRV as cli-driver
-  participant LLM as claude CLI (claude -p)
-  participant M as Gateway /mcp (ToolRegistry)
+  participant LOOP as 에이전트 루프 (loop.ts)
+  participant LLM as Anthropic Messages API
+  participant T as ToolRegistry
 
   U->>D: 메시지
   D->>R: discordAdapter.onMessage → router.route
@@ -233,16 +233,21 @@ sequenceDiagram
   P->>D: ackStage (typing + reaction)
   P->>P: context
   P->>RT: executeStage → runtime.run({mode:'chat', sessionKey})
-  RT->>DB: 세션 바인딩 조회 (conversations.metadata)
+  RT->>DB: 트랜스크립트·컨텍스트 창 조회 (messages · conversations.metadata)
   RT->>RT: prepareTurn — memoryCapture + memoryRetrieval → <context>
   RT->>DB: addMemory[WithEmbedding] (정규식 매칭 시) · searchVector + searchFts
-  RT->>DRV: driver.run (--session-id 새 세션 / --resume 이어가기, --mcp-config)
-  DRV->>LLM: 자식 프로세스 spawn (stream-json)
-  LLM->>M: 도구 호출 (HTTP MCP, CLI 내부 루프)
-  M-->>LLM: 도구 결과
-  LLM-->>DRV: stream-json 이벤트 (text delta · tool_use/tool_result · result)
-  DRV-->>RT: delta · tool · done/error
-  RT->>DB: agent_runs 1행 + 세션 바인딩 저장
+  RT->>DB: 컨텍스트·user 행 저장 (모델 호출 전)
+  RT->>LOOP: driver(system · tools · messages)
+  loop 모델이 도구 없이 답할 때까지 (최대 10회)
+    LOOP->>LLM: messages.stream
+    LLM-->>LOOP: text delta · content 블록 · stop_reason
+    LOOP-->>RT: message(assistant) → DB 에 저장
+    LOOP->>T: 도구 실행 (병렬, 조회 전용)
+    T-->>LOOP: 결과 (실패는 is_error)
+    LOOP-->>RT: message(tool) → DB 에 저장
+  end
+  LOOP-->>RT: delta · tool · done/error
+  RT->>DB: agent_runs 1행 + 컨텍스트 창 상태 저장
   RT-->>P: done.text
   P->>D: deliver (chunking + 마크다운 다듬기)
   D->>U: 응답
@@ -261,11 +266,11 @@ sequenceDiagram
 | `@finclaw/infra`           | logger, eventbus, fetch, ports, ConcurrencyLane, ALS context, SSRF, cron, circuit-breaker   | `types`                                                                                                                 |
 | `@finclaw/config`          | JSON5 설정 로딩, Zod 스키마, env 치환, strict 검증                                          | `types`, `infra`                                                                                                        |
 | `@finclaw/storage`         | SQLite (`node:sqlite`) + sqlite-vec, 스키마 v12, transactions/agent_runs/schedules/memories | `types`                                                                                                                 |
-| `@finclaw/agent`           | stream-json 드라이버(`runtime/cli-driver.ts`), tool registry (정책·가드·감사)               | `types`, `infra`                                                                                                        |
+| `@finclaw/agent`           | 에이전트 루프(`runtime/loop.ts`), tool registry (정책·가드·감사)                            | `types`, `infra`                                                                                                        |
 | `@finclaw/channel-discord` | Discord 채널 어댑터 (discord.js v14)                                                        | `types`, `infra`                                                                                                        |
 | `@finclaw/skills-finance`  | market / news / alerts / brokerage(KIS) 서비스 + 알림 조회 도구, 시세 캐시                  | `types`, `infra`, `storage`, `agent`                                                                                    |
 | `@finclaw/skills-general`  | `get_current_datetime`, `route_task` 도구                                                   | `types`, `agent`                                                                                                        |
-| `@finclaw/gateway`         | HTTP/JSON-RPC + WebSocket 서버, `/mcp` (in-process HTTP MCP), 인증, access log              | `types`, `infra`, `storage`, `agent`, `skills-finance`                                                                  |
+| `@finclaw/gateway`         | HTTP/JSON-RPC + WebSocket 서버, 인증, access log                                            | `types`, `infra`, `storage`, `agent`, `skills-finance`                                                                  |
 | `@finclaw/server`          | 진입점, auto-reply 파이프라인, route_task 디스패처, 자동화, 플러그인, CLI                   | `types`, `infra`, `config`, `storage`, `agent`, `channel-discord`, `gateway`, `skills-finance`, `skills-general`, `tui` |
 | `@finclaw/tui`             | Ink + React 기반 터미널 UI (gateway WS 클라이언트)                                          | `types`                                                                                                                 |
 | `@finclaw/web`             | Lit + Vite 기반 웹 UI (gateway WS 클라이언트 + 마크다운)                                    | `types`                                                                                                                 |
@@ -278,9 +283,9 @@ sequenceDiagram
 2. `packages/server/src/process/message-router.ts` — Discord InboundMessage → dedupe → bind matching → queue → lane → pipeline.
 3. `packages/server/src/auto-reply/pipeline.ts` — 6 단계 스테이지 호출 + abort 신호 + (선택) OTel span.
 4. `packages/server/src/auto-reply/stages/` — 각 스테이지 구현.
-5. `packages/agent/src/runtime/cli-driver.ts` + `packages/server/src/agent-runtime/{runtime,prepare-turn}.ts` — `claude -p` stream-json 1턴 실행(도구 루프는 CLI 내부), 세션 바인딩·컨텍스트 주입·`agent_runs` 기록.
+5. `packages/agent/src/runtime/loop.ts` + `packages/server/src/agent-runtime/{runtime,prepare-turn}.ts` — 에이전트 루프(모델 호출·도구 실행·종료 판정)와 그 바깥(트랜스크립트·컨텍스트 창·`agent_runs` 기록).
 6. `packages/storage/src/database.ts` + `index.ts` — 스키마 (v12) + `createStorage` 팩토리.
-7. `packages/gateway/src/server.ts` + `rpc/index.ts` + `rpc/methods/` + `mcp/` — JSON-RPC·MCP 표면.
+7. `packages/gateway/src/server.ts` + `rpc/index.ts` + `rpc/methods/` — JSON-RPC 표면.
 8. `packages/server/src/automation/scheduler.ts` — cron 폴러.
 
 ## 환경변수
@@ -289,12 +294,12 @@ sequenceDiagram
 
 ### 선택 — Discord (필수 env 없음)
 
-| 변수                    | 설명                                                                                                                                                                          |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DISCORD_BOT_TOKEN`     | Discord 봇 로그인 토큰. 없으면 Discord 만 비활성(`discord.disabled`)                                                                                                          |
-| `DISCORD_ALERT_USER_ID` | 가격·뉴스 알림 DM 수신자(Discord 사용자 id). `DISCORD_BOT_TOKEN` 과 함께 있을 때만 새 알림에 discord 채널이 붙는다. 설정하면 예전 `['log','discord']` 알림도 이 id 로 DM 된다 |
+| 변수                    | 설명                                                                                                                                                                                                                                                                                                                    |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DISCORD_BOT_TOKEN`     | Discord 봇 로그인 토큰. 없으면 Discord 만 비활성(`discord.disabled`)                                                                                                                                                                                                                                                    |
+| `DISCORD_ALERT_USER_ID` | 소유자의 Discord 사용자 id. **이 id 가 보낸 메시지만 에이전트가 받는다** (없으면 Discord 대화를 받지 않는다 — 에이전트가 소유자의 알림·계좌를 조회하기 때문). 가격·뉴스 알림 DM 도 이 id 로 간다: `DISCORD_BOT_TOKEN` 과 함께 있을 때만 새 알림에 discord 채널이 붙고, 예전 `['log','discord']` 알림도 이 id 로 DM 된다 |
 
-추론은 기본으로 `claude login` 구독 인증을 쓴다. `ANTHROPIC_API_KEY` 를 설정하면 구독 대신 그 키(API 과금)를 쓴다.
+추론은 `ANTHROPIC_API_KEY` 로 Anthropic API 를 직접 부른다 (API 크레딧 과금). 없으면 에이전트 답변만 `auth` 오류로 끝난다.
 
 ### 선택 — 금융 데이터
 
@@ -355,8 +360,8 @@ sequenceDiagram
 
 | 키           | 내용                                                                                      |
 | ------------ | ----------------------------------------------------------------------------------------- |
-| `provider`   | `'claude-cli'` 만 허용 (유일한 백엔드, 생략 가능)                                         |
-| `cliBackend` | `command` (`claude` 실행 파일)                                                            |
+| `provider`   | 더 이상 쓰지 않는다 (예전 설정 파일 호환용으로 `'claude-cli'` 만 허용, 무시)              |
+| `cliBackend` | 더 이상 쓰지 않는다 (허용만 하고 무시)                                                    |
 | `rag`        | `rerank.{enabled,topKFirst}`                                                              |
 | `accessLog`  | `retentionDays`                                                                           |
 | `gateway`    | `auth.token` (`finclaw tui` 가 게이트웨이에 보낼 토큰, 없으면 `~/.finclaw/gateway.token`) |
@@ -377,7 +382,7 @@ sequenceDiagram
 | `pnpm format` / `format:fix` | `oxfmt --check .` / `oxfmt --write .`                |
 | `pnpm test`                  | unit (mock 만)                                       |
 | `pnpm test:storage`          | DB 격리 (`maxWorkers=1`)                             |
-| `pnpm test:live`             | 실제 `claude` CLI 호출 (수동)                        |
+| `pnpm test:live`             | 실제 Anthropic API · 토스 API 호출 (수동, 실키)      |
 | `pnpm test:ci`               | unit + storage 병렬 (CI)                             |
 | `pnpm test:coverage`         | v8 커버리지 (임계 70/70/70/55)                       |
 
@@ -387,11 +392,11 @@ sequenceDiagram
 
 ### 테스트 (3-tier)
 
-| Tier        | Config                     | 격리                                   | 외부 의존                       |
-| ----------- | -------------------------- | -------------------------------------- | ------------------------------- |
-| **unit**    | `vitest.config.ts`         | local: `max(4, min(16, cpus))` / CI: 3 | mock 만, env isolated           |
-| **storage** | `vitest.storage.config.ts` | `maxWorkers=1` (DB 충돌 방지)          | tmp SQLite DB                   |
-| **live**    | `vitest.live.config.ts`    | `maxWorkers=1`, 60s timeout            | 실제 `claude` CLI (구독 로그인) |
+| Tier        | Config                     | 격리                                   | 외부 의존                    |
+| ----------- | -------------------------- | -------------------------------------- | ---------------------------- |
+| **unit**    | `vitest.config.ts`         | local: `max(4, min(16, cpus))` / CI: 3 | mock 만, env isolated        |
+| **storage** | `vitest.storage.config.ts` | `maxWorkers=1` (DB 충돌 방지)          | tmp SQLite DB                |
+| **live**    | `vitest.live.config.ts`    | `maxWorkers=1`, 60s timeout            | 실제 API (루트 `.env` 의 키) |
 
 `test/setup.ts` + `test-env.ts` 가 `beforeAll` 에 sensitive 키(`DISCORD_BOT_TOKEN`, `GATEWAY_JWT_SECRET`, 시세·뉴스·임베딩·KIS 키, `FINCLAW_*` 경로, `NODE_OPTIONS` 등) 를 삭제하고, `HOME` / `FINCLAW_DB_PATH` 를 tmpdir 로 강제 설정한다 — 테스트가 사용자 DB 를 건드리지 않는다.
 
@@ -412,7 +417,7 @@ pnpm dev:all   # docker compose up --build
 
 빌드 흐름 (`Dockerfile`): `node:22-bookworm-slim` 기반 multi-stage. builder 에서 `pnpm install --frozen-lockfile` → `pnpm build` + `pnpm --filter @finclaw/web build`. runner 는 non-root `USER node` 로 `node packages/server/dist/main.js` 실행. web 컨테이너는 compose 가 override 해 `pnpm exec vite preview --host 0.0.0.0 --port 5173`. 컨테이너 안 server 는 항상 `0.0.0.0:3000`(`GATEWAY_HOST=0.0.0.0`) 에서 listen 하고, `.env` 의 `GATEWAY_PORT` 는 호스트 쪽 포트만 바꾼다.
 
-> ⚠️ 이미지에는 `claude` CLI 가 들어 있지 않다. 컨테이너에서 추론을 돌리려면 CLI 설치와 로그인 정보가 별도로 필요하다.
+> ⚠️ 컨테이너에서 추론을 돌리려면 `ANTHROPIC_API_KEY` 를 환경변수로 넘겨야 한다.
 
 이미지만 빌드: `bash scripts/build-docker.sh [name] [tag]` (기본 `finclaw:dev`).
 
@@ -463,7 +468,7 @@ curl -X POST http://localhost:3000/rpc \
 - **Non-root 컨테이너:** `Dockerfile` 의 `USER node`, `/data` 디렉토리 owner = node:node.
 - **테스트 격리:** `test-env.ts` 가 `DISCORD_BOT_TOKEN`·API 키 등 sensitive 키를 테스트 시작 시 삭제.
 - **Strict config:** `z.strictObject()` 로 알 수 없는 키 거부.
-- **LLM 도구는 조회 전용:** `/mcp` 로 노출되는 도구에 상태 변경·파일 읽기·웹 페치가 없다. CLI 내장 도구는 `--tools ""` 로 차단.
+- **LLM 도구는 조회 전용:** 레지스트리에 등록된 도구에 상태 변경·파일 읽기·웹 페치가 없다. 셸·파일 도구는 애초에 없다.
 - **Conventional commits 강제:** `lefthook.yml` (변경 이력 감사 가능성).
 
 ## 기여 / 개발 워크플로우
@@ -479,7 +484,7 @@ curl -X POST http://localhost:3000/rpc \
 - **테스트:** Vitest 4 (3-tier)
 - **린트 / 포매팅:** oxlint / oxfmt (Rust 기반)
 - **DB:** SQLite (`node:sqlite` 내장) + sqlite-vec, FTS5
-- **AI:** `claude` CLI (Claude 구독, `claude -p`) + `@modelcontextprotocol/sdk` (in-process HTTP MCP)
+- **AI:** `@anthropic-ai/sdk` (Messages API 스트리밍, 자체 에이전트 루프) · 플러그인 도구용 `@modelcontextprotocol/sdk` (stdio MCP 클라이언트)
 - **채널:** discord.js v14
 - **Web UI:** Lit + Vite + marked + DOMPurify
 - **TUI:** Ink + React

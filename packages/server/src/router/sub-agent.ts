@@ -1,6 +1,6 @@
 // packages/server/src/router/sub-agent.ts
-// Phase 46 M3: route_task 서브에이전트 = 드라이버 동기 1-shot. 격리 argv 는 드라이버가 강제(N1),
-// MCP 없음·--no-session-persistence. 전역 상한 밖(최상위 run 이 슬롯을 쥔 채 기다리므로 포함하면 교착 — Q7).
+// route_task 서브에이전트 = 같은 루프를 도구 없이 1회 부른다 (트랜스크립트 없음).
+// 전역 상한 밖(최상위 run 이 슬롯을 쥔 채 기다리므로 포함하면 교착).
 import { randomUUID } from 'node:crypto';
 import type { AgentDriver } from '@finclaw/agent';
 
@@ -14,9 +14,9 @@ export interface SubAgentResponse {
   readonly text: string;
 }
 
-const DEFAULT_SUB_AGENT_MODEL = 'claude-opus-4-7';
-/** Q13: 서브 무출력 45s / overall 75s < route_task 90s < 메인 무출력 120s. */
-const SUB_IDLE_TIMEOUT_MS = 45_000;
+const DEFAULT_SUB_AGENT_MODEL = 'claude-opus-5-5';
+const SUB_TOKEN_BUDGET = 100_000;
+/** 서브 overall 75s < route_task 90s < 메인 overall 300s. */
 const SUB_OVERALL_TIMEOUT_MS = 75_000;
 
 export async function runSubAgent(
@@ -26,11 +26,13 @@ export async function runSubAgent(
 ): Promise<SubAgentResponse> {
   for await (const ev of driver({
     runId: randomUUID(),
-    prompt: req.query,
     systemPrompt: req.systemPrompt,
+    messages: [{ role: 'user', content: req.query }],
     model: req.modelId ?? DEFAULT_SUB_AGENT_MODEL,
-    session: { kind: 'none' },
-    idleTimeoutMs: SUB_IDLE_TIMEOUT_MS,
+    tools: [],
+    runTool: async () => ({ content: 'no tools in sub-agent', isError: true }),
+    maxTurns: 1,
+    tokenBudget: SUB_TOKEN_BUDGET,
     overallTimeoutMs: SUB_OVERALL_TIMEOUT_MS,
     signal: signal ?? new AbortController().signal,
   })) {

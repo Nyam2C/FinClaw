@@ -8,7 +8,6 @@ const ZERO = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 const DONE: AgentEvent = {
   type: 'done',
   runId: 'run-1',
-  cliSessionId: 'c',
   text: 'final',
   usage: ZERO,
   durationMs: 100,
@@ -96,7 +95,6 @@ describe('GatewayBroadcaster', () => {
       broadcaster.send(conn, 'sess-1', 'run-1', {
         type: 'start',
         runId: 'run-1',
-        cliSessionId: 'c',
         model: 'm',
       });
       expect(conn.ws.send).not.toHaveBeenCalled();
@@ -214,7 +212,7 @@ describe('GatewayBroadcaster', () => {
       broadcaster.send(conn, 'sess-1', 'run-1', {
         type: 'tool_use',
         id: 't1',
-        name: 'mcp__finclaw__route_task',
+        name: 'route_task',
         input: { intent: 'price_lookup' },
       });
       broadcaster.send(conn, 'sess-1', 'run-1', { type: 'tool_result', id: 't1', isError: true });
@@ -230,14 +228,14 @@ describe('GatewayBroadcaster', () => {
         sessionId: 'sess-1',
         runId: 'run-1',
         toolCallId: 't1',
-        name: 'mcp__finclaw__route_task',
+        name: 'route_task',
         phase: 'start',
       });
       expect(msgs[2].params).toEqual({
         sessionId: 'sess-1',
         runId: 'run-1',
         toolCallId: 't1',
-        name: 'mcp__finclaw__route_task',
+        name: 'route_task',
         phase: 'end',
         isError: true,
       });

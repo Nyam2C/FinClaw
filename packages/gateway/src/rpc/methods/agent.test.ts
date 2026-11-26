@@ -71,7 +71,6 @@ function fakeRuntime(outcome: 'done' | 'error' = 'done', gate?: Promise<void>) {
           ? {
               type: 'done',
               runId,
-              cliSessionId: 'c',
               text: 'hello world',
               usage: USAGE,
               durationMs: 1,

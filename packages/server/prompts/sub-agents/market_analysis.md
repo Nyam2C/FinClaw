@@ -1,7 +1,7 @@
 ---
 id: market_analysis
 name: Market Analysis Sub-Agent
-model: claude-opus-4-7
+model: claude-opus-5-5
 source: sub-agent
 description: 뉴스를 종합해 시장 전망·감성·리스크/기회를 분석한다.
 ---

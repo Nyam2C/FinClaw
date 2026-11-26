@@ -110,7 +110,7 @@ export function createChatMethods(deps: ChatMethodsDeps): readonly RpcMethodHand
     authLevel: 'token', // ← 'session' 에서 강등 (Phase 37 A: session 레벨은 부여 코드 부재 → 영구 도달 불가)
     schema: z.object({
       sessionId: z.string(),
-      // argv 단일 인자 한도(Linux 128KiB) 안쪽: 한글 3B × 20,000 = 60KB + <context>·recap 여유
+      // 한 번에 받는 질문 길이 상한 (한글 2만 자 ≈ 수만 토큰)
       message: z.string().min(1).max(20_000),
       idempotencyKey: z.string().optional(),
       // phase47 §2-3: 클라이언트가 runId 를 먼저 정한다 — 응답보다 먼저 온 즉시 실패 이벤트도 짝지을 수 있게
@@ -165,7 +165,7 @@ export function createChatMethods(deps: ChatMethodsDeps): readonly RpcMethodHand
 
   const resetHandler: RpcMethodHandler<{ sessionId: string }, { reset: boolean }> = {
     method: 'chat.reset',
-    description: '세션의 대화·CLI 세션 바인딩을 초기화합니다',
+    description: '세션의 대화(트랜스크립트)를 초기화합니다',
     authLevel: 'token',
     schema: z.object({ sessionId: z.string() }),
     async execute(params) {
@@ -198,27 +198,39 @@ export function createChatMethods(deps: ChatMethodsDeps): readonly RpcMethodHand
       if (!deps.storage) {
         throw new Error('provider_unavailable: storage not initialized');
       }
-      const record = await deps.storage.getConversation(session.sessionKey);
-      // ConversationMessage 에 시각 필드가 없다 → {role, text} 만 (plan 머리말 6)
-      const messages = (record?.messages ?? []).flatMap((m) =>
-        m.role === 'user' || m.role === 'assistant'
-          ? [
-              {
-                role: m.role,
-                text:
-                  typeof m.content === 'string'
-                    ? m.content
-                    : m.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join(''),
-              },
-            ]
-          : [],
-      );
+      // 꼬리만 읽는다: 한 턴이 최대 수십 행(도구 왕복)이라 limit 의 배수로 넉넉히.
+      const record = await deps.storage.getConversation(session.sessionKey, {
+        tail: (params.limit ?? 20) * HISTORY_ROWS_PER_MESSAGE,
+      });
+      // 화면에는 사용자 원문과, 턴마다 assistant 의 **마지막** text 만 — 실시간 스트림도 말풍선을
+      // 최종 답으로 바꾸기 때문이다. 컨텍스트(system)·도구 결과(tool) 행과 text 없는 assistant 행은 숨긴다.
+      const messages: { role: 'user' | 'assistant'; text: string }[] = [];
+      for (const m of record?.messages ?? []) {
+        if (m.role !== 'user' && m.role !== 'assistant') {
+          continue;
+        }
+        const text =
+          typeof m.content === 'string'
+            ? m.content
+            : m.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
+        if (text.length === 0) {
+          continue;
+        }
+        if (m.role === 'assistant' && messages.at(-1)?.role === 'assistant') {
+          messages[messages.length - 1] = { role: 'assistant', text }; // 같은 턴의 중간 말은 덮어쓴다
+        } else {
+          messages.push({ role: m.role, text });
+        }
+      }
       return { messages: messages.slice(-(params.limit ?? 20)) };
     },
   };
 
   return [startHandler, sendHandler, abortHandler, resetHandler, historyHandler];
 }
+
+/** chat.history 가 보여 줄 메시지 1개당 읽을 행 수 (system·tool·중간 assistant 행 여유). */
+const HISTORY_ROWS_PER_MESSAGE = 8;
 
 /** chat.* 메서드 일괄 등록 */
 export function registerChatMethods(deps: ChatMethodsDeps, registry: MethodRegistry): void {
