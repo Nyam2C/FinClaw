@@ -18,6 +18,8 @@ import {
   type BrokerageProvider,
   type MarketSkillHandle,
   type NewsSkillHandle,
+  registerTossTools,
+  TossClient,
 } from '@finclaw/skills-finance';
 import { registerDatetimeTool, registerRouteTaskTool } from '@finclaw/skills-general';
 import type { createStorage } from '@finclaw/storage';
@@ -53,6 +55,19 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
   const { toolRegistry, storage, logger, discordClient, lifecycle, driver } = deps;
 
   registerDatetimeTool(toolRegistry);
+
+  // 토스증권 Open API — 시세·종목·계좌 조회 도구 (읽기 전용). 키가 없으면 등록하지 않는다.
+  const tossClientId = process.env.TOSS_CLIENT_ID;
+  const tossClientSecret = process.env.TOSS_CLIENT_SECRET;
+  if (tossClientId && tossClientSecret) {
+    registerTossTools(
+      toolRegistry,
+      new TossClient({ clientId: tossClientId, clientSecret: tossClientSecret }),
+    );
+    logger.info('Toss Open API tools registered (read-only)', { event: 'toss.registered' });
+  } else {
+    logger.info('TOSS_CLIENT_ID/SECRET not set — skipping Toss tools');
+  }
 
   const finnhubKeys = readKeyArray('FINNHUB_KEY');
   const twelveDataKeys = readKeyArray('TWELVE_DATA_KEY');
