@@ -73,81 +73,21 @@
 
 ## Git 정책
 
-브랜치 · 커밋 · PR 은 [`CONTRIBUTING.md`](./CONTRIBUTING.md) 를 따른다. 요약: `main` 직접 커밋 금지(항상 PR), 브랜치 `<type>/<slug>` (phase 는 `feature/phaseNN-<slug>`), ASCII Conventional Commits 를 밀스톤 단위로, CI 초록 후 merge commit 으로 머지, 머지된 브랜치 삭제.
+브랜치 · 커밋 · PR 은 [`CONTRIBUTING.md`](./CONTRIBUTING.md) 를 따른다. 요약: `main` 직접 커밋 금지(항상 PR), 브랜치 `<type>/<slug>`, ASCII Conventional Commits 를 논리 단위로, CI 초록 후 merge commit 으로 머지, 머지된 브랜치 삭제.
 
 ---
 
-## 하네스: FinClaw ↔ OpenClaw 1:1 유사도 비교
+## 개발 워크플로 (gstack)
 
-**목표:** FinClaw 가 OpenClaw(`/mnt/c/Users/박/Desktop/hi/openclaw`, 256K LOC) 의 핵심 패턴을 얼마나 충실히 재현했고 어디가 정당한 단순화·차별화·위험한 누락인지를 4축(아키텍처/런타임/메모리/인터페이스)으로 1:1 매핑 비교(라벨 + 영역 유사도 %)하여 단일 종합 보고서로 답한다. 외부 빅테크 비서 비교(Claude.ai/ChatGPT/Letta)도, 다른 \*claw 변종 비교(miclaw/picoclaw)도 본 하네스에서 사용하지 않음 — 사용자가 OpenClaw 1:1 비교만을 비교 가치 있다고 명시.
+개발 절차는 [gstack](https://github.com/garrytan/gstack) 스킬을 쓴다 (전역 설치 `~/.claude/skills/gstack`, 스킬 이름은 `gstack-` 접두사). 예전 `finclaw-*` 하네스 스킬과 `plans/phaseNN/` 문서는 2026-11-26 에 폐기했다 (git 이력에만 남는다).
 
-**트리거:** 다음 키워드 또는 작업 요청 시 `finclaw-openclaw-similarity` 스킬을 사용하라.
+| 단계      | 스킬                                      | 산출물                                    |
+| --------- | ----------------------------------------- | ----------------------------------------- |
+| 계획 검토 | `/gstack-plan-eng-review`                 | `plans/<주제>.md` 끝의 리뷰 리포트        |
+| 구현 중   | `/gstack-build-check`                     | 빌드 · 타입 · 린트 · 테스트 초록          |
+| 리뷰      | `/gstack-review`                          | 브랜치 diff 리뷰, 고칠 것은 같은 브랜치에 |
+| QA        | `/gstack-qa` (API · CLI 는 브라우저 없이) | 재현 · 수정 기록                          |
+| 출하      | `/gstack-ship`                            | PR (테스트 · 리뷰 근거 포함)              |
 
-- "OpenClaw 비교", "유사도 검토", "모방 충실도", "OpenClaw 와 얼마나 닮았나", "두 레포 비교", "FinClaw 가 OpenClaw 잘 따라했나", "정당한 단순화 vs 누락", "금융 도메인 합체 품질"
-- 후속: "다시 비교", "재비교", "이어서 비교", "특정 영역만 다시 비교", "이전 비교 기반 보완", "비교 보고서 업데이트", "{축} 비교만 다시"
-- 단순 사실 질문(예: "OpenClaw 의 src 안에 뭐가 있어") 은 직접 응답.
-
-**비교 대상:** OpenClaw (`/mnt/c/Users/박/Desktop/hi/openclaw`, source-of-truth) ↔ FinClaw (현재 레포)
-
-**변경 이력:**
-
-| 날짜       | 변경 내용                                                                                                                                                                                                                                                                                                                                                                                                                        | 대상                                                                                                                                                                                                                                                                                              | 사유                                                                                                                                                                                                                                                                                                                                                                       |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-05-03 | 초기 구성 (5 에이전트 + 1 오케스트레이터 스킬 + 룰릭)                                                                                                                                                                                                                                                                                                                                                                            | .claude/agents, skills                                                                                                                                                                                                                                                                            | "현대 AI 비서급 성숙도 감사" 요청에 따라 architecture/runtime/memory/interface 4축 감사 팀 구성 (당시 비교 대상: Claude.ai/ChatGPT/Letta/Hermes — 2026-05-07 폐기)                                                                                                                                                                                                         |
-| 2026-05-03 | OpenClaw 1:1 비교 하네스 신규 (1 오케스트레이터 스킬 + 4 auditor 모드 분기)                                                                                                                                                                                                                                                                                                                                                      | .claude/skills/finclaw-openclaw-similarity, .claude/agents                                                                                                                                                                                                                                        | "FinClaw 가 OpenClaw 의 핵심 패턴을 충실히 모방했는지 1:1 매핑으로 검증" 요청. 별도 하네스로 분리                                                                                                                                                                                                                                                                          |
-| 2026-05-07 | **maturity-audit + openclaw-similarity 폐기 → claw-family-similarity 로 통합** (4-Claw 매트릭스, miclaw/picoclaw 추가). 비교 대상 전환: Claude.ai/ChatGPT 외부 빅테크 → OpenClaw 패밀리. 정보 비대칭(L1/L2/L3) 명시.                                                                                                                                                                                                             | .claude/skills/finclaw-claw-family-similarity (신규), .claude/agents/claw-family-synthesizer.md (신규), 4 auditor 갱신, finclaw-{maturity-audit,openclaw-similarity} 삭제                                                                                                                         | 사용자 피드백: "비교 대상이 Claude/ChatGPT 인데 내가 원하는 건 OpenClaw 이후 생겨나는 Claw 시리즈"                                                                                                                                                                                                                                                                         |
-| 2026-05-07 | **claw-family-similarity → openclaw-similarity 로 환원** (4-Claw 매트릭스 폐기, OpenClaw 1:1 단일 비교만 유지). miclaw/picoclaw 비교 영구 제거 (정보 비대칭 가치 낮음). 신디사이저 rename: claw-family-synthesizer → openclaw-similarity-synthesizer. 4 auditor description/본문에서 \*claw 접미사 비서 언급 제거. references/claw-info-asymmetry.md / claw-family-pattern-map.md 삭제, references/openclaw-pattern-map.md 신규. | .claude/skills/finclaw-openclaw-similarity (rename 후 재작성: SKILL.md, comparison-rubric.md, openclaw-pattern-map.md), .claude/agents/openclaw-similarity-synthesizer.md (rename 후 재작성), .claude/agents/{architecture,interface-channels,memory-knowledge,runtime-tools}-auditor.md (재작성) | 사용자 피드백: "모든 문서들 오직 finclaw 와 openclaw 만을 비교하도록 하자". maturity-audit 폐기는 유지 (외부 빅테크 비서 비교 부적합 판단은 여전히 유효), miclaw/picoclaw 도 비교에서 제거 (정보 비대칭 가치 낮음). 결과: 단일 OpenClaw 1:1 하네스 (이전 2026-05-03 시점의 openclaw-similarity 와 본질적으로 동일하나 dual-mode 4 auditor 가 single-mode 로 단순화된 형태) |
-
----
-
-## 하네스: phase 종결 (리팩토링 + QA)
-
-**목표:** plans/phase{NN}/ 의 todo.md 가 채워진 phase 가 막 구현 완료된 직후 호출. phase-refactor-expert + phase-qa-engineer 가 병렬로 (1) 리팩토링 후보 (2) TODO 일치도 + typecheck/vitest/lint + 경계면 교차 검증 을 산출하고, 메인이 통합해 review.md 초안을 작성. 모드 A — 자동 코드 수정·자동 review.md 저장 X. 사용자 승인 후 plans/phase{NN}/review.md 로 머지.
-
-**트리거:** 다음 키워드 또는 작업 요청 시 `finclaw-phase-finalize` 스킬을 사용하라.
-
-- "phase 마무리", "phase 리뷰", "리팩토링/qa", "review.md 작성", "phase 완료", "phase {NN} 검토", "phase 끝났어 검토해줘"
-- 후속: "다시 검토", "재검토", "phase {NN} 다시", "리팩토링만 다시", "qa 만 다시", "이전 검토 보완", "review.md 다시"
-- 단순 사실 질문(예: "phase29 에 todo.md 있어?") 은 직접 응답. 단일 파일 리팩토링은 직접 Edit.
-
-**변경 이력:**
-
-| 날짜       | 변경 내용                                                     | 대상                           | 사유                                                                                                                                       |
-| ---------- | ------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| 2026-05-07 | 초기 구성 (2 에이전트 + 1 오케스트레이터 스킬 + 3 references) | .claude/agents, .claude/skills | "각 phase 마지막에 사용할 리팩토링/qa 만들자" 요청. plans/ 35 phase 중 review.md 미작성 phase 다수, todo.md 만 있는 phase 도 다수. 모드 A. |
-
----
-
-## 하네스: phase 풀 사이클 (plan → todo → 구현 → review)
-
-**목표:** phase 의 plan.md 만 있는 상태에서 시작해 todo.md 분해 → 코드 구현 (밀스톤 단위 커밋) → review.md 작성까지 자동. todo.md 저장과 review.md 저장 두 곳에 사용자 승인 게이트. 코드는 모드 B (자동 적용).
-
-**트리거:** 다음 키워드 또는 작업 요청 시 `finclaw-phase-execute` 스킬을 사용하라.
-
-- "phase {NN} 시작", "phase 작업해줘", "plan 부터 review 까지", "phase 풀 사이클", "phase {NN} 처음부터 끝까지", "이번 phase 자동으로 돌려"
-- 후속: "todo 만 다시", "step 5 부터 다시", "phase {NN} 이어서", "review 만 다시", "이전 실행 기반 보완"
-- 비트리거: plan.md 작성 자체 (사람이 직접), 단일 파일 수정 (직접 Edit), review.md 만 (→ `finclaw-phase-finalize`).
-
-**변경 이력:**
-
-| 날짜       | 변경 내용                                                     | 대상                           | 사유                                                                                                                                      |
-| ---------- | ------------------------------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-05-07 | 초기 구성 (2 에이전트 + 1 오케스트레이터 스킬 + 2 references) | .claude/agents, .claude/skills | "plan → todo → review 한번에" 요청. phase-execute 가 architect/implementer 두 신규 에이전트 + 기존 finclaw-phase-finalize 자동 연쇄 호출. |
-
----
-
-## 하네스: 기능 리서치 → phase 계획 (plan.md 의 상류)
-
-**목표:** FinClaw 에 새 기능/외부 데이터소스를 붙이기 전에, 외부 git/OSS 프로젝트를 리서치·비교하고 그 근거 위에 `plans/phaseNN/{kickoff,plan}.md` 초안을 작성한다. `finclaw-phase-execute` 가 전제하는 plan.md 를 _만드는_ 빈자리를 메운다. (analyst → scout fan-out → synthesizer → plan-author, 서브 에이전트 + 파일 핸드오프, 게이트 2곳.)
-
-**트리거:** 다음 키워드 또는 작업 요청 시 `finclaw-feature-plan` 스킬을 사용하라.
-
-- "기능 리서치", "이 기능 어떻게 구현하지", "git 에서 찾아서 비교", "외부 라이브러리/MCP 조사", "새 데이터소스 통합 계획", "phase 계획 만들어줘", "plan.md 초안", "X/트위터 연동 조사"
-- 후속: "다시 조사", "재조사", "추천만 다시", "특정 레인만 다시", "비교 보완", "plan 초안만 다시", "이전 리서치 기반 보완"
-- 비트리거: plan.md 가 이미 있어 구현만(→ `finclaw-phase-execute`), 단순 사실 질문(직접 응답), 단일 라이브러리 1회 검색(직접 WebSearch).
-
-**변경 이력:**
-
-| 날짜       | 변경 내용                                                     | 대상                                                      | 사유                                                                                                                                                                                                                                                                    |
-| ---------- | ------------------------------------------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-05-26 | 초기 구성 (4 에이전트 + 1 오케스트레이터 스킬 + 2 references) | .claude/agents (4종), .claude/skills/finclaw-feature-plan | "CLI 전환으로 토큰이 자유로워졌으니 X 에서 금융 민감 정보를 MCP 로 받아오는 방안을 git 리서치·비교해 구체화" 요청. phase-execute 의 상류(plan 작성) 빈자리를 메우는 리서치-설계 하네스. 첫 실행 대상: X/FinTwit(보유종목 cashtag 감성 + 계정 피드, 무료·회색지대 허용). |
+- 계획 문서는 `plans/` 에 주제별 파일 하나로 둔다 (`plans/README.md` 가 색인). 조사 자료는 `plans/research/`.
+- 계획의 결정 사항은 사람이 승인한다. 자율 실행 중 에이전트가 대신 고른 결정은 계획 문서에 "에이전트 결정"으로 표시한다.
