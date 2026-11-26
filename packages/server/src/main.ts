@@ -154,6 +154,11 @@ async function main(): Promise<void> {
     cwd: join(homedir(), '.finclaw', 'agent'),
     logger,
   });
+  // 과금 주체가 조용히 바뀌지 않게 부팅마다 남긴다 — 키가 있으면 CLI 는 구독 대신 키를 쓴다.
+  logger.info('agent.auth', {
+    event: 'agent.auth',
+    mode: process.env.ANTHROPIC_API_KEY ? 'api-key' : 'subscription',
+  });
   execFile(cliCommand, ['--version'], { timeout: 10_000 }, (err, stdout) => {
     if (err) {
       logger.warn('cli.version_unavailable', {

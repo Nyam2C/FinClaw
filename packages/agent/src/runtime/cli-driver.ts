@@ -350,10 +350,8 @@ async function* runCli(opts: CliDriverOptions, req: DriverRequest): AsyncGenerat
 }
 
 function childEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env, CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' };
-  delete env.ANTHROPIC_API_KEY; // I1: 키가 있으면 -p 는 항상 키를 쓴다 → 구독 OAuth 강제
-  delete env.ANTHROPIC_API_KEY_OLD; // 구 DEFAULT_CLAUDE_BACKEND.clearEnv 와 동일
-  return env;
+  // ANTHROPIC_API_KEY 가 있으면 -p 는 그 키(API 과금)를 쓰고, 없으면 `claude login` 구독을 쓴다.
+  return { ...process.env, CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' };
 }
 
 function fail(runId: string, reason: AgentErrorReason, message: string): TerminalEvent {
