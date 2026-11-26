@@ -12,18 +12,10 @@ export type {
   ToolExecutionContext,
   ToolRegistry,
 } from './agents/tools/index.js';
-export { InMemoryToolRegistry, jsonSchemaToZod } from './agents/tools/index.js';
+export { InMemoryToolRegistry } from './agents/tools/index.js';
 
 // ── AgentRuntime driver seam: 자체 에이전트 루프 ──
-export {
-  createAnthropicDriver,
-  createAnthropicStream,
-  createLoopDriver,
-  settleDanglingToolUses,
-  toApiMessages,
-  type StreamFn,
-  type StreamParams,
-} from './runtime/loop.js';
+export { byName, createAnthropicDriver, settleDanglingToolUses } from './runtime/loop.js';
 export type {
   AgentDriver,
   AgentErrorReason,

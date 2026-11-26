@@ -93,8 +93,8 @@ export function createStorage(options: StorageOptions): FinClawStorage {
       appendMessagesInDb(database.db, payload);
     },
 
-    async getConversation(sessionKey: SessionKey): Promise<ConversationRecord | null> {
-      return getConversation(database.db, sessionKey);
+    async getConversation(sessionKey, range): Promise<ConversationRecord | null> {
+      return getConversation(database.db, sessionKey, range);
     },
 
     async deleteConversation(sessionKey: SessionKey): Promise<boolean> {

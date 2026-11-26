@@ -4,6 +4,7 @@ import type {
   ConversationMessage,
   ConversationRecord,
   ContentBlock,
+  MessageRange,
   SessionKey,
   Timestamp,
 } from '@finclaw/types';
@@ -85,20 +86,34 @@ function extractToolCalls(msg: ConversationMessage): string | null {
 export function getConversation(
   db: DatabaseSync,
   sessionKey: SessionKey,
+  range?: MessageRange,
 ): ConversationRecord | null {
-  const row = db
-    .prepare('SELECT * FROM conversations WHERE id = ?')
-    .get(sessionKey as string) as unknown as ConversationRow | undefined;
+  const key = sessionKey as string;
+  const row = db.prepare('SELECT * FROM conversations WHERE id = ?').get(key) as unknown as
+    | ConversationRow
+    | undefined;
   if (!row) {
     return null;
   }
-
-  const msgRows = db
-    .prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY rowid ASC')
-    .all(sessionKey as string) as unknown as MessageRow[];
-  const messages = msgRows.map(messageRowToMessage);
-
-  return rowToRecord(row, messages);
+  // rowid 순 = 넣은 순서 (append-only). idx_messages_conversation_rowid 가 정렬 없이 돌려준다.
+  let msgRows: MessageRow[];
+  if (range && 'tail' in range) {
+    msgRows = (
+      db
+        .prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY rowid DESC LIMIT ?')
+        .all(key, range.tail) as unknown as MessageRow[]
+    ).toReversed();
+  } else {
+    msgRows = db
+      .prepare(
+        'SELECT * FROM messages WHERE conversation_id = ? ORDER BY rowid ASC LIMIT -1 OFFSET ?',
+      )
+      .all(key, range?.offset ?? 0) as unknown as MessageRow[];
+  }
+  const { n } = db
+    .prepare('SELECT COUNT(*) AS n FROM messages WHERE conversation_id = ?')
+    .get(key) as { n: number };
+  return { ...rowToRecord(row, msgRows.map(messageRowToMessage)), messageCount: n };
 }
 
 export function deleteConversation(db: DatabaseSync, sessionKey: SessionKey): boolean {

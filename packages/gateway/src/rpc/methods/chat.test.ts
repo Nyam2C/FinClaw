@@ -532,7 +532,8 @@ describe('chat.* RPC methods', () => {
       const storage = storageWith([]);
       const sessionId = await startSession(gatedRuntime().runtime, undefined, storage);
       await call('chat.history', { sessionId });
-      expect(storage.getConversation).toHaveBeenCalledWith('tui:local:default');
+      // 전체가 아니라 꼬리만 읽는다 (limit 20 × 메시지당 8행)
+      expect(storage.getConversation).toHaveBeenCalledWith('tui:local:default', { tail: 160 });
     });
 
     it('대화 기록 없음 → 빈 배열', async () => {

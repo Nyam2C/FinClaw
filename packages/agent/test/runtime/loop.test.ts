@@ -4,6 +4,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { describe, expect, it, vi } from 'vitest';
 import {
   checkMessages,
+  createAnthropicDriver,
   createLoopDriver,
   settleDanglingToolUses,
   toApiMessages,
@@ -412,6 +413,47 @@ describe('runLoop', () => {
     expect(requests[0].tools?.map((t) => t.name)).toEqual(['mcp_fs_read_file']);
     expect(runTool).toHaveBeenCalledWith('mcp:fs:read_file', {}, expect.anything());
     expect(events.find((e) => e.type === 'tool_use')).toMatchObject({ name: 'mcp:fs:read_file' });
+  });
+
+  it('바꾼 이름이 겹치는 도구는 번호를 붙여 구분하고, 각자 원래 이름으로 실행한다', async () => {
+    const { stream, requests } = scripted([
+      message([toolUse('a', 'mcp_a_b_c'), toolUse('b', 'mcp_a_b_c_2')], 'tool_use'),
+      message([text('ok')]),
+    ]);
+    const runTool = vi.fn(async () => ({ content: 'x', isError: false }));
+    const schema = { type: 'object' };
+    await collect(
+      stream,
+      request({
+        tools: [
+          { name: 'mcp:a_b:c', description: 'second by sort', inputSchema: schema },
+          { name: 'mcp:a:b_c', description: 'first by sort', inputSchema: schema },
+        ],
+        runTool,
+      }),
+    );
+    expect(requests[0].tools?.map((t) => t.name)).toEqual(['mcp_a_b_c', 'mcp_a_b_c_2']);
+    expect(runTool.mock.calls.map((c) => c[0])).toEqual(['mcp:a:b_c', 'mcp:a_b:c']);
+  });
+
+  it('오류의 message 는 짧은 고정 요약이고, 프로바이더 원문은 detail 에만 있다', async () => {
+    const raw =
+      '400 {"type":"error","error":{"type":"invalid_request_error"},"request_id":"req_x"}';
+    const err = new Anthropic.BadRequestError(400, undefined, raw, new Headers());
+    const terminal = last(await collect(scripted([err]).stream, request()));
+    expect(terminal).toMatchObject({
+      reason: 'invalid_request',
+      message: 'Anthropic API error 400',
+    });
+    expect(terminal).toMatchObject({ detail: expect.stringContaining('req_x') });
+  });
+
+  it('키가 없는 드라이버는 모델을 부르지 않고 error{auth} 로 끝낸다', async () => {
+    const events: AgentEvent[] = [];
+    for await (const ev of createAnthropicDriver({ apiKey: undefined })(request())) {
+      events.push(ev);
+    }
+    expect(events).toEqual([expect.objectContaining({ type: 'error', reason: 'auth' })]);
   });
 
   it('보낼 수 없는 트랜스크립트는 모델을 부르지 않고 error{invalid_request}', async () => {

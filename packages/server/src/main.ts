@@ -28,6 +28,7 @@ import type { ChannelPlugin, ConfigValidationIssue } from '@finclaw/types';
 import { deliverScheduleResult } from './automation/delivery.js';
 import { initChannels } from './channels/index.js';
 import { DEFAULT_MODEL, defaultConfig } from './composition/constants.js';
+import { isDiscordOwner } from './composition/discord-owner.js';
 import { issueLocalToken, resolveJwtSecret } from './composition/local-auth.js';
 import { buildProviders } from './composition/providers.js';
 import { buildAutomation, buildExecution, buildPipeline } from './composition/runtime.js';
@@ -137,7 +138,7 @@ async function main(): Promise<void> {
 
   // 3. Discord (선택) — alerts DM 핸들 때문에 skills 등록 전에 로그인
   const discordAdapter = await setupDiscord(process.env.DISCORD_BOT_TOKEN, { logger, lifecycle });
-  // phase47 Q6/D5: 알림 DM 수신자 — skills(Discord 핸들러)와 financeDeps(새 알림 기본 채널)가 같은 값을 쓴다 (env 읽기 1곳)
+  // Discord 소유자 id — 알림 DM 수신자이자, 봇에게 말을 걸 수 있는 유일한 사용자 (env 읽기 1곳)
   const discordAlertUserId = process.env.DISCORD_ALERT_USER_ID || undefined;
 
   // 4. Agent 레이어 (툴 레지스트리)
@@ -209,8 +210,18 @@ async function main(): Promise<void> {
   // 7. Discord onMessage 등록 — 토큰이 있을 때만
   if (discordAdapter) {
     channelPluginRegistry.set(discordAdapter.id as string, discordAdapter);
+    // 1인용 비서다: 에이전트는 소유자의 알림·계좌 조회 도구를 쓰므로, Discord 에서는 소유자 id 가 보낸
+    // 메시지만 받는다. id 가 없으면 대화를 받지 않는다 (알림 DM 발송은 계속 된다).
+    if (!discordAlertUserId) {
+      logger.warn('discord.chat_disabled', {
+        event: 'discord.chat_disabled',
+        reason: 'DISCORD_ALERT_USER_ID (owner user id) not set',
+      });
+    }
     discordAdapter.onMessage(async (msg) => {
-      await router.route(msg);
+      if (isDiscordOwner(msg.senderId, discordAlertUserId)) {
+        await router.route(msg);
+      }
     });
     logger.info('Discord adapter connected');
   }

@@ -95,6 +95,25 @@ describe('InMemoryToolRegistry', () => {
     expect(result.content).toContain('boom');
   });
 
+  it('중단 신호를 무시하는 도구도 타임아웃에 에러 결과로 돌아온다 (호출자를 영원히 잡지 않는다)', async () => {
+    const never = (): Promise<ToolResult> => new Promise(() => {});
+    registry.register(makeDef({ timeoutMs: 1_000 }), never);
+    const pending = registry.execute('test-tool', {}, makeCtx());
+    await vi.advanceTimersByTimeAsync(1_000);
+    const result = await pending;
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain('timed out or was aborted');
+  });
+
+  it('호출자가 중단하면 끝나지 않는 도구를 기다리지 않는다', async () => {
+    const never = (): Promise<ToolResult> => new Promise(() => {});
+    registry.register(makeDef(), never);
+    const controller = new AbortController();
+    const pending = registry.execute('test-tool', {}, makeCtx({ abortSignal: controller.signal }));
+    controller.abort();
+    expect((await pending).isError).toBe(true);
+  });
+
   it('deny 정책이 있으면 실행을 차단한다', async () => {
     registry.register(makeDef(), okExecutor);
     registry.addPolicyRule({

@@ -356,6 +356,75 @@ describe('AgentRuntime — 트랜스크립트와 컨텍스트 창', () => {
     expect(sent(calls[3]).map(([, text]) => text)).toEqual([CTX, 'q2', 'a3', CTX, 'q3']);
   });
 
+  it('재시도도 첫 호출에서 거절당하면(히스토리 탓이 아니다) 창을 되돌려 맥락을 버리지 않는다', async () => {
+    const { driver, calls } = scripted((req, n) =>
+      n === 1 ? ok(req) : n <= 3 ? err(req, 'invalid_request') : ok(req),
+    );
+    const rt = makeRuntime(driver);
+    await collect(rt.run(chat('s1', 'q1')));
+    const events = await collect(rt.run(chat('s1', 'q2'))); // 시도 + 재시도 둘 다 거절
+    expect(calls).toHaveLength(3);
+    expect(terminals(events)).toEqual([expect.objectContaining({ reason: 'invalid_request' })]);
+    const rec = await storage.getConversation(createSessionKey('s1'));
+    expect(rec?.metadata?.contextStart).toBe(0);
+
+    await collect(rt.run(chat('s1', 'q3')));
+    expect(sent(calls[3]).map(([, text]) => text)).toEqual([CTX, 'q1', 'ok', CTX, 'q2', CTX, 'q3']);
+  });
+
+  it('도구를 돌린 뒤의 거절은 재시도하지 않는다 (이미 행을 덧붙이고 내보냈다)', async () => {
+    const { driver, calls } = scripted((req, n) =>
+      n === 2
+        ? [
+            {
+              type: 'error',
+              runId: req.runId,
+              reason: 'invalid_request',
+              message: 'x',
+              numTurns: 2,
+            },
+          ]
+        : ok(req),
+    );
+    const rt = makeRuntime(driver);
+    await collect(rt.run(chat('s1', 'q1')));
+    const events = await collect(rt.run(chat('s1', 'q2')));
+    expect(calls).toHaveLength(2);
+    expect(terminals(events)).toEqual([expect.objectContaining({ reason: 'invalid_request' })]);
+  });
+
+  it('거절 후 재시도: 닫아 둔 도구 결과 행 다음부터 창을 연다', async () => {
+    const toolUse = [{ type: 'tool_use', id: 't1', name: 'get_quote', input: {} }];
+    const { driver, calls } = scripted((req, n) =>
+      n === 1
+        ? [
+            { type: 'start', runId: req.runId, model: req.model },
+            { type: 'message', message: { role: 'assistant', content: toolUse } },
+            { type: 'error', runId: req.runId, reason: 'aborted', message: 'killed' },
+          ]
+        : n === 2
+          ? err(req, 'invalid_request')
+          : ok(req),
+    );
+    const rt = makeRuntime(driver);
+    await collect(rt.run(chat('s1', 'q1')));
+    await collect(rt.run(chat('s1', 'q2')));
+    expect(calls[2]?.messages.map((m) => m.role)).toEqual(['system', 'user']);
+    const rec = await storage.getConversation(createSessionKey('s1'));
+    // 행: system·user·assistant(tool_use) | tool(합성) | system·user → 창은 인덱스 4 부터
+    expect(rec?.metadata?.contextStart).toBe(4);
+  });
+
+  it('공백뿐인 입력은 저장하지도 모델에 보내지도 않는다', async () => {
+    const { driver, calls } = scripted((req) => ok(req));
+    const events = await collect(makeRuntime(driver).run(chat('s1', '   ')));
+    expect(calls).toHaveLength(0);
+    expect(terminals(events)).toEqual([
+      expect.objectContaining({ type: 'error', reason: 'unknown' }),
+    ]);
+    expect(await storage.getConversation(createSessionKey('s1'))).toBeNull();
+  });
+
   it('새 창에서도 거절당하면 재시도하지 않는다', async () => {
     const { driver, calls } = scripted((req) => err(req, 'invalid_request'));
     const events = await collect(makeRuntime(driver).run(chat('s1', 'q1')));

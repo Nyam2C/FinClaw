@@ -9,8 +9,8 @@ import { createStatusCommand } from './status.js';
 export interface BuiltInCommandDeps {
   readonly toolRegistry?: ToolRegistry;
   readonly storage: StorageAdapter;
-  /** reset 명령이 세션 lane 을 거치도록 (없으면 storage 직접 삭제 — 테스트용). */
-  readonly runtime?: Pick<AgentRunPort, 'reset'>;
+  /** reset 명령이 세션 lane 을 거쳐 지우도록. */
+  readonly runtime: Pick<AgentRunPort, 'reset'>;
   readonly profileHealth?: ProfileHealthMonitor;
   readonly profileId?: string;
   readonly defaultModel?: ModelRef;
@@ -57,10 +57,7 @@ export function registerBuiltInCommands(registry: CommandRegistry, deps: BuiltIn
       description: '현재 대화 세션을 초기화합니다',
       usage: '/reset',
     },
-    createResetCommand({
-      reset: (key) =>
-        deps.runtime ? deps.runtime.reset(key) : deps.storage.deleteConversation(key),
-    }),
+    createResetCommand({ reset: (key) => deps.runtime.reset(key) }),
   );
 
   // /status - 서버 상태

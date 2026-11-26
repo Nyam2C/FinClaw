@@ -14,17 +14,26 @@ export interface StorageAdapter {
     readonly at: Timestamp;
     readonly metadata?: Record<string, unknown>;
   }): Promise<void>;
-  getConversation(sessionKey: SessionKey): Promise<ConversationRecord | null>;
+  /**
+   * 대화 조회. `range` 를 주면 일부 행만 읽는다 (트랜스크립트는 끝없이 자란다):
+   * `offset` = 그 인덱스부터 끝까지, `tail` = 마지막 N개. `messageCount` 는 항상 전체 행 수다.
+   */
+  getConversation(sessionKey: SessionKey, range?: MessageRange): Promise<ConversationRecord | null>;
   deleteConversation(sessionKey: SessionKey): Promise<boolean>;
   initialize(): Promise<void>;
   close(): Promise<void>;
 }
+
+/** 읽을 메시지 범위 (rowid 순 인덱스). 둘 다 없으면 전체. */
+export type MessageRange = { readonly offset: number } | { readonly tail: number };
 
 /** 대화 레코드 */
 export interface ConversationRecord {
   sessionKey: SessionKey;
   agentId: AgentId;
   messages: ConversationMessage[];
+  /** 저장된 전체 행 수 (`messages` 가 일부일 수 있다). 저장소가 채운다. */
+  messageCount?: number;
   createdAt: Timestamp;
   updatedAt: Timestamp;
   metadata?: Record<string, unknown>;

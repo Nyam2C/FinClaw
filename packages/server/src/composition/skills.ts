@@ -229,8 +229,5 @@ export async function registerSkills(deps: RegisterSkillsDeps): Promise<SkillsBu
     }
   });
 
-  // Phase 40 D: 이전의 'provider.cli_tools_disabled' 경고 제거 — CLI 모드는 이제 in-process /mcp
-  // 로 도구를 활성화하므로(read-only 필터) "tools are inactive" 가정이 거짓이 됨.
-
   return { marketHandle, newsHandle, alertHandle, brokerageSyncService, kisEnv };
 }

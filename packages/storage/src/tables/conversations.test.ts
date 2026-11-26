@@ -76,6 +76,31 @@ describe('appendMessages', () => {
     ]);
   });
 
+  it('범위 조회: offset 은 그 인덱스부터, tail 은 마지막 N개, messageCount 는 항상 전체', () => {
+    append(
+      ['a', 'b', 'c', 'd', 'e'].map((content) => ({ role: 'user' as const, content })),
+      1_000,
+    );
+    const contents = (range?: { offset: number } | { tail: number }) =>
+      getConversation(database.db, sessionKey, range)?.messages.map((m) => m.content);
+
+    expect(contents()).toEqual(['a', 'b', 'c', 'd', 'e']);
+    expect(contents({ offset: 3 })).toEqual(['d', 'e']);
+    expect(contents({ offset: 5 })).toEqual([]);
+    expect(contents({ tail: 2 })).toEqual(['d', 'e']);
+    expect(contents({ tail: 0 })).toEqual([]);
+    expect(getConversation(database.db, sessionKey, { tail: 1 })?.messageCount).toBe(5);
+  });
+
+  it('트랜스크립트 조회는 임시 정렬 없이 인덱스 순서로 읽는다', () => {
+    const plan = database.db
+      .prepare(
+        'EXPLAIN QUERY PLAN SELECT * FROM messages WHERE conversation_id = ? ORDER BY rowid ASC',
+      )
+      .all('s') as { detail: string }[];
+    expect(plan.map((r) => r.detail).join(' ')).not.toContain('TEMP B-TREE');
+  });
+
   it('metadata 는 줄 때만 교체하고, 빈 messages 로 metadata 만 갱신할 수 있다', () => {
     append([{ role: 'user', content: 'hi' }], 1_000, { contextStart: 0 });
     append([{ role: 'assistant', content: 'hello' }], 2_000);

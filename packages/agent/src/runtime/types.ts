@@ -58,7 +58,8 @@ export type AgentEvent =
       readonly type: 'error';
       readonly runId: string;
       readonly reason: AgentErrorReason;
-      readonly message: string; // 짧은 요약. 원문 오류는 로그에만
+      readonly message: string; // 짧은 고정 요약 — 채널로 나간다
+      readonly detail?: string; // 프로바이더 원문 오류. 로그 전용, 채널로 내보내지 않는다
       readonly usage?: AgentUsage;
       readonly contextTokens?: number;
       readonly numTurns?: number;

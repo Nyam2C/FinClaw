@@ -4,6 +4,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import {
+  byName,
   settleDanglingToolUses,
   type AgentDriver,
   type AgentErrorReason,
@@ -33,6 +34,8 @@ import { composeContext, prepareTurn, type PreparedTurn } from './prepare-turn.j
 /** 컨텍스트 회전 조건 (plans/agent-core.md §3.3) — 코드 상수. */
 const ROTATE_IDLE_MS = 6 * 60 * 60_000;
 const ROTATE_CONTEXT_TOKENS = 150_000;
+/** 회전 시 recap 을 뽑을 꼬리 행 수 (text 있는 user·assistant 6개를 찾기에 넉넉한 수). */
+const RECAP_SOURCE_ROWS = 30;
 const MAIN_OVERALL_TIMEOUT_MS = 300_000;
 const MAIN_MAX_TURNS = 10;
 /** run 이 새로 처리하는 토큰(입력+캐시 쓰기+출력) 예산. 넘으면 마무리 호출로 끝낸다. 가격표를 코드에 두지 않으려고 토큰으로 건다. */
@@ -76,8 +79,6 @@ interface RunContext {
   readonly startedAt: number;
   readonly trace?: { readonly traceId: string; readonly spanId: string };
   attempt: Attempt;
-  /** undefined = 아직 안 읽음(lane 실패 등) → 창 상태를 덮어쓰지 않는다. null = 행 없음. */
-  record?: ConversationRecord | null;
   /** 이번 run 이 쓰는 창 (execute 가 정한다). */
   window?: ContextWindow;
   prepared?: PreparedTurn;
@@ -159,7 +160,7 @@ export class AgentRuntime implements AgentRunPort {
     }
   }
 
-  /** Q14: per-session lane 경유 — 진행 중 run 의 종료 기록 뒤에 삭제되어 바인딩이 되살아나지 않는다. */
+  /** per-session lane 경유 — 진행 중 run 의 종료 기록 뒤에 삭제되어 대화가 되살아나지 않는다. */
   async reset(sessionKey: SessionKey): Promise<boolean> {
     const handle = await this.sessionLane.acquire(sessionKey);
     try {
@@ -188,10 +189,15 @@ export class AgentRuntime implements AgentRunPort {
     const { req } = ctx;
     const now = this.now();
     const model = req.model ?? this.deps.defaultModel;
-    // ② 트랜스크립트 조회 (chat 만)
-    if (req.mode === 'chat') {
-      ctx.record = await this.deps.storage.getConversation(req.sessionKey);
+    if (req.input.trim().length === 0) {
+      return fail(ctx.runId, 'unknown', 'empty input'); // 빈 text 블록은 API 가 거절한다 — 저장하지도 보내지도 않는다
     }
+    // ② 트랜스크립트 조회 (chat 만)
+    //    전체가 아니라 머리(창 상태·행 수)와 꼬리 몇 행만 읽는다 — 트랜스크립트는 끝없이 자란다.
+    const record: ConversationRecord | null =
+      req.mode === 'chat'
+        ? await this.deps.storage.getConversation(req.sessionKey, { tail: RECAP_SOURCE_ROWS })
+        : null;
     // ③ prepareTurn — capture·retrieval·시각
     const prepared = await prepareTurn({
       input: req.input,
@@ -209,26 +215,32 @@ export class AgentRuntime implements AgentRunPort {
     //    원문은 그대로 두고 시작점만 옮긴다.
     const tools = this.toolDefinitions();
     const prefixHash = hashPrefix(this.deps.systemPrompt, tools);
-    const stored = (ctx.record?.messages ?? []) as readonly TranscriptMessage[];
-    const prev = readWindow(ctx.record?.metadata);
+    const total = record?.messageCount ?? 0;
+    const prev = readWindow(record?.metadata);
     const rotate =
       !prev ||
       now - prev.lastTurnAt >= ROTATE_IDLE_MS ||
       prev.contextTokens > ROTATE_CONTEXT_TOKENS ||
       prev.prefixHash !== prefixHash;
-    let window: ContextWindow = {
-      contextStart: rotate ? stored.length : prev.contextStart,
+    const window: ContextWindow = {
+      contextStart: rotate ? total : prev.contextStart,
       lastTurnAt: prev?.lastTurnAt ?? now,
       prefixHash,
       contextTokens: rotate ? 0 : prev.contextTokens,
     };
     ctx.window = window;
-    const carried = stored.slice(window.contextStart);
+    const carried: readonly TranscriptMessage[] = rotate
+      ? []
+      : (((await this.deps.storage.getConversation(req.sessionKey, { offset: window.contextStart }))
+          ?.messages ?? []) as readonly TranscriptMessage[]);
     // 이어 가는 창에 결과 없는 tool_use 가 남았으면(중단·크래시) 짝을 닫는다.
     const settled = settleDanglingToolUses(carried);
     const turn: TranscriptMessage[] = [
       // 회전 직후에는 직전 대화 몇 개를 recap 으로 컨텍스트에 싣는다
-      { role: 'system', content: composeContext(prepared.context, rotate ? stored : []) },
+      {
+        role: 'system',
+        content: composeContext(prepared.context, rotate ? (record?.messages ?? []) : []),
+      },
       { role: 'user', content: req.input },
     ];
     // ⑤ user 턴은 모델 호출보다 먼저 저장한다
@@ -255,19 +267,23 @@ export class AgentRuntime implements AgentRunPort {
       signal,
     };
     let terminal = yield* this.drive(ctx, dreq);
-    // ⑥ 저장된 트랜스크립트를 API 가 거절하면(400) 같은 본문은 다시 보내도 실패한다. 창을 이번 턴에서
-    //    새로 열어 1회만 재시도한다 — 안 하면 그 대화는 6h 유휴까지 매 턴 실패한다.
-    if (terminal.type === 'error' && terminal.reason === 'invalid_request' && carried.length > 0) {
+    // ⑥ 저장된 트랜스크립트를 API 가 거절하면(400) 같은 본문은 다시 보내도 실패한다. 첫 호출에서
+    //    거절됐을 때만(아직 아무것도 덧붙이거나 내보내지 않았다) 창을 이번 턴에서 새로 열어 1회 재시도한다.
+    //    안 하면 그 대화는 6h 유휴까지 매 턴 실패한다. 재시도에는 recap 이 없다 (드문 복구 경로).
+    const rejectedUpFront = (t: TerminalEvent): boolean =>
+      t.type === 'error' && t.reason === 'invalid_request' && (t.numTurns ?? 0) <= 1;
+    if (rejectedUpFront(terminal) && carried.length > 0) {
       this.deps.logger.warn('agent.context.reset', {
         event: 'agent.context.reset',
         runId: ctx.runId,
         sessionKey: req.sessionKey,
-        cause: terminal.message,
+        cause: terminal.type === 'error' ? (terminal.detail ?? terminal.message) : undefined,
       });
-      window = { ...window, contextStart: stored.length + (settled ? 1 : 0), contextTokens: 0 };
-      ctx.window = window;
-      await this.append(ctx, [], this.now());
+      ctx.window = { ...window, contextStart: total + (settled ? 1 : 0), contextTokens: 0 };
       terminal = yield* this.drive(ctx, { ...dreq, messages: turn });
+      if (rejectedUpFront(terminal)) {
+        ctx.window = window; // 히스토리 탓이 아니었다 — 창을 되돌려 맥락을 버리지 않는다
+      }
     }
     return terminal;
   }
@@ -395,6 +411,7 @@ export class AgentRuntime implements AgentRunPort {
         mode: req.mode,
         reason: final.reason,
         message: final.message,
+        detail: final.detail,
       });
     }
     if (final.type === 'done' || final.reason !== 'aborted') {
@@ -448,7 +465,7 @@ function readWindow(metadata: Record<string, unknown> | undefined): ContextWindo
 
 /** 캐시 프리픽스(시스템 프롬프트 + 이름순 도구 정의)의 지문. */
 function hashPrefix(systemPrompt: string, tools: readonly DriverTool[]): string {
-  const sorted = tools.toSorted((a, b) => a.name.localeCompare(b.name));
+  const sorted = tools.toSorted(byName); // 루프가 보내는 순서와 같다
   return createHash('sha256')
     .update(systemPrompt)
     .update(JSON.stringify(sorted))

@@ -2,7 +2,7 @@ import Foundation
 
 /// 사용자 문구 전부 (plan §4-6). 느낌표·이모지 없음.
 public enum Copy {
-  /// 마지막 "__" 뒤로 조회 (`mcp__finclaw__route_task` → `route_task`). nil = 표시 안 함(working 진입 없음).
+  /// 서버는 레지스트리 이름 그대로 보낸다 (`route_task`). 예전 `mcp__finclaw__` 접두사도 마지막 "__" 뒤로 잘라 받는다. nil = 표시 안 함(working 진입 없음).
   public static func toolLabel(_ name: String) -> String? {
     switch name.components(separatedBy: "__").last ?? name {
     case "route_task": "알아보는 중…"

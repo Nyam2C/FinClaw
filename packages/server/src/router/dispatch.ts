@@ -62,7 +62,7 @@ export function buildRouteDispatcher(deps: DispatcherDeps): Dispatcher {
   const marketAnalysisProfile: AgentProfile = {
     id: createAgentId(def.id),
     name: def.name,
-    model: { provider: 'claude-cli', model: def.model },
+    model: { provider: 'anthropic', model: def.model },
     agentDir: 'prompts/sub-agents',
   };
 

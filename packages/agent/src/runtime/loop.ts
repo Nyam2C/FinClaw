@@ -145,13 +145,9 @@ export function createAnthropicDriver(opts: { readonly apiKey: string | undefine
   });
 }
 
-export function createLoopDriver(opts: {
-  readonly stream: StreamFn;
-  readonly now?: () => number;
-}): AgentDriver {
-  const now = opts.now ?? Date.now;
+export function createLoopDriver(opts: { readonly stream: StreamFn }): AgentDriver {
   return async function* loop(req: DriverRequest): AsyncGenerator<AgentEvent> {
-    const startedAt = now();
+    const startedAt = Date.now();
     const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
     let numTurns = 0;
     let contextTokens = 0; // 마지막 호출의 프롬프트 크기 (입력+캐시) — 런타임의 회전 판정용
@@ -161,14 +157,15 @@ export function createLoopDriver(opts: {
       text,
       usage: { ...usage },
       contextTokens,
-      durationMs: now() - startedAt,
+      durationMs: Date.now() - startedAt,
       numTurns,
     });
-    const fail = (reason: AgentErrorReason, message: string): TerminalEvent => ({
+    const fail = (reason: AgentErrorReason, message: string, detail?: string): TerminalEvent => ({
       type: 'error',
       runId: req.runId,
       reason,
       message,
+      ...(detail === undefined ? {} : { detail }),
       usage: { ...usage },
       contextTokens,
       numTurns,
@@ -182,20 +179,24 @@ export function createLoopDriver(opts: {
 
     const messages = toApiMessages(req.messages);
     // 이름순 고정 — 도구 목록이 바이트 단위로 같아야 캐시가 맞는다. API 이름 ↔ 레지스트리 이름.
+    // 로케일 비교(localeCompare)는 기기마다 순서가 다를 수 있어 코드 단위로 비교한다.
     const names = new Map<string, string>();
-    const tools: Anthropic.Tool[] = req.tools
-      .toSorted((a, b) => a.name.localeCompare(b.name))
-      .map((t) => {
-        const apiName = TOOL_NAME.test(t.name)
-          ? t.name
-          : t.name.replaceAll(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
-        names.set(apiName, t.name);
-        return {
-          name: apiName,
-          description: t.description,
-          input_schema: t.inputSchema as Anthropic.Tool.InputSchema,
-        };
-      });
+    const tools: Anthropic.Tool[] = req.tools.toSorted(byName).map((t) => {
+      const base = TOOL_NAME.test(t.name)
+        ? t.name
+        : t.name.replaceAll(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
+      // 바꾼 이름이 겹치면(`mcp:a:b_c` · `mcp:a_b:c`) 번호를 붙인다 — 겹친 채 보내면 API 가 요청을 거절한다.
+      let apiName = base;
+      for (let n = 2; names.has(apiName); n += 1) {
+        apiName = `${base.slice(0, 64 - String(n).length - 1)}_${n}`;
+      }
+      names.set(apiName, t.name);
+      return {
+        name: apiName,
+        description: t.description,
+        input_schema: t.inputSchema as Anthropic.Tool.InputSchema,
+      };
+    });
 
     yield { type: 'start', runId: req.runId, model: req.model };
     try {
@@ -384,27 +385,34 @@ async function runTool(
   }
 }
 
+/** 채널로 나가는 message 는 짧은 고정 요약, 프로바이더 원문은 detail(로그 전용)로. */
 function classify(
   err: unknown,
-  fail: (reason: AgentErrorReason, message: string) => TerminalEvent,
+  fail: (reason: AgentErrorReason, message: string, detail?: string) => TerminalEvent,
 ): TerminalEvent {
+  const detail = (err instanceof Error ? err.message : String(err)).slice(0, 500);
   if (err instanceof Anthropic.APIConnectionTimeoutError) {
-    return fail('timeout', 'Anthropic API request timed out');
+    return fail('timeout', 'Anthropic API request timed out', detail);
   }
   if (err instanceof Anthropic.APIError) {
-    const detail = `Anthropic API ${err.status ?? ''}: ${err.message}`.slice(0, 300);
+    const summary = `Anthropic API error ${err.status ?? 'without status'}`;
     if (err.status === 401 || err.status === 402 || err.status === 403) {
-      return fail('auth', detail); // 키가 틀렸거나 크레딧이 없다
+      return fail('auth', summary, detail); // 키가 틀렸거나 크레딧이 없다
     }
     if (err.status === 429) {
-      return fail('rate_limit', detail);
+      return fail('rate_limit', summary, detail);
     }
     if (err.status === 400) {
-      return fail('invalid_request', detail); // 런타임이 컨텍스트 창을 새로 열고 1회 재시도한다
+      return fail('invalid_request', summary, detail); // 런타임이 컨텍스트 창을 새로 열고 1회 재시도
     }
-    return fail('unknown', detail);
+    return fail('unknown', summary, detail);
   }
-  return fail('unknown', (err instanceof Error ? err.message : String(err)).slice(0, 300));
+  return fail('unknown', 'model call failed', detail);
+}
+
+/** 도구 이름 정렬 — 로케일과 무관한 코드 단위 비교 (프리픽스가 기기마다 같아야 한다). */
+export function byName(a: { readonly name: string }, b: { readonly name: string }): number {
+  return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
 }
 
 function toolUses(content: TranscriptMessage['content']): Anthropic.ToolUseBlock[] {
