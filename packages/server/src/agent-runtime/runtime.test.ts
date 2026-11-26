@@ -1,11 +1,12 @@
 // packages/server/src/agent-runtime/runtime.test.ts
-// Phase 46 M2: AgentRuntime — 바인딩·resume·회전·recap·1회 재시도·정확히 1 종료·직렬화·상한·감사·oneShot·reset.
+// AgentRuntime — 트랜스크립트(append-only)·컨텍스트 창 회전·recap·정확히 1 종료·직렬화·상한·감사·oneShot·reset.
 import type {
   AgentDriver,
   AgentErrorReason,
   AgentEvent,
   AgentRunRequest,
   DriverRequest,
+  TranscriptMessage,
 } from '@finclaw/agent';
 import type { FinClawLogger } from '@finclaw/infra';
 import { createStorage, getAgentRun, type FinClawStorage } from '@finclaw/storage';
@@ -34,22 +35,15 @@ const logger = {
   flush: vi.fn(),
 } as unknown as FinClawLogger;
 
-const cliId = (req: DriverRequest): string =>
-  req.session.kind === 'none' ? 'ephemeral-session' : req.session.id;
+const MODEL = 'claude-opus-5-5';
 
+/** 루프가 내보내는 것과 같은 모양: start → [중간] → assistant 행 → done. */
 function ok(req: DriverRequest, text = 'ok', middle: AgentEvent[] = []): AgentEvent[] {
   return [
-    { type: 'start', runId: req.runId, cliSessionId: cliId(req), model: 'claude-sonnet-4-6' },
+    { type: 'start', runId: req.runId, model: req.model },
     ...middle,
-    {
-      type: 'done',
-      runId: req.runId,
-      cliSessionId: cliId(req),
-      text,
-      usage: USAGE,
-      durationMs: 1,
-      numTurns: 1,
-    },
+    { type: 'message', message: { role: 'assistant', content: [{ type: 'text', text }] } },
+    { type: 'done', runId: req.runId, text, usage: USAGE, durationMs: 1, numTurns: 1 },
   ];
 }
 
@@ -92,8 +86,19 @@ async function settle(): Promise<void> {
 
 const terminals = (events: AgentEvent[]) =>
   events.filter((e) => e.type === 'done' || e.type === 'error');
-const sessionId = (req: DriverRequest | undefined): string | undefined =>
-  req && req.session.kind !== 'none' ? req.session.id : undefined;
+/** 드라이버가 받은 메시지를 [role, 텍스트] 로. */
+const sent = (req: DriverRequest | undefined): [string, string][] =>
+  (req?.messages ?? []).map((m) => [m.role, rowText(m)]);
+const rowText = (m: Pick<TranscriptMessage, 'content'>): string =>
+  typeof m.content === 'string'
+    ? m.content
+    : (m.content as readonly { text?: string }[]).map((b) => b.text ?? '').join('');
+const stored = async (key: string): Promise<[string, string][]> =>
+  ((await storage.getConversation(createSessionKey(key)))?.messages ?? []).map((m) => [
+    m.role,
+    rowText(m as TranscriptMessage),
+  ]);
+const CTX = '<context>\n현재 시각: 2026-11-26T10:00:00+09:00 (Asia/Seoul)\n</context>';
 
 function retrievalOf(id: string, content: string): MemoryRetrievalService {
   const result: RetrievalResult = {
@@ -143,8 +148,8 @@ function makeRuntime(driver: AgentDriver, overrides: Partial<AgentRuntimeDeps> =
     storage,
     db: storage.db,
     systemPrompt: 'SYS',
-    defaultModel: 'claude-sonnet-4-6',
-    mcp: { url: 'http://127.0.0.1:0/mcp', mintToken: (sk) => `jwt:${sk}` },
+    defaultModel: MODEL,
+    tools: { list: () => [], execute: vi.fn() },
     logger,
     now: () => clock,
     ...overrides,
@@ -162,90 +167,203 @@ function chat(key: string, input: string, extra: Partial<AgentRunRequest> = {}):
   };
 }
 
-describe('AgentRuntime — CLI 세션 바인딩', () => {
-  it('첫 턴: new(선지정 uuid) + 바인딩·원문·응답 저장 + per-run JWT(sessionKey)', async () => {
-    const { driver, calls } = scripted((req) => ok(req, '반가워'));
-    const events = await collect(makeRuntime(driver).run(chat('s1', '안녕')));
-    expect(calls[0]?.session.kind).toBe('new');
-    expect(calls[0]?.mcp).toEqual({ url: 'http://127.0.0.1:0/mcp', token: 'jwt:s1' });
+describe('AgentRuntime — 트랜스크립트와 컨텍스트 창', () => {
+  it('첫 턴: 컨텍스트·원문을 먼저 저장하고, 드라이버에 메시지·도구·상한을 넘긴다', async () => {
+    const execute = vi.fn().mockResolvedValue({ content: '70000', isError: false });
+    const tools = {
+      list: () => [
+        { definition: { name: 'get_quote', description: '시세', inputSchema: { type: 'object' } } },
+      ],
+      execute,
+    } as unknown as AgentRuntimeDeps['tools'];
+    let storedAtCall: [string, string][] = [];
+    const { driver, calls } = scripted(async (req) => {
+      storedAtCall = await stored('s1'); // 모델 호출 시점에 user 턴은 이미 저장돼 있다
+      await req.runTool('get_quote', { symbols: ['005930'] }, req.signal);
+      return ok(req, '반가워');
+    });
+    const events = await collect(makeRuntime(driver, { tools }).run(chat('s1', '안녕')));
+
+    expect(storedAtCall).toEqual([
+      ['system', CTX],
+      ['user', '안녕'],
+    ]);
+    expect(sent(calls[0])).toEqual(storedAtCall);
     expect(calls[0]).toMatchObject({
+      systemPrompt: 'SYS',
+      model: MODEL,
+      tools: [{ name: 'get_quote', description: '시세', inputSchema: { type: 'object' } }],
       maxTurns: 10,
-      autocompact: true,
+      tokenBudget: 400_000,
       idleTimeoutMs: 120_000,
       overallTimeoutMs: 300_000,
     });
-    expect(terminals(events)).toEqual([expect.objectContaining({ type: 'done', text: '반가워' })]);
-    const rec = await storage.getConversation(createSessionKey('s1'));
-    expect(rec?.metadata).toEqual({ cliSessionId: sessionId(calls[0]), lastTurnAt: T0 });
-    expect(rec?.messages.map((m) => [m.role, m.content])).toEqual([
+    expect(execute).toHaveBeenCalledWith(
+      'get_quote',
+      { symbols: ['005930'] },
+      expect.objectContaining({ sessionId: 's1', userId: 'finclaw', channelId: 'agent' }),
+    );
+    // message 이벤트는 저장만 하고 채널로 내보내지 않는다
+    expect(events.map((e) => e.type)).toEqual(['start', 'done']);
+    expect(await stored('s1')).toEqual([
+      ['system', CTX],
       ['user', '안녕'],
       ['assistant', '반가워'],
     ]);
+    const rec = await storage.getConversation(createSessionKey('s1'));
+    expect(rec?.metadata).toEqual({
+      contextStart: 0,
+      lastTurnAt: T0,
+      model: MODEL,
+      contextTokens: 10,
+    });
   });
 
-  it('B1 회귀: 2턴째는 같은 세션 resume 이고 prompt 에 <context>·배경지식이 들어간다', async () => {
-    const { driver, calls } = scripted((req) => ok(req));
+  it('2턴째는 같은 창을 이어 보내고, 컨텍스트 행에 배경지식이 들어간다 (recap 없음)', async () => {
+    const { driver, calls } = scripted((req) => ok(req, 'a'));
     const rt = makeRuntime(driver, {
       retrieval: retrievalOf('abcdef12-0000-4000-8000-000000000000', '나는 배당주를 선호한다'),
     });
     await collect(rt.run(chat('s1', '첫 질문')));
     clock += HOUR;
     await collect(rt.run(chat('s1', '내 투자 선호 알려줘')));
-    expect(calls[1]?.session).toEqual({ kind: 'resume', id: sessionId(calls[0]) });
-    expect(calls[1]?.prompt).toContain('<context>');
-    expect(calls[1]?.prompt).toContain('## 사용자 배경지식 (자동 주입)');
-    expect(calls[1]?.prompt).toContain('[mem:abcdef]');
-    expect(calls[1]?.prompt).not.toContain('<recent_conversation>');
-    expect(calls[1]?.prompt.endsWith('내 투자 선호 알려줘')).toBe(true);
+
+    const second = sent(calls[1]);
+    expect(second.map(([role]) => role)).toEqual(['system', 'user', 'assistant', 'system', 'user']);
+    expect(second.slice(0, 3)).toEqual(sent(calls[0]).concat([['assistant', 'a']])); // 프리픽스 불변
+    const context = second[3][1];
+    expect(context).toContain('<context>');
+    expect(context).toContain('## 사용자 배경지식 (자동 주입)');
+    expect(context).toContain('[mem:abcdef]');
+    expect(context).not.toContain('<recent_conversation>');
+    expect(second[4]).toEqual(['user', '내 투자 선호 알려줘']);
   });
 
-  it('6h 유휴 → 새 세션 + <recent_conversation> recap', async () => {
+  it('6h 유휴 → 창을 새로 열고 직전 대화를 recap 으로 싣는다 (원문은 그대로 남는다)', async () => {
     const { driver, calls } = scripted((req, n) => ok(req, n === 1 ? '반가워 자두' : 'ok'));
     const rt = makeRuntime(driver);
     await collect(rt.run(chat('s1', '내 이름은 자두야')));
     clock += 6 * HOUR + 1;
     await collect(rt.run(chat('s1', '내 이름이 뭐지?')));
-    expect(calls[1]?.session.kind).toBe('new');
-    expect(sessionId(calls[1])).not.toBe(sessionId(calls[0]));
-    expect(calls[1]?.prompt).toContain(
+
+    const second = sent(calls[1]);
+    expect(second.map(([role]) => role)).toEqual(['system', 'user']);
+    expect(second[0][1]).toContain(
       '<recent_conversation>\n사용자: 내 이름은 자두야\nFinClaw: 반가워 자두\n</recent_conversation>',
     );
+    expect(await stored('s1')).toHaveLength(6); // 1턴 3행 + 2턴 3행
+    const rec = await storage.getConversation(createSessionKey('s1'));
+    expect(rec?.metadata?.contextStart).toBe(3);
   });
 
-  it('session_not_found → 새 세션 + recap 으로 1회 재시도, 종료 이벤트 1개, 바인딩 교체', async () => {
+  it('모델이 바뀌면 창을 회전한다 (thinking 블록은 만든 모델에서만 유효)', async () => {
+    const { driver, calls } = scripted((req) => ok(req));
+    const rt = makeRuntime(driver);
+    await collect(rt.run(chat('s1', 'q1')));
+    await collect(rt.run(chat('s1', 'q2', { model: 'claude-sonnet-5-5' })));
+    expect(sent(calls[1]).map(([role]) => role)).toEqual(['system', 'user']);
+    expect(calls[1]?.model).toBe('claude-sonnet-5-5');
+  });
+
+  it('직전 run 의 입력이 15만 토큰을 넘었으면 회전한다', async () => {
+    const big = { input: 1_000, output: 5, cacheRead: 200_000, cacheWrite: 0 };
     const { driver, calls } = scripted((req, n) =>
-      n === 2 ? err(req, 'session_not_found') : ok(req),
+      n === 1
+        ? [...ok(req).slice(0, -1), { ...(ok(req).at(-1) as AgentEvent), usage: big } as AgentEvent]
+        : ok(req),
     );
     const rt = makeRuntime(driver);
-    await collect(rt.run(chat('s1', '첫 질문')));
-    const events = await collect(rt.run(chat('s1', '둘째 질문')));
-    expect(calls.map((c) => c.session.kind)).toEqual(['new', 'resume', 'new']);
-    expect(calls[2]?.prompt).toContain('<recent_conversation>');
-    expect(terminals(events)).toEqual([expect.objectContaining({ type: 'done' })]);
-    const rec = await storage.getConversation(createSessionKey('s1'));
-    expect(rec?.metadata?.cliSessionId).toBe(sessionId(calls[2]));
+    await collect(rt.run(chat('s1', 'q1')));
+    await collect(rt.run(chat('s1', 'q2')));
+    expect(sent(calls[1]).map(([role]) => role)).toEqual(['system', 'user']);
   });
 
-  it('session_not_found 가 아닌 reason 은 재시도하지 않는다', async () => {
-    const { driver, calls } = scripted((req, n) => (n === 2 ? err(req, 'rate_limit') : ok(req)));
+  it('context_overflow 로 끝난 다음 턴은 회전한다', async () => {
+    const { driver, calls } = scripted((req, n) =>
+      n === 2 ? err(req, 'context_overflow') : ok(req),
+    );
     const rt = makeRuntime(driver);
-    await collect(rt.run(chat('s1', '첫 질문')));
-    const events = await collect(rt.run(chat('s1', '둘째 질문')));
-    expect(calls).toHaveLength(2);
-    expect(terminals(events)).toEqual([
-      expect.objectContaining({ type: 'error', reason: 'rate_limit' }),
+    await collect(rt.run(chat('s1', 'q1')));
+    await collect(rt.run(chat('s1', 'q2')));
+    await collect(rt.run(chat('s1', 'q3')));
+    expect(sent(calls[2]).map(([role]) => role)).toEqual(['system', 'user']);
+  });
+
+  it('예전(CLI 시절) 텍스트 대화는 첫 턴에 회전하고 recap 으로 이어받는다', async () => {
+    await storage.appendMessages({
+      sessionKey: createSessionKey('s1'),
+      agentId: AGENT,
+      messages: [
+        { role: 'user', content: '예전 질문' },
+        { role: 'assistant', content: '예전 답' },
+      ],
+      at: (T0 - HOUR) as never,
+      metadata: { cliSessionId: 'old-cli-session', lastTurnAt: T0 - HOUR },
+    });
+    const { driver, calls } = scripted((req) => ok(req));
+    await collect(makeRuntime(driver).run(chat('s1', '새 질문')));
+    const first = sent(calls[0]);
+    expect(first.map(([role]) => role)).toEqual(['system', 'user']);
+    expect(first[0][1]).toContain('사용자: 예전 질문\nFinClaw: 예전 답');
+  });
+
+  it('중단으로 결과 없는 tool_use 가 남았으면 다음 턴에 짝을 닫아 저장하고 보낸다', async () => {
+    const toolUse = [{ type: 'tool_use', id: 't1', name: 'get_quote', input: {} }];
+    const { driver, calls } = scripted((req, n) =>
+      n === 1
+        ? [
+            { type: 'start', runId: req.runId, model: req.model },
+            { type: 'message', message: { role: 'assistant', content: toolUse } },
+            { type: 'error', runId: req.runId, reason: 'aborted', message: 'killed' },
+          ]
+        : ok(req),
+    );
+    const rt = makeRuntime(driver);
+    await collect(rt.run(chat('s1', 'q1')));
+    await collect(rt.run(chat('s1', 'q2')));
+    expect(calls[1]?.messages.map((m) => m.role)).toEqual([
+      'system',
+      'user',
+      'assistant',
+      'tool', // 합성된 is_error 결과
+      'system',
+      'user',
+    ]);
+    expect(calls[1]?.messages[3].content).toEqual([
+      {
+        type: 'tool_result',
+        tool_use_id: 't1',
+        content: 'interrupted before the tool ran',
+        is_error: true,
+      },
+    ]);
+    expect((await stored('s1')).map(([role]) => role)).toEqual([
+      'system',
+      'user',
+      'assistant',
+      'tool',
+      'system',
+      'user',
+      'assistant',
     ]);
   });
 
-  it('error 턴: 원문만 남기고, start 가 없었으면 바인딩은 그대로', async () => {
-    const { driver, calls } = scripted((req, n) => (n === 2 ? err(req, 'spawn') : ok(req, 'a1')));
+  it('error 턴: 원문은 남고 assistant 행은 없다. 창 상태의 시각만 갱신된다', async () => {
+    const { driver } = scripted((req, n) => (n === 2 ? err(req, 'rate_limit') : ok(req, 'a1')));
     const rt = makeRuntime(driver);
     await collect(rt.run(chat('s1', 'q1')));
     clock += HOUR;
-    await collect(rt.run(chat('s1', 'q2')));
+    const events = await collect(rt.run(chat('s1', 'q2')));
+    expect(terminals(events)).toEqual([
+      expect.objectContaining({ type: 'error', reason: 'rate_limit' }),
+    ]);
+    expect((await stored('s1')).filter(([role]) => role !== 'system')).toEqual([
+      ['user', 'q1'],
+      ['assistant', 'a1'],
+      ['user', 'q2'],
+    ]);
     const rec = await storage.getConversation(createSessionKey('s1'));
-    expect(rec?.messages.map((m) => m.content)).toEqual(['q1', 'a1', 'q2']);
-    expect(rec?.metadata).toEqual({ cliSessionId: sessionId(calls[0]), lastTurnAt: T0 });
+    expect(rec?.metadata).toMatchObject({ contextStart: 0, lastTurnAt: T0 + HOUR });
   });
 });
 
@@ -318,7 +436,7 @@ describe('AgentRuntime — 정확히 1 종료 (I11)', () => {
 });
 
 describe('AgentRuntime — 동시성 (D6)', () => {
-  it('같은 sessionKey 는 직렬화된다 (둘째는 첫째의 바인딩으로 resume)', async () => {
+  it('같은 sessionKey 는 직렬화된다 (둘째는 첫째의 트랜스크립트를 이어받는다)', async () => {
     const g = gate();
     const { driver, calls } = scripted(async (req) => {
       await g.opened;
@@ -332,7 +450,13 @@ describe('AgentRuntime — 동시성 (D6)', () => {
     g.open();
     await Promise.all([first, second]);
     expect(calls).toHaveLength(2);
-    expect(calls[1]?.session).toEqual({ kind: 'resume', id: sessionId(calls[0]) });
+    expect(sent(calls[1]).map(([role]) => role)).toEqual([
+      'system',
+      'user',
+      'assistant',
+      'system',
+      'user',
+    ]);
   });
 
   it('전역 상한 2 — 3번째는 앞 run 이 끝날 때까지 대기', async () => {
@@ -350,7 +474,7 @@ describe('AgentRuntime — 동시성 (D6)', () => {
     expect(calls).toHaveLength(3);
   });
 
-  it('Q14: reset 은 진행 중 run 의 종료 기록 뒤에 실행되어 바인딩이 되살아나지 않는다', async () => {
+  it('reset 은 진행 중 run 의 종료 기록 뒤에 실행되어 대화가 되살아나지 않는다', async () => {
     const g = gate();
     const { driver } = scripted(async (req) => {
       await g.opened;
@@ -369,23 +493,23 @@ describe('AgentRuntime — 동시성 (D6)', () => {
 });
 
 describe('AgentRuntime — 감사 · oneShot', () => {
-  it('init 에 model 이 없으면(start.model 빈 문자열) model_used 는 기본 모델', async () => {
+  it('start.model 이 비어 있으면 model_used 는 요청 모델', async () => {
     const { driver } = scripted((req) => [
-      { type: 'start', runId: req.runId, cliSessionId: cliId(req), model: '' },
+      { type: 'start', runId: req.runId, model: '' },
       ...ok(req).slice(1),
     ]);
     await collect(makeRuntime(driver).run(chat('s1', 'q', { runId: 'run-nomodel' })));
-    expect(getAgentRun(storage.db, 'run-nomodel')?.modelUsed).toBe('claude-sonnet-4-6');
+    expect(getAgentRun(storage.db, 'run-nomodel')?.modelUsed).toBe(MODEL);
   });
 
-  it('agent_runs 1행(id=runId·tool_calls·used_memory_ids·cli_session_id)이 종료 이벤트 yield 전에 존재', async () => {
+  it('agent_runs 1행(id=runId·tool_calls·used_memory_ids)이 종료 이벤트 yield 전에 존재', async () => {
     const memId = 'abcdef12-0000-4000-8000-000000000000';
-    const { driver, calls } = scripted((req) =>
+    const { driver } = scripted((req) =>
       ok(req, '선호는 배당주 [mem:abcdef]', [
         {
           type: 'tool_use',
           id: 't1',
-          name: 'mcp__finclaw__route_task',
+          name: 'route_task',
           input: { intent: 'price_lookup' },
         },
         { type: 'tool_result', id: 't1', isError: false },
@@ -400,13 +524,12 @@ describe('AgentRuntime — 감사 · oneShot', () => {
         expect(JSON.parse(row?.toolCalls ?? '[]')).toEqual([
           {
             id: 't1',
-            name: 'mcp__finclaw__route_task',
+            name: 'route_task',
             input: { intent: 'price_lookup' },
             isError: false,
           },
         ]);
         expect(row?.usedMemoryIds).toEqual([memId]);
-        expect(row?.cliSessionId).toBe(sessionId(calls[0]));
         expect(row?.tokensInput).toBe(10);
         expect(ev.usedMemoryIds).toEqual([memId]);
         checked = true;
@@ -430,9 +553,9 @@ describe('AgentRuntime — 감사 · oneShot', () => {
     expect(events.at(-1)).toMatchObject({ type: 'done', captured });
   });
 
-  it('oneShot: 대화 조회·저장 0, session none, <context> 시각만, autocompact 없음, MCP 는 붙음', async () => {
+  it('oneShot: 대화 조회·저장 0, 컨텍스트는 시각만, 예산 20만', async () => {
     const get = vi.spyOn(storage, 'getConversation');
-    const upsert = vi.spyOn(storage, 'upsertConversation');
+    const append = vi.spyOn(storage, 'appendMessages');
     const capture: MemoryCaptureService = { capture: vi.fn() };
     const retrieval = retrievalOf('abcdef12-0000-4000-8000-000000000000', 'x');
     const { driver, calls } = scripted((req) => ok(req, '리포트'));
@@ -446,14 +569,13 @@ describe('AgentRuntime — 감사 · oneShot', () => {
       }),
     );
     expect(events.at(-1)).toMatchObject({ type: 'done', text: '리포트' });
-    expect(calls[0]?.session).toEqual({ kind: 'none' });
-    expect(calls[0]?.prompt).toBe(
-      '<context>\n현재 시각: 2026-11-26T10:00:00+09:00 (Asia/Seoul)\n</context>\n\n오늘 시장 요약',
-    );
-    expect(calls[0]?.autocompact).toBe(false);
-    expect(calls[0]?.mcp?.token).toBe('jwt:schedule-1-abc');
+    expect(sent(calls[0])).toEqual([
+      ['system', CTX],
+      ['user', '오늘 시장 요약'],
+    ]);
+    expect(calls[0]?.tokenBudget).toBe(200_000);
     expect(get).not.toHaveBeenCalled();
-    expect(upsert).not.toHaveBeenCalled();
+    expect(append).not.toHaveBeenCalled();
     expect(capture.capture).not.toHaveBeenCalled();
     expect(retrieval.searchRelevant).not.toHaveBeenCalled();
   });

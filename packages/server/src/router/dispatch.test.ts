@@ -159,7 +159,7 @@ describe('route_task dispatcher — market_analysis 서브에이전트 (D2)', ()
       newsAggregator: { fetchNews: async () => news },
     })({ intent: 'market_analysis', query: 'x' }, ac.signal);
     expect(seen[0]?.signal.aborted).toBe(true);
-    expect(seen[0]?.session).toEqual({ kind: 'none' });
+    expect(seen[0]?.tools).toEqual([]);
     expect(r.isError).toBe(true);
   });
 

@@ -113,11 +113,6 @@ export interface GatewayServerConfig {
     readonly maxRequests: number;
     readonly maxKeys: number;
   };
-  // ── Phase 40 B: in-process HTTP MCP 호스트 ──
-  readonly mcp?: {
-    /** 명시적 비활성화 (기본: toolRegistry 주입 시 활성). */
-    readonly enabled?: boolean;
-  };
 }
 
 // === Chat Registry 타입 ===

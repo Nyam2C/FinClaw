@@ -34,5 +34,5 @@ export const defaultConfig: Omit<GatewayServerConfig, 'auth'> & {
 
 export const DEFAULT_MODEL: ModelRef = {
   provider: 'anthropic',
-  model: 'claude-sonnet-4-6',
+  model: 'claude-opus-5-5',
 };

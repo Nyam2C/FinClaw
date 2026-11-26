@@ -4,10 +4,16 @@ import type { SessionKey, Timestamp, AgentId } from './common.js';
 /** 스토리지 어댑터 인터페이스 */
 export interface StorageAdapter {
   /**
-   * 기존 대화가 있으면 messages/updatedAt을 교체하고, 없으면 생성한다.
-   * auto-reply 파이프라인이 매 턴 이력 전체를 저장할 때 사용한다.
+   * 대화에 메시지 행을 덧붙인다 (없으면 생성). 트랜스크립트는 append-only — 기존 행은 건드리지 않는다.
+   * `metadata` 를 주면 교체한다. `messages` 가 비면 metadata·시각만 갱신한다.
    */
-  upsertConversation(record: ConversationRecord): Promise<void>;
+  appendMessages(payload: {
+    readonly sessionKey: SessionKey;
+    readonly agentId: AgentId;
+    readonly messages: readonly ConversationMessage[];
+    readonly at: Timestamp;
+    readonly metadata?: Record<string, unknown>;
+  }): Promise<void>;
   getConversation(sessionKey: SessionKey): Promise<ConversationRecord | null>;
   deleteConversation(sessionKey: SessionKey): Promise<boolean>;
   initialize(): Promise<void>;

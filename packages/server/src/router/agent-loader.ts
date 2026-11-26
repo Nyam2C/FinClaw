@@ -27,7 +27,7 @@ export function loadSubAgents(dir: string = SUB_AGENTS_DIR): Map<string, SubAgen
     map.set(id, {
       id,
       name: frontmatter.name ?? id,
-      model: frontmatter.model ?? 'claude-opus-4-7',
+      model: frontmatter.model ?? 'claude-opus-5-5',
       source: (frontmatter.source as SubAgentDefinition['source']) ?? 'sub-agent',
     });
   }

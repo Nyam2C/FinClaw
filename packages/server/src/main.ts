@@ -1,8 +1,7 @@
-import { execFile } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 // packages/server/src/main.ts
-import { createCliDriver, ProfileHealthMonitor } from '@finclaw/agent';
+import { createAnthropicDriver, ProfileHealthMonitor } from '@finclaw/agent';
 import { DiscordAccountSchema, DiscordAdapter } from '@finclaw/channel-discord';
 import { ConfigValidationError, loadConfig, validateConfigStrict } from '@finclaw/config';
 import { createGatewayServer, type GatewayServerConfig } from '@finclaw/gateway';
@@ -147,28 +146,18 @@ async function main(): Promise<void> {
   // 4a. 프로필 건강 모니터.
   const profileHealth = new ProfileHealthMonitor();
 
-  // Phase 46 M3: stream-json 드라이버 (격리 cwd 고정, Q12). 버전 로그는 스키마 drift(R1) 추적용 — 실패해도 부팅 계속.
-  const cliCommand = finclawConfig.cliBackend?.command ?? 'claude';
-  const driver = createCliDriver({
-    command: cliCommand,
-    cwd: join(homedir(), '.finclaw', 'agent'),
-    logger,
-  });
-  // 과금 주체가 조용히 바뀌지 않게 부팅마다 남긴다 — 키가 있으면 CLI 는 구독 대신 키를 쓴다.
+  // 자체 에이전트 루프 드라이버 (Anthropic Messages API). 키가 없어도 부팅은 계속 — run 이 error{auth} 로 끝난다.
+  const anthropicApiKey = process.env.ANTHROPIC_API_KEY || undefined;
+  const driver = createAnthropicDriver({ apiKey: anthropicApiKey });
   logger.info('agent.auth', {
     event: 'agent.auth',
-    mode: process.env.ANTHROPIC_API_KEY ? 'api-key' : 'subscription',
+    mode: anthropicApiKey ? 'api-key' : 'missing',
   });
-  execFile(cliCommand, ['--version'], { timeout: 10_000 }, (err, stdout) => {
-    if (err) {
-      logger.warn('cli.version_unavailable', {
-        event: 'cli.version_unavailable',
-        error: err.message,
-      });
-      return;
-    }
-    logger.info('cli.version', { event: 'cli.version', version: stdout.trim() });
-  });
+  if (!anthropicApiKey) {
+    logger.warn('ANTHROPIC_API_KEY is not set — the agent cannot answer until it is', {
+      event: 'agent.auth.missing',
+    });
+  }
 
   // Phase 36: skills/tools/KIS/mcp/plugins 등록 (구 363-559 흡수)
   const { marketHandle, newsHandle, alertHandle, brokerageSyncService, kisEnv } =
@@ -192,10 +181,7 @@ async function main(): Promise<void> {
     driver,
     embeddingProvider,
     finclawConfig,
-    mcp: {
-      url: `http://127.0.0.1:${gatewayPort}/mcp`,
-      jwtSecret,
-    },
+    toolRegistry,
   });
   lifecycle.register(async () => runtime.abortAll());
 
@@ -273,7 +259,6 @@ async function main(): Promise<void> {
     defaultModel: DEFAULT_MODEL,
     runtime,
     storage, // phase47: chat.history
-    toolRegistry, // Phase 40 A: /mcp in-process 호출용 (top-level — agentDeps.toolRegistry 와 동일 인스턴스)
     financeDeps: {
       quoteService: marketHandle?.quoteService,
       newsAggregator: newsHandle?.aggregator,

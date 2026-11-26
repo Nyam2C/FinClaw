@@ -5,7 +5,7 @@ import { openDatabase } from './database.js';
 import {
   deleteConversation as deleteConversationFromDb,
   getConversation,
-  upsertConversation as upsertConversationInDb,
+  appendMessages as appendMessagesInDb,
 } from './tables/conversations.js';
 import { CACHE_TTL } from './tables/market-cache.js';
 
@@ -89,14 +89,8 @@ export function createStorage(options: StorageOptions): FinClawStorage {
       database.close();
     },
 
-    async upsertConversation(record: ConversationRecord): Promise<void> {
-      upsertConversationInDb(database.db, {
-        sessionKey: record.sessionKey,
-        agentId: record.agentId,
-        messages: record.messages,
-        updatedAt: record.updatedAt,
-        metadata: record.metadata,
-      });
+    async appendMessages(payload): Promise<void> {
+      appendMessagesInDb(database.db, payload);
     },
 
     async getConversation(sessionKey: SessionKey): Promise<ConversationRecord | null> {

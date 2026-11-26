@@ -14,8 +14,16 @@ export type {
 } from './agents/tools/index.js';
 export { InMemoryToolRegistry, jsonSchemaToZod } from './agents/tools/index.js';
 
-// ── Phase 46: AgentRuntime driver seam ──
-export { buildCliArgs, createCliDriver, type CliDriverOptions } from './runtime/cli-driver.js';
+// ── AgentRuntime driver seam: 자체 에이전트 루프 ──
+export {
+  createAnthropicDriver,
+  createAnthropicStream,
+  createLoopDriver,
+  settleDanglingToolUses,
+  toApiMessages,
+  type StreamFn,
+  type StreamParams,
+} from './runtime/loop.js';
 export type {
   AgentDriver,
   AgentErrorReason,
@@ -24,5 +32,8 @@ export type {
   AgentRunRequest,
   AgentUsage,
   DriverRequest,
+  DriverTool,
+  DriverToolResult,
   TerminalEvent,
+  TranscriptMessage,
 } from './runtime/types.js';

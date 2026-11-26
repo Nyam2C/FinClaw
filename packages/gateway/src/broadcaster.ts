@@ -42,7 +42,7 @@ export class GatewayBroadcaster {
         this.sendImmediate(conn, 'chat.stream.end', {
           sessionId,
           runId,
-          result: { text: event.text, usage: event.usage, costUsd: event.costUsd },
+          result: { text: event.text, usage: event.usage },
         } satisfies ChatStreamEndParams);
         break;
       case 'error':

@@ -78,51 +78,6 @@ function extractToolCalls(msg: ConversationMessage): string | null {
 
 // ─── CRUD ───
 
-export function createConversation(db: DatabaseSync, record: ConversationRecord): void {
-  const insertConv = db.prepare(
-    `INSERT INTO conversations (id, title, agent_id, channel_id, created_at, updated_at, metadata)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  );
-  const insertMsg = db.prepare(
-    `INSERT INTO messages (id, conversation_id, role, content, tool_calls, token_count, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  );
-
-  const meta = record.metadata ? JSON.stringify(record.metadata) : '{}';
-
-  db.exec('BEGIN');
-  try {
-    insertConv.run(
-      record.sessionKey,
-      null,
-      record.agentId,
-      null,
-      record.createdAt as number,
-      record.updatedAt as number,
-      meta,
-    );
-
-    for (const msg of record.messages) {
-      const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-      const toolCalls = extractToolCalls(msg);
-      insertMsg.run(
-        crypto.randomUUID(),
-        record.sessionKey,
-        msg.role,
-        content,
-        toolCalls,
-        null,
-        record.updatedAt as number,
-      );
-    }
-
-    db.exec('COMMIT');
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
-  }
-}
-
 export function getConversation(
   db: DatabaseSync,
   sessionKey: SessionKey,
@@ -135,7 +90,7 @@ export function getConversation(
   }
 
   const msgRows = db
-    .prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC')
+    .prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC, rowid ASC')
     .all(sessionKey as string) as unknown as MessageRow[];
   const messages = msgRows.map(messageRowToMessage);
 
@@ -148,75 +103,53 @@ export function deleteConversation(db: DatabaseSync, sessionKey: SessionKey): bo
 }
 
 /**
- * 대화 세션 전체를 갱신(존재 시)하거나 생성(없을 시)한다.
- *
- * 동일 sessionKey로 여러 번 호출해도 멱등적이며, 기존 메시지는
- * 제거되고 payload.messages로 대체된다. Phase 21 auto-reply 파이프라인이
- * 매 턴마다 최신 대화 이력 전체를 저장할 때 사용한다.
+ * 대화에 메시지 행을 **덧붙인다** (없으면 대화를 만든다). 기존 행은 건드리지 않는다 —
+ * 트랜스크립트는 append-only 다 (plans/agent-core.md §3.2).
+ * `metadata` 를 주면 통째로 교체한다. `messages` 가 비어 있으면 metadata·updated_at 만 갱신한다.
  */
-export function upsertConversation(
+export function appendMessages(
   db: DatabaseSync,
   payload: {
     readonly sessionKey: SessionKey;
     readonly agentId: AgentId;
     readonly messages: readonly ConversationMessage[];
-    readonly updatedAt: Timestamp;
+    readonly at: Timestamp;
     readonly metadata?: Record<string, unknown>;
   },
 ): void {
-  const existing = db
-    .prepare('SELECT id FROM conversations WHERE id = ?')
-    .get(payload.sessionKey as string);
-
-  if (!existing) {
-    createConversation(db, {
-      sessionKey: payload.sessionKey,
-      agentId: payload.agentId,
-      messages: payload.messages as ConversationMessage[],
-      createdAt: payload.updatedAt,
-      updatedAt: payload.updatedAt,
-      metadata: payload.metadata,
-    });
-    return;
-  }
-
-  const insertMsg = db.prepare(
-    `INSERT INTO messages (id, conversation_id, role, content, tool_calls, token_count, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  );
-
+  const key = payload.sessionKey as string;
+  const at = payload.at as number;
   db.exec('BEGIN');
   try {
-    db.prepare('DELETE FROM messages WHERE conversation_id = ?').run(payload.sessionKey as string);
-
-    const updateParts: string[] = ['updated_at = ?', 'agent_id = ?'];
-    const updateParams: (string | number)[] = [
-      payload.updatedAt as number,
-      payload.agentId as string,
-    ];
-    if (payload.metadata !== undefined) {
-      updateParts.push('metadata = ?');
-      updateParams.push(JSON.stringify(payload.metadata));
+    const exists = db.prepare('SELECT 1 FROM conversations WHERE id = ?').get(key);
+    if (!exists) {
+      db.prepare(
+        `INSERT INTO conversations (id, title, agent_id, channel_id, created_at, updated_at, metadata)
+         VALUES (?, NULL, ?, NULL, ?, ?, ?)`,
+      ).run(key, payload.agentId as string, at, at, JSON.stringify(payload.metadata ?? {}));
+    } else if (payload.metadata !== undefined) {
+      db.prepare('UPDATE conversations SET updated_at = ?, metadata = ? WHERE id = ?').run(
+        at,
+        JSON.stringify(payload.metadata),
+        key,
+      );
+    } else {
+      db.prepare('UPDATE conversations SET updated_at = ? WHERE id = ?').run(at, key);
     }
-    updateParams.push(payload.sessionKey as string);
-    db.prepare(`UPDATE conversations SET ${updateParts.join(', ')} WHERE id = ?`).run(
-      ...updateParams,
+    const insertMsg = db.prepare(
+      `INSERT INTO messages (id, conversation_id, role, content, tool_calls, token_count, created_at)
+       VALUES (?, ?, ?, ?, ?, NULL, ?)`,
     );
-
     for (const msg of payload.messages) {
-      const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-      const toolCalls = extractToolCalls(msg);
       insertMsg.run(
         crypto.randomUUID(),
-        payload.sessionKey as string,
+        key,
         msg.role,
-        content,
-        toolCalls,
-        null,
-        payload.updatedAt as number,
+        typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+        extractToolCalls(msg),
+        at,
       );
     }
-
     db.exec('COMMIT');
   } catch (err) {
     db.exec('ROLLBACK');

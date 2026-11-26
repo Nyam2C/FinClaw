@@ -18,7 +18,6 @@
     "@finclaw/skills-finance": "workspace:*",
     "@finclaw/storage": "workspace:*",
     "@finclaw/types": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1",
     "ws": "^8.19.0",
     "zod": "^4.0.0"
   },
