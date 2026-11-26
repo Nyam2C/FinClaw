@@ -470,7 +470,7 @@ curl -X POST http://localhost:3000/rpc \
 
 - 브랜치 · 커밋 · PR 규칙은 [`CONTRIBUTING.md`](./CONTRIBUTING.md) 를 따른다 (`main` 직접 커밋 금지, `<type>/<slug>` 브랜치, ASCII Conventional Commits, merge commit 머지).
 - 신규 패키지 추가 시: `pnpm-workspace.yaml` glob 에 자동 포함, `tsconfig.json` references 에 추가, `composite: true` 유지, workspace 의존은 `workspace:*` 프로토콜.
-- 스킬 / RPC / 마이그레이션 변경 시: `.claude/skills/` 의 도메인별 스킬과 CLAUDE.md 의 하네스 트리거 규칙을 참고.
+- 개발 절차(계획 검토 · 리뷰 · QA · 출하)는 CLAUDE.md 의 "개발 워크플로 (gstack)" 를 따른다.
 
 ## 기술 스택 요약
 
