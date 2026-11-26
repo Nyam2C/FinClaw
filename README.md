@@ -79,14 +79,18 @@ Normalize → Command → ACK → Context → Execute(AgentRuntime: MemoryCaptur
 
 대화 도중 에이전트 루프가 레지스트리에서 직접 호출하는 도구 (전부 조회 전용). 키 미설정 시 해당 도구는 **등록 자체를 건너뛴다** (graceful degradation).
 
-| 도구                                 | 내용                                                                                                                                                                                                     | 등록 조건                                                                                                                                                                                                |
-| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `route_task(intent, query, symbol?)` | 도메인 작업 위임. intent: `price_lookup` · `chart_data` · `news_summary` · `portfolio_calc` (함수 직접 호출) / `market_analysis` (sub-agent `claude -p` 재호출, `prompts/sub-agents/market_analysis.md`) | 시세 키 1개 이상 (`FINNHUB_KEY` / `TWELVE_DATA_KEY` / `ALPHA_VANTAGE_KEY` / `COINGECKO_API_KEY`). 뉴스 의존 intent 는 뉴스 키(`NEWSDATA_API_KEY` / `FINNHUB_KEY` / `ALPHA_VANTAGE_KEY`) 없으면 에러 결과 |
-| `list_alerts`, `get_alert_history`   | 알림 조회 (내부 SQLite). 알림 생성은 RPC `finance.alert.create` 로만                                                                                                                                     | 시세 + 뉴스 키                                                                                                                                                                                           |
-| `get_current_datetime`               | 현재 시각                                                                                                                                                                                                | 항상                                                                                                                                                                                                     |
-| `mcp:*`                              | 플러그인 MCP 도구 (`FINCLAW_PLUGINS_DIR`, 기본 `~/.finclaw/plugins`). 정책 `require-approval`                                                                                                            | 플러그인 있을 때                                                                                                                                                                                         |
+| 도구                                                                                                                        | 내용                                                                                                                                                                           | 등록 조건                                                                                                                                                                                                |
+| --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `find_stock` · `get_quote` · `get_candles` · `get_orderbook` · `get_stock_signals` · `get_market_overview` · `get_rankings` | **토스증권 Open API** 시세·종목 조회 (국내·미국 주식). 종목 찾기, 현재가·전일 대비, 일봉·분봉, 호가, 유의사항·수급, 지수·환율·장 시간, 랭킹                                    | `TOSS_CLIENT_ID` · `TOSS_CLIENT_SECRET` (허용 IP 등록 필요)                                                                                                                                              |
+| `get_holdings` · `get_account_activity`                                                                                     | 토스증권 **본인 계좌 조회만**: 보유 주식·평가손익, 매수가능금액, 대기·종료 주문, 조건주문, 거래내역. 주문을 내는 도구는 없다                                                   | 위와 같음                                                                                                                                                                                                |
+| `route_task(intent, query, symbol?)`                                                                                        | 뉴스용 위임 (등록돼 있을 때만). intent: `news_summary` · `market_analysis`(서브에이전트, `prompts/sub-agents/market_analysis.md`). 시세·차트·보유 종목은 위 토스 도구가 맡는다 | 시세 키 1개 이상 (`FINNHUB_KEY` / `TWELVE_DATA_KEY` / `ALPHA_VANTAGE_KEY` / `COINGECKO_API_KEY`). 뉴스 의존 intent 는 뉴스 키(`NEWSDATA_API_KEY` / `FINNHUB_KEY` / `ALPHA_VANTAGE_KEY`) 없으면 에러 결과 |
+| `list_alerts`, `get_alert_history`                                                                                          | 알림 조회 (내부 SQLite). 알림 생성은 RPC `finance.alert.create` 로만                                                                                                           | 시세 + 뉴스 키                                                                                                                                                                                           |
+| `get_current_datetime`                                                                                                      | 현재 시각                                                                                                                                                                      | 항상                                                                                                                                                                                                     |
+| `mcp:*`                                                                                                                     | 플러그인 MCP 도구 (`FINCLAW_PLUGINS_DIR`, 기본 `~/.finclaw/plugins`). 정책 `require-approval`                                                                                  | 플러그인 있을 때                                                                                                                                                                                         |
 
-시세 프로바이더 우선순위는 Finnhub → Twelve Data → Alpha Vantage → CoinGecko → Frankfurter (외환, 키 불필요 — 단 위 시세 키가 하나는 있어야 `route_task` 가 등록된다).
+토스 도구는 읽기 전용이다: 토스 키에는 읽기 전용 권한이 없어(같은 키로 실주문 가능) 클라이언트(`packages/skills-finance/src/toss/client.ts`)가 `GET` 과 토큰 발급 외에는 요청을 보낼 수 없게 만들었다. 설계와 실측은 [`plans/toss-openapi.md`](plans/toss-openapi.md).
+
+`route_task` 와 가격 알림이 쓰는 예전 시세 프로바이더의 우선순위는 Finnhub → Twelve Data → Alpha Vantage → CoinGecko → Frankfurter (외환, 키 불필요 — 단 위 시세 키가 하나는 있어야 `route_task` 가 등록된다).
 
 ### 3. 자동화 (cron 스케줄러, Phase 28)
 
@@ -305,13 +309,14 @@ sequenceDiagram
 
 키는 CSV(`KEY=a,b,c`) 또는 인덱스(`KEY_1`, `KEY_2` … `KEY_10`) 형식으로 여러 개 넣어 rotation 할 수 있다.
 
-| 변수                | 동작                |
-| ------------------- | ------------------- |
-| `FINNHUB_KEY`       | 시세 (1순위) + 뉴스 |
-| `TWELVE_DATA_KEY`   | 시세 (2순위)        |
-| `ALPHA_VANTAGE_KEY` | 시세 (3순위) + 뉴스 |
-| `COINGECKO_API_KEY` | 암호화폐 시세       |
-| `NEWSDATA_API_KEY`  | 영문 뉴스           |
+| 변수                                    | 동작                                                                             |
+| --------------------------------------- | -------------------------------------------------------------------------------- |
+| `TOSS_CLIENT_ID` · `TOSS_CLIENT_SECRET` | 토스증권 Open API (시세·종목·본인 계좌 조회 도구). WTS 설정 > Open API 에서 발급 |
+| `FINNHUB_KEY`                           | 시세 (1순위) + 뉴스                                                              |
+| `TWELVE_DATA_KEY`                       | 시세 (2순위)                                                                     |
+| `ALPHA_VANTAGE_KEY`                     | 시세 (3순위) + 뉴스                                                              |
+| `COINGECKO_API_KEY`                     | 암호화폐 시세                                                                    |
+| `NEWSDATA_API_KEY`                      | 영문 뉴스                                                                        |
 
 시세 키가 하나도 없으면 `route_task`·알림 도구 등록을 건너뛴다. 뉴스 키(`FINNHUB_KEY` / `ALPHA_VANTAGE_KEY` / `NEWSDATA_API_KEY`)가 없으면 뉴스 의존 intent 와 알림 도구가 비활성.
 

@@ -21,6 +21,8 @@ const SENSITIVE_KEYS = [
   'KIS_APP_KEY',
   'KIS_APP_SECRET',
   'KIS_ACCOUNT_NO',
+  'TOSS_CLIENT_ID',
+  'TOSS_CLIENT_SECRET',
   'NODE_OPTIONS',
 ] as const;
 
